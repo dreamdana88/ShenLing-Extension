@@ -469,6 +469,84 @@ body.slx-panel-open-lock {
   gap: 8px;
 }
 
+.slx-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.slx-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.slx-field-wide {
+  grid-column: 1 / -1;
+}
+
+.slx-field span {
+  color: var(--slx-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.slx-field input,
+.slx-field select {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 34px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--slx-text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  padding: 7px 9px;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.slx-field input:focus,
+.slx-field select:focus {
+  border-color: var(--slx-accent);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.slx-field input::placeholder {
+  color: var(--slx-muted);
+  opacity: 0.72;
+}
+
+.slx-api-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.slx-primary-btn {
+  border-color: var(--slx-accent);
+  background: var(--slx-bg-card-hover);
+}
+
+.slx-api-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--slx-muted);
+  font-size: 11px;
+}
+
+.slx-api-status b {
+  color: var(--slx-text);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .slx-soft-btn {
   min-height: 34px;
   border: 1px solid var(--slx-border-dim);
@@ -824,6 +902,17 @@ body.slx-panel-open-lock {
   .slx-log-meta {
     flex-direction: column;
     gap: 3px;
+  }
+
+  .slx-form-grid,
+  .slx-api-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .slx-api-status {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .slx-action-row {

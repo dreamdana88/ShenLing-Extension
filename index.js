@@ -1,6 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
+const PLUGIN_VERSION = '0.4.0';
 
 const MODULES = [
   { id: 'summary', icon: '🫧', shortTitle: '总结', title: '自动总结', desc: '副 API、小总结、大总结与归档管理。' },
@@ -41,6 +42,22 @@ const defaultGlobalSettings = Object.freeze({
   communicationLog: {
     maxEntries: 10,
     entries: [],
+  },
+  api: {
+    activeProfileId: 'default',
+    lastTestAt: '',
+    lastTestStatus: '',
+    profiles: [
+      {
+        id: 'default',
+        name: '默认副 API',
+        baseUrl: '',
+        apiKey: '',
+        model: '',
+        endpointPath: '/v1/chat/completions',
+        availableModels: [],
+      },
+    ],
   },
   diagnostics: {
     globalProbe: '',
@@ -244,6 +261,285 @@ async function copyText(text) {
   textarea.remove();
 }
 
+function getApiSettings(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.api)) {
+    settings.api = cloneData(defaultGlobalSettings.api);
+  }
+  if (!Array.isArray(settings.api.profiles) || settings.api.profiles.length === 0) {
+    settings.api.profiles = cloneData(defaultGlobalSettings.api.profiles);
+  }
+  if (!settings.api.activeProfileId) {
+    settings.api.activeProfileId = settings.api.profiles[0].id;
+  }
+
+  settings.api.profiles = settings.api.profiles.map((profile, index) => mergeDefaults(profile, {
+    id: index === 0 ? 'default' : `profile-${index + 1}`,
+    name: index === 0 ? '默认副 API' : `副 API ${index + 1}`,
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+    endpointPath: '/v1/chat/completions',
+    availableModels: [],
+  }));
+
+  return settings.api;
+}
+
+function getActiveApiProfile(settings = getGlobalSettings()) {
+  const api = getApiSettings(settings);
+  let profile = api.profiles.find(item => item.id === api.activeProfileId);
+  if (!profile) {
+    profile = api.profiles[0];
+    api.activeProfileId = profile.id;
+  }
+  return profile;
+}
+
+function normalizeApiPath(path) {
+  const raw = String(path || '/v1/chat/completions').trim();
+  return raw.startsWith('/') ? raw : `/${raw}`;
+}
+
+function normalizeApiBaseUrl(url) {
+  let normalized = String(url || '').trim().replace(/\/+$/, '');
+  if (normalized.toLowerCase().endsWith('/v1')) {
+    normalized = normalized.slice(0, -3);
+  }
+  return normalized;
+}
+
+function buildApiUrl(profile) {
+  const baseUrl = normalizeApiBaseUrl(profile.baseUrl);
+  if (!baseUrl) {
+    throw new Error('请先填写请求地址。');
+  }
+  return `${baseUrl}${normalizeApiPath(profile.endpointPath)}`;
+}
+
+function buildModelListUrl(profile) {
+  const baseUrl = normalizeApiBaseUrl(profile.baseUrl);
+  if (!baseUrl) {
+    throw new Error('请先填写请求地址。');
+  }
+  return `${baseUrl}/v1/models`;
+}
+
+function parseModelListResponse(data) {
+  const rawModels = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+  return [...new Set(rawModels
+    .map(item => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object' && typeof item.id === 'string') return item.id;
+      return '';
+    })
+    .filter(Boolean))];
+}
+
+function renderModelOptions(profile) {
+  const currentModel = String(profile.model || '').trim();
+  const models = Array.isArray(profile.availableModels) ? profile.availableModels.filter(Boolean) : [];
+  const options = [...new Set([...models, ...(currentModel ? [currentModel] : [])])];
+
+  if (options.length === 0) {
+    return '<option value="">先拉取模型列表</option>';
+  }
+
+  return [
+    '<option value="">请选择模型</option>',
+    ...options.map(model => `<option value="${escapeHtml(model)}" ${model === currentModel ? 'selected' : ''}>${escapeHtml(model)}</option>`),
+  ].join('');
+}
+
+function getApiTestMessages() {
+  return [
+    { role: 'system', content: '你是蜃灵助手的副 API 连通性测试。' },
+    { role: 'user', content: '请只回复 OK。' },
+  ];
+}
+
+async function fetchSecondaryApiModels() {
+  const settings = getGlobalSettings();
+  const api = getApiSettings(settings);
+  const profile = getActiveApiProfile(settings);
+  const startedAt = performance.now();
+  let url = '';
+  let responseText = '';
+  let parsedResult = '';
+
+  try {
+    url = buildModelListUrl(profile);
+    const headers = {};
+    if (String(profile.apiKey || '').trim()) {
+      headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
+    }
+
+    const response = await fetch(url, { headers });
+    responseText = await response.text();
+    try {
+      parsedResult = JSON.parse(responseText);
+    } catch {
+      parsedResult = '';
+    }
+
+    const durationMs = Math.round(performance.now() - startedAt);
+    api.lastTestAt = formatTimestamp();
+
+    if (!response.ok) {
+      api.lastTestStatus = `拉取失败 HTTP ${response.status}`;
+      addCommunicationLog({
+        moduleName: '副 API',
+        taskType: '拉取模型',
+        status: 'failure',
+        startedAt: api.lastTestAt,
+        durationMs,
+        profileName: profile.name,
+        model: profile.model,
+        url,
+        httpStatus: response.status,
+        requestBody: null,
+        responseText,
+        parsedResult,
+        errorStack: `HTTP ${response.status} ${response.statusText}`,
+      });
+      return [];
+    }
+
+    const models = parseModelListResponse(parsedResult);
+    profile.availableModels = models;
+    if (models.length > 0 && (!profile.model || !models.includes(profile.model))) {
+      profile.model = models[0];
+    }
+    api.lastTestStatus = models.length ? `已拉取 ${models.length} 个模型` : '未拉取到模型';
+
+    addCommunicationLog({
+      moduleName: '副 API',
+      taskType: '拉取模型',
+      status: models.length ? 'success' : 'failure',
+      startedAt: api.lastTestAt,
+      durationMs,
+      profileName: profile.name,
+      model: profile.model,
+      url,
+      httpStatus: response.status,
+      requestBody: null,
+      responseText,
+      parsedResult: models,
+      errorStack: models.length ? '' : '响应中没有可用模型。',
+    });
+
+    return models;
+  } catch (error) {
+    const durationMs = Math.round(performance.now() - startedAt);
+    api.lastTestAt = formatTimestamp();
+    api.lastTestStatus = `拉取失败：${error.message || error}`;
+
+    addCommunicationLog({
+      moduleName: '副 API',
+      taskType: '拉取模型',
+      status: 'failure',
+      startedAt: api.lastTestAt,
+      durationMs,
+      profileName: profile.name,
+      model: profile.model,
+      url,
+      requestBody: null,
+      responseText,
+      parsedResult,
+      errorStack: error.stack || error.message || error,
+    });
+
+    return [];
+  }
+}
+async function testSecondaryApiConnection() {
+  const settings = getGlobalSettings();
+  const api = getApiSettings(settings);
+  const profile = getActiveApiProfile(settings);
+  const startedAt = performance.now();
+  const messages = getApiTestMessages();
+  let url = '';
+  let requestBody = null;
+
+  try {
+    url = buildApiUrl(profile);
+    if (!String(profile.model || '').trim()) {
+      throw new Error('请先填写模型名。');
+    }
+
+    requestBody = {
+      model: String(profile.model).trim(),
+      messages,
+      temperature: 0,
+      max_tokens: 16,
+      stream: false,
+    };
+
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (String(profile.apiKey || '').trim()) {
+      headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestBody),
+    });
+    const responseText = await response.text();
+    let parsedResult = '';
+    try {
+      parsedResult = JSON.parse(responseText);
+    } catch {
+      parsedResult = '';
+    }
+
+    const durationMs = Math.round(performance.now() - startedAt);
+    const status = response.ok ? 'success' : 'failure';
+    api.lastTestAt = formatTimestamp();
+    api.lastTestStatus = response.ok ? '成功' : `失败 HTTP ${response.status}`;
+
+    addCommunicationLog({
+      moduleName: '副 API',
+      taskType: '测试连接',
+      status,
+      startedAt: api.lastTestAt,
+      durationMs,
+      profileName: profile.name,
+      model: profile.model,
+      url,
+      httpStatus: response.status,
+      messages,
+      requestBody,
+      responseText,
+      parsedResult,
+      errorStack: response.ok ? '' : `HTTP ${response.status} ${response.statusText}`,
+    });
+
+    return response.ok;
+  } catch (error) {
+    const durationMs = Math.round(performance.now() - startedAt);
+    api.lastTestAt = formatTimestamp();
+    api.lastTestStatus = `失败：${error.message || error}`;
+
+    addCommunicationLog({
+      moduleName: '副 API',
+      taskType: '测试连接',
+      status: 'failure',
+      startedAt: api.lastTestAt,
+      durationMs,
+      profileName: profile.name,
+      model: profile.model,
+      url,
+      messages,
+      requestBody,
+      errorStack: error.stack || error.message || error,
+    });
+
+    return false;
+  }
+}
+
 function getContextSafe() {
   return globalThis.SillyTavern?.getContext?.() ?? null;
 }
@@ -441,6 +737,49 @@ function renderCommunicationLogPanel(settings) {
   `;
 }
 
+function renderApiSettingsPanel(settings) {
+  const api = getApiSettings(settings);
+  const profile = getActiveApiProfile(settings);
+
+  return `
+    <div class="slx-detail-card">
+      <div class="slx-detail-title">副 API 配置</div>
+      <p>当前先支持 OpenAI-compatible 的聊天补全接口。API Key 只保存在本地扩展设置中，不会写入通讯日志。</p>
+      <div class="slx-form-grid">
+        <label class="slx-field">
+          <span>Profile 名称</span>
+          <input type="text" data-slx-api-field="name" value="${escapeHtml(profile.name)}" placeholder="默认副 API" />
+        </label>
+        <label class="slx-field">
+          <span>请求地址</span>
+          <input type="text" data-slx-api-field="baseUrl" value="${escapeHtml(profile.baseUrl)}" placeholder="https://api.example.com" />
+        </label>
+        <label class="slx-field">
+          <span>API Key</span>
+          <input type="password" data-slx-api-field="apiKey" value="${escapeHtml(profile.apiKey)}" placeholder="sk-..." autocomplete="off" />
+        </label>
+        <label class="slx-field">
+          <span>模型名</span>
+          <select data-slx-api-field="model">${renderModelOptions(profile)}</select>
+        </label>
+        <label class="slx-field slx-field-wide">
+          <span>接口路径</span>
+          <input type="text" data-slx-api-field="endpointPath" value="${escapeHtml(profile.endpointPath)}" placeholder="/v1/chat/completions" />
+        </label>
+      </div>
+      <div class="slx-api-actions">
+        <button class="slx-soft-btn" type="button" data-slx-save-api>保存配置</button>
+        <button class="slx-soft-btn" type="button" data-slx-fetch-models>拉取模型</button>
+        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-test-api>测试连接</button>
+      </div>
+      <div class="slx-api-status">
+        <span>最近测试：${escapeHtml(api.lastTestAt || '尚未测试')}</span>
+        <b>${escapeHtml(api.lastTestStatus || '未记录')}</b>
+      </div>
+    </div>
+  `;
+}
+
 function renderModuleDetail(module, settings) {
   const info = getContextInfo();
   const chatState = getChatState();
@@ -465,6 +804,7 @@ function renderModuleDetail(module, settings) {
           <input id="slx-panel-theme" type="checkbox" ${settings.theme === 'dark' ? 'checked' : ''} />
         </label>
       </div>
+      ${renderApiSettingsPanel(settings)}
       <div class="slx-detail-card">
         <div class="slx-detail-title">存储测试</div>
         <p>先验证插件自己的抽屉：全局设置进扩展设置，聊天状态进当前聊天 metadata。</p>
@@ -479,7 +819,7 @@ function renderModuleDetail(module, settings) {
         ${renderDiagnosticLine('角色 ID', info.characterId || '未读取')}
         ${renderDiagnosticLine('聊天', info.chatName)}
         ${renderDiagnosticLine('聊天 ID', info.chatId || '未读取')}
-        ${renderDiagnosticLine('版本', '0.1.0')}
+        ${renderDiagnosticLine('版本', PLUGIN_VERSION)}
       </div>
       <div class="slx-detail-card slx-muted-card">
         <div class="slx-detail-title">状态诊断</div>
@@ -608,6 +948,54 @@ function renderFloatingPanel(options = {}) {
     });
   });
 
+  const syncApiFormToSettings = () => {
+    const profile = getActiveApiProfile(settings);
+    panelRoot.querySelectorAll('[data-slx-api-field]').forEach(input => {
+      const field = input.dataset.slxApiField;
+      if (field && Object.hasOwn(profile, field)) {
+        profile[field] = input.value;
+      }
+    });
+  };
+
+  panelRoot.querySelector('[data-slx-save-api]')?.addEventListener('click', event => {
+    syncApiFormToSettings();
+    saveGlobalSettings();
+    event.currentTarget.textContent = '已保存';
+    setTimeout(() => {
+      event.currentTarget.textContent = '保存配置';
+    }, 1200);
+    syncSettingsPanelState();
+  });
+
+  panelRoot.querySelector('[data-slx-fetch-models]')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    syncApiFormToSettings();
+    saveGlobalSettings();
+    button.disabled = true;
+    button.textContent = '拉取中...';
+    communicationLogOpen = true;
+
+    await fetchSecondaryApiModels();
+    saveGlobalSettings();
+
+    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+    syncSettingsPanelState();
+  });
+  panelRoot.querySelector('[data-slx-test-api]')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    syncApiFormToSettings();
+    saveGlobalSettings();
+    button.disabled = true;
+    button.textContent = '测试中...';
+    communicationLogOpen = true;
+
+    await testSecondaryApiConnection();
+
+    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+    syncSettingsPanelState();
+  });
+
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
     button.addEventListener('click', () => {
       const moduleGrid = panelRoot.querySelector('.slx-module-grid');
@@ -697,7 +1085,7 @@ function renderSettingsPanel() {
       <div class="inline-drawer-content">
         <div class="shenling-assistant-card">
           <div class="shenling-assistant-topline">
-            <span class="shenling-assistant-badge">0.1.0</span>
+            <span class="shenling-assistant-badge">${PLUGIN_VERSION}</span>
             <span>第三方插件已加载</span>
           </div>
           <div class="shenling-assistant-title">蜃灵助手</div>
