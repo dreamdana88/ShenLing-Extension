@@ -506,7 +506,8 @@ body.slx-panel-open-lock {
 }
 
 .slx-field input,
-.slx-field select {
+.slx-field select,
+.slx-field textarea {
   width: 100%;
   box-sizing: border-box;
   min-height: 34px;
@@ -521,8 +522,15 @@ body.slx-panel-open-lock {
   transition: border-color 0.2s, background 0.2s;
 }
 
+.slx-field textarea {
+  min-height: 132px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
 .slx-field input:focus,
-.slx-field select:focus {
+.slx-field select:focus,
+.slx-field textarea:focus {
   border-color: var(--slx-accent);
   background: rgba(255, 255, 255, 0.2);
 }
@@ -577,6 +585,26 @@ body.slx-panel-open-lock {
 .slx-api-status b {
   color: var(--slx-text);
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slx-summary-profile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--slx-muted);
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.slx-summary-profile b {
+  color: var(--slx-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -950,6 +978,12 @@ body.slx-panel-open-lock {
   }
 
   .slx-api-status {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .slx-summary-profile {
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;

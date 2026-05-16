@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.4.1';
+const PLUGIN_VERSION = '0.5.0';
 
 const MODULES = [
   { id: 'summary', icon: '🫧', shortTitle: '总结', title: '自动总结', desc: '副 API、小总结、大总结与归档管理。' },
@@ -27,7 +27,16 @@ const defaultGlobalSettings = Object.freeze({
   modules: {
     summary: {
       enabled: false,
-      autoRun: false,
+      intervalMessages: 1,
+      startMessageId: 1,
+      promptTemplate: [
+        '请为以下最新剧情生成一段简洁的小总结。',
+        '要求：',
+        '1. 只总结已经发生的事实，不预测未来。',
+        '2. 保留时间、地点、人物关系变化、重要物品与承诺。',
+        '3. 避免流水账，普通寒暄和无后续影响的细节可以省略。',
+        '4. 使用 <memory>...</memory> 包裹结果。',
+      ].join('\n'),
     },
     memoir: {
       mode: 'ask_after_archive',
@@ -76,6 +85,7 @@ const defaultChatState = Object.freeze({
   summary: {
     smallSummaryCount: 0,
     lastSummaryMessageId: null,
+    lastSummaryAt: '',
     lastArchiveId: '',
   },
   outline: {
@@ -880,10 +890,76 @@ function renderApiSettingsPanel(settings) {
   `;
 }
 
+function getSummarySettings(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.modules)) {
+    settings.modules = cloneData(defaultGlobalSettings.modules);
+  }
+  settings.modules.summary = mergeDefaults(
+    settings.modules.summary,
+    cloneData(defaultGlobalSettings.modules.summary),
+  );
+  return settings.modules.summary;
+}
+
+function renderSummarySettingsPanel(settings, chatState) {
+  const summary = getSummarySettings(settings);
+  const apiProfile = getActiveApiProfile(settings);
+
+  return `
+    <div class="slx-detail-card">
+      <div class="slx-detail-title">自动总结设置</div>
+      <p>自动总结会使用设置页当前选中的副 API Profile。当前阶段只保存设置，不监听生成、不调用 API、不写入楼层。</p>
+      <label class="slx-switch-row" for="slx-summary-enabled">
+        <span>
+          <b>启用自动总结</b>
+          <small>下一阶段接入生成链路后才会真正生效。</small>
+        </span>
+        <input id="slx-summary-enabled" type="checkbox" data-slx-summary-field="enabled" ${summary.enabled ? 'checked' : ''} />
+      </label>
+      <div class="slx-form-grid">
+        <label class="slx-field">
+          <span>总结间隔</span>
+          <input type="number" min="1" step="1" data-slx-summary-field="intervalMessages" value="${escapeHtml(summary.intervalMessages)}" />
+        </label>
+        <label class="slx-field">
+          <span>起始楼层</span>
+          <input type="number" min="0" step="1" data-slx-summary-field="startMessageId" value="${escapeHtml(summary.startMessageId)}" />
+        </label>
+        <label class="slx-field slx-field-wide">
+          <span>小总结提示词模板</span>
+          <textarea data-slx-summary-field="promptTemplate" rows="8">${escapeHtml(summary.promptTemplate)}</textarea>
+        </label>
+      </div>
+      <div class="slx-summary-profile">
+        <span>当前副 API Profile</span>
+        <b>${escapeHtml(apiProfile.name || '未命名 Profile')}</b>
+      </div>
+      <div class="slx-action-row">
+        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-save-summary>保存自动总结设置</button>
+      </div>
+    </div>
+    <div class="slx-detail-card slx-muted-card">
+      <div class="slx-detail-title">当前聊天总结状态</div>
+      ${renderDiagnosticLine('已总结次数', chatState.summary.smallSummaryCount)}
+      ${renderDiagnosticLine('上次总结楼层', chatState.summary.lastSummaryMessageId ?? '尚未记录')}
+      ${renderDiagnosticLine('最近总结时间', chatState.summary.lastSummaryAt || '尚未记录')}
+      ${renderDiagnosticLine('最近归档 ID', chatState.summary.lastArchiveId || '尚未归档')}
+    </div>
+    <div class="slx-detail-card slx-muted-card">
+      <div class="slx-detail-title">5A 阶段边界</div>
+      <p>本阶段只搭建自动总结的设置与状态展示。后续会分步接入：读取楼层、调用副 API、预览小总结、确认写入楼层、最后再接自动监听。</p>
+    </div>
+  `;
+}
+
 function renderModuleDetail(module, settings) {
   const info = getContextInfo();
   const chatState = getChatState();
   const diagnostics = getStorageDiagnostics();
+
+  if (module.id === 'summary') {
+    return renderSummarySettingsPanel(settings, chatState);
+  }
 
   if (module.id === 'settings') {
     return `
@@ -1128,6 +1204,32 @@ function renderFloatingPanel(options = {}) {
     await testSecondaryApiConnection();
 
     renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+    syncSettingsPanelState();
+  });
+
+  panelRoot.querySelector('[data-slx-save-summary]')?.addEventListener('click', event => {
+    const summary = getSummarySettings(settings);
+    panelRoot.querySelectorAll('[data-slx-summary-field]').forEach(input => {
+      const field = input.dataset.slxSummaryField;
+      if (!field || !Object.hasOwn(summary, field)) return;
+
+      if (input.type === 'checkbox') {
+        summary[field] = Boolean(input.checked);
+        return;
+      }
+      if (input.type === 'number') {
+        const value = Number.parseInt(input.value, 10);
+        summary[field] = Number.isFinite(value) ? Math.max(Number(input.min || 0), value) : summary[field];
+        return;
+      }
+      summary[field] = input.value;
+    });
+
+    saveGlobalSettings();
+    event.currentTarget.textContent = '已保存';
+    setTimeout(() => {
+      event.currentTarget.textContent = '保存自动总结设置';
+    }, 1200);
     syncSettingsPanelState();
   });
 
