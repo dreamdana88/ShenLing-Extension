@@ -78,6 +78,13 @@ const defaultChatState = Object.freeze({
 
 let panelRoot = null;
 
+function syncViewportSize() {
+  const viewportHeight = globalThis.visualViewport?.height || globalThis.innerHeight;
+  if (viewportHeight) {
+    document.documentElement.style.setProperty('--slx-viewport-height', `${viewportHeight}px`);
+  }
+}
+
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -415,12 +422,15 @@ function openFloatingPanel() {
   const settings = getGlobalSettings();
   settings.ui.lastOpenedAt = formatTimestamp();
   saveGlobalSettings();
+  syncViewportSize();
   renderFloatingPanel();
+  document.body.classList.add('slx-panel-open-lock');
   panelRoot?.classList.add('slx-panel-open');
 }
 
 function closeFloatingPanel() {
   panelRoot?.classList.remove('slx-panel-open');
+  document.body.classList.remove('slx-panel-open-lock');
 }
 
 function syncSettingsPanelState() {
@@ -491,6 +501,10 @@ function renderSettingsPanel() {
 
 function init() {
   console.info('[蜃灵助手] 插件已加载。');
+  syncViewportSize();
+  globalThis.addEventListener?.('resize', syncViewportSize, { passive: true });
+  globalThis.visualViewport?.addEventListener?.('resize', syncViewportSize, { passive: true });
+  globalThis.visualViewport?.addEventListener?.('scroll', syncViewportSize, { passive: true });
   getGlobalSettings();
   getChatState();
   renderSettingsPanel();
