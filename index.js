@@ -1047,7 +1047,6 @@ function renderFloatingPanel(options = {}) {
     saveGlobalSettings();
     button.disabled = true;
     button.textContent = '拉取中...';
-    communicationLogOpen = true;
 
     await fetchSecondaryApiModels();
     saveGlobalSettings();
@@ -1061,7 +1060,6 @@ function renderFloatingPanel(options = {}) {
     saveGlobalSettings();
     button.disabled = true;
     button.textContent = '测试中...';
-    communicationLogOpen = true;
 
     await testSecondaryApiConnection();
 
