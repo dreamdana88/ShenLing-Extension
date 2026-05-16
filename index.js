@@ -189,6 +189,13 @@ function renderFloatingPanel() {
     });
   });
 
+  const moduleGrid = panelRoot.querySelector('.slx-module-grid');
+  if (moduleGrid && Number.isFinite(options.moduleScrollTop)) {
+    moduleGrid.scrollTop = options.moduleScrollTop;
+  } else {
+    panelRoot.querySelector('.slx-module-btn-active')?.scrollIntoView({ block: 'nearest' });
+  }
+
   panelRoot.querySelector('#slx-panel-enabled')?.addEventListener('change', event => {
     settings.enabled = Boolean(event.currentTarget.checked);
     saveSettings();
