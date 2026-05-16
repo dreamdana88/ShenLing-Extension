@@ -27,6 +27,8 @@ const defaultGlobalSettings = Object.freeze({
   modules: {
     summary: {
       enabled: false,
+      autoGrandMemoryEnabled: false,
+      grandMemoryInterval: 6,
       intervalMessages: 1,
       promptTemplate: [
         '##浓缩梦境',
@@ -127,9 +129,15 @@ const defaultChatState = Object.freeze({
   },
   summary: {
     smallSummaryCount: 0,
+    memoryCountSinceArchive: 0,
+    memoryCountedMessageIds: [],
     lastSummaryMessageId: null,
+    lastGrandSummaryMessageId: null,
     lastSummaryAt: '',
     lastArchiveId: '',
+    archiveRecords: [],
+    runningTask: 'none',
+    lastError: '',
   },
   outline: {
     currentOutlineId: '',
@@ -949,42 +957,107 @@ function renderSummarySettingsPanel(settings, chatState) {
   const summary = getSummarySettings(settings);
   const apiProfile = getActiveApiProfile(settings);
   const activeModel = apiProfile.model || '尚未选择模型';
+  const grandInterval = Math.max(1, Number(summary.grandMemoryInterval) || 6);
+  const memoryCount = Number(chatState.summary.memoryCountSinceArchive ?? chatState.summary.smallSummaryCount ?? 0);
+  const archiveRecords = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [];
+  const latestArchiveRecord = archiveRecords[0] || archiveRecords.at(-1);
+  const latestArchiveLabel = latestArchiveRecord
+    ? `第 ${latestArchiveRecord.summaryMessageId ?? '?'} 楼 / ${latestArchiveRecord.archiveFrom ?? '?'}-${latestArchiveRecord.archiveTo ?? '?'}`
+    : '无';
+  const latestLog = settings.communicationLog?.entries?.[0];
+  const latestLogLabel = latestLog ? `${latestLog.status === 'failure' ? '失败' : '成功'} · ${latestLog.startedAt}` : '无';
+  const runningTaskLabels = {
+    none: '空闲',
+    opening_memory: '0楼总结中',
+    memory: '小总结中',
+    grand_memory: '大总结中',
+  };
+  const runningLabel = runningTaskLabels[chatState.summary.runningTask] || chatState.summary.runningTask || '空闲';
+  const presetMemoryLabel = summary.enabled ? '自动总结接管中' : '预设小总结接管中';
 
   return `
-    <div class="slx-detail-card">
-      <div class="slx-detail-title">自动总结设置</div>
-      <p>自动总结会使用设置页当前启用的副 API 模型。当前阶段只保存设置，不监听生成、不调用 API、不写入楼层。</p>
-      <label class="slx-switch-row" for="slx-summary-enabled">
+    <div class="slx-detail-card slx-summary-settings-card">
+      <label class="slx-setting-toggle-row" for="slx-summary-enabled">
         <span>
-          <b>启用自动总结</b>
-          <small>下一阶段接入生成链路后才会真正生效。</small>
+          <b>自动小总结</b>
+          <small>开启后将由总结 API 接管每轮正文后的 memory。</small>
+          <small>预设小总结：${escapeHtml(presetMemoryLabel)}</small>
         </span>
         <input id="slx-summary-enabled" type="checkbox" data-slx-summary-field="enabled" ${summary.enabled ? 'checked' : ''} />
       </label>
-      <div class="slx-form-grid">
-        <label class="slx-field">
-          <span>总结间隔</span>
-          <input type="number" min="1" step="1" data-slx-summary-field="intervalMessages" value="${escapeHtml(summary.intervalMessages)}" />
-        </label>
-      </div>
-      <div class="slx-summary-profile">
-        <span>当前启用模型</span>
-        <b>${escapeHtml(activeModel)}</b>
-      </div>
-      <div class="slx-action-row">
-        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-save-summary>保存自动总结设置</button>
-      </div>
+      <label class="slx-setting-toggle-row" for="slx-summary-grand-enabled">
+        <span>
+          <b>自动大总结</b>
+          <small>达到阈值后创建独立大总结楼，并自动隐藏本轮归档区间。</small>
+        </span>
+        <input id="slx-summary-grand-enabled" type="checkbox" data-slx-summary-field="autoGrandMemoryEnabled" ${summary.autoGrandMemoryEnabled ? 'checked' : ''} />
+      </label>
+      <label class="slx-field slx-field-wide">
+        <span>大总结间隔</span>
+        <input type="number" min="1" step="1" data-slx-summary-field="grandMemoryInterval" value="${escapeHtml(grandInterval)}" />
+        <small>每 N 次成功小总结后触发一次大总结。</small>
+      </label>
     </div>
+
     <div class="slx-detail-card slx-muted-card">
-      <div class="slx-detail-title">当前聊天总结状态</div>
-      ${renderDiagnosticLine('已总结次数', chatState.summary.smallSummaryCount)}
-      ${renderDiagnosticLine('上次总结楼层', chatState.summary.lastSummaryMessageId ?? '尚未记录')}
-      ${renderDiagnosticLine('最近总结时间', chatState.summary.lastSummaryAt || '尚未记录')}
-      ${renderDiagnosticLine('最近归档 ID', chatState.summary.lastArchiveId || '尚未归档')}
+      <div class="slx-summary-card-head">
+        <div class="slx-detail-title">运行状态</div>
+        <b>${escapeHtml(runningLabel)}</b>
+      </div>
+      ${renderDiagnosticLine('小总结累计', `${memoryCount} / ${grandInterval}`)}
+      ${renderDiagnosticLine('预设小总结', presetMemoryLabel)}
+      ${renderDiagnosticLine('当前启用模型', activeModel)}
+      ${renderDiagnosticLine('上次小总结楼', chatState.summary.lastSummaryMessageId ?? '无')}
+      ${renderDiagnosticLine('上次大总结楼', chatState.summary.lastGrandSummaryMessageId ?? '无')}
+      ${renderDiagnosticLine('归档记录', `${archiveRecords.length} 条`)}
+      ${renderDiagnosticLine('最新归档', latestArchiveLabel)}
+      ${renderDiagnosticLine('最近通讯日志', latestLogLabel)}
+      ${renderDiagnosticLine('上次错误', chatState.summary.lastError || '无')}
+      <div class="slx-action-row slx-summary-action-row">
+        <button class="slx-soft-btn" type="button" disabled title="运行逻辑将在 5B 接入">
+          <span>为0楼生成小总结</span>
+        </button>
+        <button class="slx-soft-btn" type="button" disabled title="运行逻辑将在 5B 接入">
+          <span>重新生成上次大总结</span>
+        </button>
+      </div>
     </div>
+
+    <div class="slx-detail-card slx-muted-card">
+      <div class="slx-summary-card-head">
+        <div>
+          <div class="slx-detail-title">归档管理器</div>
+          <p>查看大总结楼层与当前隐藏状态，可直接编辑大总结正文。</p>
+        </div>
+        <button class="slx-mini-action-btn" type="button" disabled title="运行逻辑将在 5B 接入">↻</button>
+      </div>
+      <p>${archiveRecords.length ? '归档记录会在这里按楼层显示。' : '暂无归档记录。'}</p>
+    </div>
+
+    <div class="slx-detail-card slx-muted-card">
+      <div class="slx-detail-title">小总结管理</div>
+      <p>指定楼层重写或手动编辑 memory，并覆盖回原楼层。</p>
+      <label class="slx-field slx-field-wide">
+        <span>重写指定楼层小总结</span>
+        <div class="slx-model-row">
+          <input type="number" min="0" placeholder="留空默认最新AI楼层" disabled />
+          <button class="slx-mini-action-btn" type="button" disabled title="运行逻辑将在 5B 接入">↻</button>
+        </div>
+        <small>适合大改楼层后刷新小总结，不会增加累计次数。</small>
+      </label>
+      <label class="slx-field slx-field-wide">
+        <span>编辑指定楼层小总结</span>
+        <div class="slx-model-row">
+          <input type="number" min="0" placeholder="输入楼层号" disabled />
+          <button class="slx-mini-action-btn" type="button" disabled title="运行逻辑将在 5B 接入">✎</button>
+        </div>
+        <small>适合只改几个字，保存后只覆盖该楼 memory。</small>
+      </label>
+    </div>
+
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">5A 阶段边界</div>
-      <p>本阶段只搭建自动总结的设置与状态展示。后续接入时会先扫描既有蜃灵 &lt;memory&gt; 小总结并计入累积；没有可识别小总结的旧聊天，再用手动大总结补档并隐藏前文。</p>
+      <p>界面与状态结构先按蜃灵切换脚本对齐。后续接入时会先扫描既有蜃灵 &lt;memory&gt; 小总结并计入累积；没有可识别小总结的旧聊天，再用手动大总结补档并隐藏前文。</p>
     </div>
   `;
 }
@@ -1244,30 +1317,25 @@ function renderFloatingPanel(options = {}) {
     syncSettingsPanelState();
   });
 
-  panelRoot.querySelector('[data-slx-save-summary]')?.addEventListener('click', event => {
-    const summary = getSummarySettings(settings);
-    panelRoot.querySelectorAll('[data-slx-summary-field]').forEach(input => {
+
+  panelRoot.querySelectorAll('[data-slx-summary-field]').forEach(input => {
+    input.addEventListener('change', () => {
+      const summary = getSummarySettings(settings);
       const field = input.dataset.slxSummaryField;
       if (!field || !Object.hasOwn(summary, field)) return;
 
       if (input.type === 'checkbox') {
         summary[field] = Boolean(input.checked);
-        return;
-      }
-      if (input.type === 'number') {
+      } else if (input.type === 'number') {
         const value = Number.parseInt(input.value, 10);
         summary[field] = Number.isFinite(value) ? Math.max(Number(input.min || 0), value) : summary[field];
-        return;
+      } else {
+        summary[field] = input.value;
       }
-      summary[field] = input.value;
-    });
 
-    saveGlobalSettings();
-    event.currentTarget.textContent = '已保存';
-    setTimeout(() => {
-      event.currentTarget.textContent = '保存自动总结设置';
-    }, 1200);
-    syncSettingsPanelState();
+      saveGlobalSettings();
+      syncSettingsPanelState();
+    });
   });
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
