@@ -1,4 +1,4 @@
-﻿const MODULE_NAME = 'shenling_assistant';
+const MODULE_NAME = 'shenling_assistant';
 
 const defaultSettings = Object.freeze({
   enabled: true,
