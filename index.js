@@ -1407,23 +1407,47 @@ function renderFloatingPanel(options = {}) {
   });
 
 
+  const syncSummaryFieldToSettings = input => {
+    const summary = getSummarySettings(settings);
+    const field = input.dataset.slxSummaryField;
+    if (!field || !Object.hasOwn(summary, field)) return false;
+
+    if (input.type === 'checkbox') {
+      summary[field] = Boolean(input.checked);
+    } else if (input.type === 'number') {
+      const value = Number.parseInt(input.value, 10);
+      summary[field] = Number.isFinite(value) ? Math.max(Number(input.min || 0), value) : summary[field];
+      input.value = summary[field];
+    } else {
+      summary[field] = input.value;
+    }
+
+    saveGlobalSettings();
+    return true;
+  };
+
+  const rerenderSummaryPanel = () => {
+    renderFloatingPanel({
+      moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0,
+      detailScrollTop: panelRoot.querySelector('.slx-detail')?.scrollTop ?? 0,
+    });
+    syncSettingsPanelState();
+  };
+
   panelRoot.querySelectorAll('[data-slx-summary-field]').forEach(input => {
     input.addEventListener('change', () => {
-      const summary = getSummarySettings(settings);
-      const field = input.dataset.slxSummaryField;
-      if (!field || !Object.hasOwn(summary, field)) return;
-
-      if (input.type === 'checkbox') {
-        summary[field] = Boolean(input.checked);
-      } else if (input.type === 'number') {
-        const value = Number.parseInt(input.value, 10);
-        summary[field] = Number.isFinite(value) ? Math.max(Number(input.min || 0), value) : summary[field];
-      } else {
-        summary[field] = input.value;
+      if (syncSummaryFieldToSettings(input)) {
+        rerenderSummaryPanel();
       }
+    });
 
-      saveGlobalSettings();
-      syncSettingsPanelState();
+    input.addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      if (syncSummaryFieldToSettings(input)) {
+        input.blur();
+        rerenderSummaryPanel();
+      }
     });
   });
 
@@ -1441,6 +1465,11 @@ function renderFloatingPanel(options = {}) {
     moduleGrid.scrollTop = options.moduleScrollTop;
   } else {
     panelRoot.querySelector('.slx-module-btn-active')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  const detailPanel = panelRoot.querySelector('.slx-detail');
+  if (detailPanel && Number.isFinite(options.detailScrollTop)) {
+    detailPanel.scrollTop = options.detailScrollTop;
   }
 
 
