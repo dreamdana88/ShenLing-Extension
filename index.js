@@ -3,16 +3,16 @@ const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
 
 const MODULES = [
-  { id: 'summary', icon: '🫧', title: '自动总结', desc: '副 API、小总结、大总结与归档管理。' },
-  { id: 'outline', icon: '🧭', title: '剧情规划', desc: '故事大纲、主线阶段与当前剧情节点。' },
-  { id: 'memoir', icon: '📚', title: '回忆录世界书', desc: '关键节点提炼、绿灯关键词与聊天专属回忆录。' },
-  { id: 'pursuit', icon: '💘', title: '逆攻略', desc: '让角色在不崩人设的前提下主动推进关系。' },
-  { id: 'parallel', icon: '🌈', title: '平行事件', desc: '基于时间轴低频续写不在场角色动态。' },
-  { id: 'profile', icon: '🎭', title: '角色档案', desc: '关系阶段、情感变化、角色目标与隐秘动机。' },
-  { id: 'diary', icon: '📓', title: '日程日记', desc: '七日程表、普通日记与交换日记。' },
-  { id: 'inspire', icon: '✨', title: '灵感工具', desc: '小剧场、分支选项、冲突事件与场景推进。' },
-  { id: 'replace', icon: '🈲', title: '词汇替换', desc: '用户词库、替换预览与当前楼层重新替换。' },
-  { id: 'settings', icon: '⚙️', title: '设置', desc: '插件状态、主题与后续通用配置。' },
+  { id: 'summary', icon: '🫧', shortTitle: '总结', title: '自动总结', desc: '副 API、小总结、大总结与归档管理。' },
+  { id: 'outline', icon: '🧭', shortTitle: '剧情', title: '剧情规划', desc: '故事大纲、主线阶段与当前剧情节点。' },
+  { id: 'memoir', icon: '📚', shortTitle: '回忆', title: '回忆录世界书', desc: '关键节点提炼、绿灯关键词与聊天专属回忆录。' },
+  { id: 'pursuit', icon: '💘', shortTitle: '攻略', title: '逆攻略', desc: '让角色在不崩人设的前提下主动推进关系。' },
+  { id: 'parallel', icon: '🌈', shortTitle: '平行', title: '平行事件', desc: '基于时间轴低频续写不在场角色动态。' },
+  { id: 'profile', icon: '🎭', shortTitle: '档案', title: '角色档案', desc: '关系阶段、情感变化、角色目标与隐秘动机。' },
+  { id: 'diary', icon: '📓', shortTitle: '日记', title: '日程日记', desc: '七日程表、普通日记与交换日记。' },
+  { id: 'inspire', icon: '✨', shortTitle: '灵感', title: '灵感工具', desc: '小剧场、分支选项、冲突事件与场景推进。' },
+  { id: 'replace', icon: '🈲', shortTitle: '替换', title: '词汇替换', desc: '用户词库、替换预览与当前楼层重新替换。' },
+  { id: 'settings', icon: '⚙️', shortTitle: '设置', title: '设置', desc: '插件状态、主题与后续通用配置。' },
 ];
 
 const defaultGlobalSettings = Object.freeze({
@@ -230,8 +230,11 @@ function createModuleButton(module, settings) {
   button.type = 'button';
   button.className = `slx-module-btn${settings.activeModule === module.id ? ' slx-module-btn-active' : ''}`;
   button.dataset.moduleId = module.id;
+  button.title = module.title;
+  button.setAttribute('aria-label', module.title);
   button.innerHTML = `
     <span class="slx-module-icon">${module.icon}</span>
+    <span class="slx-module-short">${escapeHtml(module.shortTitle || module.title)}</span>
     <span class="slx-module-text">
       <b>${escapeHtml(module.title)}</b>
       <small>${escapeHtml(module.desc)}</small>

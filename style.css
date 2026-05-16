@@ -308,6 +308,10 @@ body.slx-panel-open-lock {
   text-align: center;
 }
 
+.slx-module-short {
+  display: none;
+}
+
 .slx-module-text {
   min-width: 0;
 }
@@ -487,17 +491,114 @@ body.slx-panel-open-lock {
   }
 
   .slx-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: 62px minmax(0, 1fr);
     overflow: hidden;
+    gap: 8px;
+    padding: 8px;
   }
 
   .slx-module-grid {
-    max-height: 168px;
+    max-height: none;
+    height: 100%;
+    gap: 6px;
+    padding-right: 0;
+    overflow-x: hidden;
+  }
+
+  .slx-module-btn {
+    min-height: 54px;
+    justify-content: center;
+    flex-direction: column;
+    gap: 0;
+    padding: 5px 3px;
+    border-radius: 13px;
+  }
+
+  .slx-module-btn:hover {
+    transform: none;
+  }
+
+  .slx-module-icon {
+    width: auto;
+    font-size: 19px;
+    line-height: 1.05;
+  }
+
+  .slx-module-short {
+    display: block;
+    max-width: 100%;
+    color: var(--slx-muted);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.15;
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .slx-module-btn-active .slx-module-short {
+    color: var(--slx-text);
+  }
+
+  .slx-module-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .slx-detail {
+    min-width: 0;
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .slx-detail-head {
+    gap: 8px;
+    padding-bottom: 9px;
+  }
+
+  .slx-detail-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    font-size: 18px;
+  }
+
+  .slx-detail-name {
+    font-size: 14px;
+  }
+
+  .slx-detail-card {
+    padding: 10px;
   }
 
   .slx-action-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 380px) {
+  .slx-body {
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 7px;
+    padding: 7px;
+  }
+
+  .slx-module-btn {
+    min-height: 50px;
+    border-radius: 12px;
+  }
+
+  .slx-module-icon {
+    font-size: 18px;
+  }
+
+  .slx-module-short {
+    font-size: 9px;
   }
 }
 
