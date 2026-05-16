@@ -28,14 +28,57 @@ const defaultGlobalSettings = Object.freeze({
     summary: {
       enabled: false,
       intervalMessages: 1,
-      startMessageId: 1,
       promptTemplate: [
-        '请为以下最新剧情生成一段简洁的小总结。',
-        '要求：',
-        '1. 只总结已经发生的事实，不预测未来。',
-        '2. 保留时间、地点、人物关系变化、重要物品与承诺。',
-        '3. 避免流水账，普通寒暄和无后续影响的细节可以省略。',
-        '4. 使用 <memory>...</memory> 包裹结果。',
+        '##浓缩梦境',
+        '',
+        '必须输出<memory>结构化总结，并严格使用以下格式进行封装：',
+        '',
+        '<memory>',
+        '<number>',
+        '自然顺序编号，如 `1`、`2`，承接上轮递增。',
+        '</number>',
+        '',
+        '<worldstate>',
+        '时间：${精确日期 + 当前时段}',
+        '地点：${所在地点}',
+        '人物：${列举在场角色}',
+        '</worldstate>',
+        '',
+        '<currentTask>',
+        '一句话简述当前主线目标',
+        '</currentTask>',
+        '',
+        '<plot>',
+        '以自然语言用第三人称客观梳理总结本轮演出剧情 (200 token)，必须包含：用户输入内容、关键事件/情节进展、重要互动、情绪变化、特殊世界规则发现或剧情推进。',
+        '{{user}}：${1句最关键的对话(可无)}',
+        '主要角色：${1句最关键的对话(可无)}',
+        '</plot>',
+        '',
+        '<psychology>',
+        '（非{{user}}主要角色情感变化）：',
+        '${角色名}',
+        '- 情感分层：{(日常/深入/高峰)简要描述+变化方向}',
+        '- 情感关系：{人物关系的变化倾向(30字)}',
+        '</psychology>',
+        '',
+        '<list>',
+        '根据角色人设、职业背景、生活作息等，简要列出角色当天日程表与行动安排（至就寝时间），随时间推进进行check',
+        '',
+        '格式:',
+        '${日期}-${角色名}',
+        '${早/中/晚}:${序号}.${日程安排内容} ${预期完成时间（x时-y时）}',
+        '隐私:${想隐藏的秘密}',
+        '好奇:${想探究的好奇}',
+        '当前目标:${一句话简述近期要达成的目标}',
+        '</list>',
+        '',
+        '<database>',
+        '- 重要物品/概念解锁:',
+        '记录本轮中首次出现的、重要的物品或概念。',
+        '</database>',
+        '</memory>',
+        '',
+        '重要：<memory>内容应足够独立，即使没有正文，也能让人了解故事发展。总字数不超过400字。',
       ].join('\n'),
     },
     memoir: {
@@ -898,17 +941,19 @@ function getSummarySettings(settings = getGlobalSettings()) {
     settings.modules.summary,
     cloneData(defaultGlobalSettings.modules.summary),
   );
+  delete settings.modules.summary.startMessageId;
   return settings.modules.summary;
 }
 
 function renderSummarySettingsPanel(settings, chatState) {
   const summary = getSummarySettings(settings);
   const apiProfile = getActiveApiProfile(settings);
+  const activeModel = apiProfile.model || '尚未选择模型';
 
   return `
     <div class="slx-detail-card">
       <div class="slx-detail-title">自动总结设置</div>
-      <p>自动总结会使用设置页当前选中的副 API Profile。当前阶段只保存设置，不监听生成、不调用 API、不写入楼层。</p>
+      <p>自动总结会使用设置页当前启用的副 API 模型。当前阶段只保存设置，不监听生成、不调用 API、不写入楼层。</p>
       <label class="slx-switch-row" for="slx-summary-enabled">
         <span>
           <b>启用自动总结</b>
@@ -921,18 +966,10 @@ function renderSummarySettingsPanel(settings, chatState) {
           <span>总结间隔</span>
           <input type="number" min="1" step="1" data-slx-summary-field="intervalMessages" value="${escapeHtml(summary.intervalMessages)}" />
         </label>
-        <label class="slx-field">
-          <span>起始楼层</span>
-          <input type="number" min="0" step="1" data-slx-summary-field="startMessageId" value="${escapeHtml(summary.startMessageId)}" />
-        </label>
-        <label class="slx-field slx-field-wide">
-          <span>小总结提示词模板</span>
-          <textarea data-slx-summary-field="promptTemplate" rows="8">${escapeHtml(summary.promptTemplate)}</textarea>
-        </label>
       </div>
       <div class="slx-summary-profile">
-        <span>当前副 API Profile</span>
-        <b>${escapeHtml(apiProfile.name || '未命名 Profile')}</b>
+        <span>当前启用模型</span>
+        <b>${escapeHtml(activeModel)}</b>
       </div>
       <div class="slx-action-row">
         <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-save-summary>保存自动总结设置</button>
@@ -947,7 +984,7 @@ function renderSummarySettingsPanel(settings, chatState) {
     </div>
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">5A 阶段边界</div>
-      <p>本阶段只搭建自动总结的设置与状态展示。后续会分步接入：读取楼层、调用副 API、预览小总结、确认写入楼层、最后再接自动监听。</p>
+      <p>本阶段只搭建自动总结的设置与状态展示。后续接入时会先扫描既有蜃灵 &lt;memory&gt; 小总结并计入累积；没有可识别小总结的旧聊天，再用手动大总结补档并隐藏前文。</p>
     </div>
   `;
 }
