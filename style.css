@@ -1,0 +1,32 @@
+﻿.shenling-assistant-settings {
+  margin: 8px 0;
+}
+
+.shenling-assistant-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+  border-radius: 8px;
+  background: var(--black30a, rgba(0, 0, 0, 0.08));
+}
+
+.shenling-assistant-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.shenling-assistant-desc,
+.shenling-assistant-status {
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.8;
+}
+
+.shenling-assistant-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
