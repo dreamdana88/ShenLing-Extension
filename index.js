@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.4.0';
+const PLUGIN_VERSION = '0.4.1';
 
 const MODULES = [
   { id: 'summary', icon: '🫧', shortTitle: '总结', title: '自动总结', desc: '副 API、小总结、大总结与归档管理。' },
@@ -293,6 +293,46 @@ function getActiveApiProfile(settings = getGlobalSettings()) {
     api.activeProfileId = profile.id;
   }
   return profile;
+}
+
+function createApiProfile(settings = getGlobalSettings()) {
+  const api = getApiSettings(settings);
+  const profile = {
+    id: `profile-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    name: `副 API ${api.profiles.length + 1}`,
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+    endpointPath: '/v1/chat/completions',
+    availableModels: [],
+  };
+  api.profiles.push(profile);
+  api.activeProfileId = profile.id;
+  return profile;
+}
+
+function deleteActiveApiProfile(settings = getGlobalSettings()) {
+  const api = getApiSettings(settings);
+  if (api.profiles.length <= 1) {
+    api.lastTestStatus = '至少保留一个 Profile';
+    return false;
+  }
+
+  const deleteIndex = api.profiles.findIndex(profile => profile.id === api.activeProfileId);
+  if (deleteIndex < 0) {
+    return false;
+  }
+
+  api.profiles.splice(deleteIndex, 1);
+  api.activeProfileId = api.profiles[Math.max(0, deleteIndex - 1)]?.id || api.profiles[0].id;
+  api.lastTestStatus = '已删除当前 Profile';
+  return true;
+}
+
+function renderApiProfileOptions(api) {
+  return api.profiles.map(profile => (
+    `<option value="${escapeHtml(profile.id)}" ${profile.id === api.activeProfileId ? 'selected' : ''}>${escapeHtml(profile.name || '未命名 Profile')}</option>`
+  )).join('');
 }
 
 function normalizeApiPath(path) {
@@ -745,6 +785,16 @@ function renderApiSettingsPanel(settings) {
     <div class="slx-detail-card">
       <div class="slx-detail-title">副 API 配置</div>
       <p>当前先支持 OpenAI-compatible 的聊天补全接口。API Key 只保存在本地扩展设置中，不会写入通讯日志。</p>
+      <div class="slx-profile-bar">
+        <label class="slx-field">
+          <span>当前 Profile</span>
+          <select data-slx-api-profile-select>${renderApiProfileOptions(api)}</select>
+        </label>
+        <div class="slx-profile-actions">
+          <button class="slx-soft-btn" type="button" data-slx-new-api-profile>新增</button>
+          <button class="slx-soft-btn" type="button" data-slx-delete-api-profile ${api.profiles.length <= 1 ? 'disabled' : ''}>删除</button>
+        </div>
+      </div>
       <div class="slx-form-grid">
         <label class="slx-field">
           <span>Profile 名称</span>
@@ -761,10 +811,6 @@ function renderApiSettingsPanel(settings) {
         <label class="slx-field">
           <span>模型名</span>
           <select data-slx-api-field="model">${renderModelOptions(profile)}</select>
-        </label>
-        <label class="slx-field slx-field-wide">
-          <span>接口路径</span>
-          <input type="text" data-slx-api-field="endpointPath" value="${escapeHtml(profile.endpointPath)}" placeholder="/v1/chat/completions" />
         </label>
       </div>
       <div class="slx-api-actions">
@@ -956,7 +1002,34 @@ function renderFloatingPanel(options = {}) {
         profile[field] = input.value;
       }
     });
+    profile.endpointPath = '/v1/chat/completions';
   };
+
+  panelRoot.querySelector('[data-slx-api-profile-select]')?.addEventListener('change', event => {
+    syncApiFormToSettings();
+    getApiSettings(settings).activeProfileId = event.currentTarget.value;
+    saveGlobalSettings();
+    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+    syncSettingsPanelState();
+  });
+
+  panelRoot.querySelector('[data-slx-new-api-profile]')?.addEventListener('click', () => {
+    syncApiFormToSettings();
+    createApiProfile(settings);
+    saveGlobalSettings();
+    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+    syncSettingsPanelState();
+  });
+
+  panelRoot.querySelector('[data-slx-delete-api-profile]')?.addEventListener('click', () => {
+    if (!confirm('删除当前 API Profile？')) {
+      return;
+    }
+    deleteActiveApiProfile(settings);
+    saveGlobalSettings();
+    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+    syncSettingsPanelState();
+  });
 
   panelRoot.querySelector('[data-slx-save-api]')?.addEventListener('click', event => {
     syncApiFormToSettings();

@@ -475,6 +475,19 @@ body.slx-panel-open-lock {
   gap: 9px;
 }
 
+.slx-profile-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: end;
+}
+
+.slx-profile-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(62px, auto));
+  gap: 7px;
+}
+
 .slx-field {
   display: flex;
   flex-direction: column;
@@ -905,8 +918,13 @@ body.slx-panel-open-lock {
   }
 
   .slx-form-grid,
-  .slx-api-actions {
+  .slx-api-actions,
+  .slx-profile-bar {
     grid-template-columns: 1fr;
+  }
+
+  .slx-profile-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .slx-api-status {
