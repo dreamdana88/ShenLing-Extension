@@ -532,6 +532,28 @@ body.slx-panel-open-lock {
   opacity: 0.72;
 }
 
+.slx-secret-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.slx-secret-toggle {
+  min-width: 48px;
+  min-height: 34px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: var(--slx-bg-btn);
+  color: var(--slx-text);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 9px;
+}
+
+.slx-secret-toggle:hover {
+  background: var(--slx-bg-card-hover);
+}
+
 .slx-api-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

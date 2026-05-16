@@ -178,6 +178,57 @@ function createCommunicationLog(input = {}) {
   };
 }
 
+function getKnownApiKeys(settings = getGlobalSettings()) {
+  const profiles = getApiSettings(settings).profiles;
+  return profiles
+    .map(profile => String(profile.apiKey || '').trim())
+    .filter(key => key.length >= 4);
+}
+
+function redactText(value, knownKeys = []) {
+  let text = String(value);
+  knownKeys.forEach(key => {
+    text = text.split(key).join('[已隐藏 API Key]');
+  });
+
+  return text
+    .replace(/(Authorization\s*[:=]\s*Bearer\s+)[^\s"',}]+/gi, '$1[已隐藏 API Key]')
+    .replace(/((?:api[_-]?key|access[_-]?token|key)\s*["']?\s*[:=]\s*["']?)[^"',\s}&]+/gi, '$1[已隐藏 API Key]')
+    .replace(/([?&](?:api[_-]?key|access[_-]?token|key)=)[^&\s]+/gi, '$1[已隐藏 API Key]');
+}
+
+function redactLogValue(value, knownKeys = []) {
+  if (typeof value === 'string') {
+    return redactText(value, knownKeys);
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => redactLogValue(item, knownKeys));
+  }
+  if (isPlainObject(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey.includes('apikey') || lowerKey.includes('api_key') || lowerKey.includes('authorization') || lowerKey.includes('token')) {
+        return [key, '[已隐藏 API Key]'];
+      }
+      return [key, redactLogValue(item, knownKeys)];
+    }));
+  }
+  return value;
+}
+
+function sanitizeCommunicationLog(log, settings = getGlobalSettings()) {
+  const knownKeys = getKnownApiKeys(settings);
+  return {
+    ...log,
+    url: redactLogValue(log.url, knownKeys),
+    messages: redactLogValue(log.messages, knownKeys),
+    requestBody: redactLogValue(log.requestBody, knownKeys),
+    responseText: redactLogValue(log.responseText, knownKeys),
+    parsedResult: redactLogValue(log.parsedResult, knownKeys),
+    errorStack: redactLogValue(log.errorStack, knownKeys),
+  };
+}
+
 function getCommunicationLogStore(settings = getGlobalSettings()) {
   if (!isPlainObject(settings.communicationLog)) {
     settings.communicationLog = cloneData(defaultGlobalSettings.communicationLog);
@@ -202,7 +253,7 @@ function hasFailedCommunicationLog(settings = getGlobalSettings()) {
 function addCommunicationLog(input) {
   const settings = getGlobalSettings();
   const store = getCommunicationLogStore(settings);
-  const log = createCommunicationLog(input);
+  const log = sanitizeCommunicationLog(createCommunicationLog(input), settings);
   store.entries.unshift(log);
   store.entries = store.entries.slice(0, store.maxEntries);
   saveGlobalSettings();
@@ -806,7 +857,10 @@ function renderApiSettingsPanel(settings) {
         </label>
         <label class="slx-field">
           <span>API Key</span>
-          <input type="password" data-slx-api-field="apiKey" value="${escapeHtml(profile.apiKey)}" placeholder="sk-..." autocomplete="off" />
+          <div class="slx-secret-field">
+            <input type="password" data-slx-api-field="apiKey" value="${escapeHtml(profile.apiKey)}" placeholder="sk-..." autocomplete="off" />
+            <button class="slx-secret-toggle" type="button" data-slx-toggle-api-key>显示</button>
+          </div>
         </label>
         <label class="slx-field">
           <span>模型名</span>
@@ -1029,6 +1083,16 @@ function renderFloatingPanel(options = {}) {
     saveGlobalSettings();
     renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
     syncSettingsPanelState();
+  });
+
+  panelRoot.querySelector('[data-slx-toggle-api-key]')?.addEventListener('click', event => {
+    const button = event.currentTarget;
+    const input = panelRoot.querySelector('[data-slx-api-field="apiKey"]');
+    if (!input) return;
+
+    const isHidden = input.type === 'password';
+    input.type = isHidden ? 'text' : 'password';
+    button.textContent = isHidden ? '隐藏' : '显示';
   });
 
   panelRoot.querySelector('[data-slx-save-api]')?.addEventListener('click', event => {
