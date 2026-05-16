@@ -420,6 +420,31 @@
   white-space: nowrap;
 }
 
+.slx-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.slx-soft-btn {
+  min-height: 34px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: var(--slx-bg-btn);
+  color: var(--slx-text);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.25;
+  padding: 7px 10px;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s;
+}
+
+.slx-soft-btn:hover {
+  border-color: var(--slx-border);
+  background: var(--slx-bg-card-hover);
+  transform: translateY(-1px);
+}
+
 @media (max-width: 720px) {
   .slx-panel {
     width: min(94vw, 420px);
@@ -432,5 +457,9 @@
 
   .slx-module-grid {
     max-height: 220px;
+  }
+
+  .slx-action-row {
+    grid-template-columns: 1fr;
   }
 }
