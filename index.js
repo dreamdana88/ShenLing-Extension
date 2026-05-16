@@ -38,6 +38,10 @@ const defaultGlobalSettings = Object.freeze({
       appendToChat: true,
     },
   },
+  communicationLog: {
+    maxEntries: 10,
+    entries: [],
+  },
   diagnostics: {
     globalProbe: '',
     lastSavedAt: '',
@@ -77,6 +81,7 @@ const defaultChatState = Object.freeze({
 });
 
 let panelRoot = null;
+let communicationLogOpen = false;
 
 function syncViewportSize() {
   const viewportHeight = globalThis.visualViewport?.height || globalThis.innerHeight;
@@ -118,6 +123,125 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function stringifyLogField(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function createCommunicationLog(input = {}) {
+  return {
+    id: input.id || `slx-log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    moduleName: input.moduleName || '未指定模块',
+    taskType: input.taskType || '未指定任务',
+    status: input.status === 'failure' ? 'failure' : 'success',
+    startedAt: input.startedAt || formatTimestamp(),
+    durationMs: Number.isFinite(input.durationMs) ? input.durationMs : null,
+    profileName: input.profileName || '',
+    model: input.model || '',
+    url: input.url || '',
+    httpStatus: input.httpStatus || '',
+    messages: input.messages ?? '',
+    requestBody: input.requestBody ?? '',
+    responseText: input.responseText ?? '',
+    parsedResult: input.parsedResult ?? '',
+    errorStack: input.errorStack || input.error?.stack || input.error?.message || input.error || '',
+  };
+}
+
+function getCommunicationLogStore(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.communicationLog)) {
+    settings.communicationLog = cloneData(defaultGlobalSettings.communicationLog);
+  }
+  if (!Array.isArray(settings.communicationLog.entries)) {
+    settings.communicationLog.entries = [];
+  }
+  if (!Number.isFinite(settings.communicationLog.maxEntries) || settings.communicationLog.maxEntries < 1) {
+    settings.communicationLog.maxEntries = defaultGlobalSettings.communicationLog.maxEntries;
+  }
+  return settings.communicationLog;
+}
+
+function getCommunicationLogs(settings = getGlobalSettings()) {
+  return getCommunicationLogStore(settings).entries;
+}
+
+function hasFailedCommunicationLog(settings = getGlobalSettings()) {
+  return getCommunicationLogs(settings).some(log => log.status === 'failure');
+}
+
+function addCommunicationLog(input) {
+  const settings = getGlobalSettings();
+  const store = getCommunicationLogStore(settings);
+  const log = createCommunicationLog(input);
+  store.entries.unshift(log);
+  store.entries = store.entries.slice(0, store.maxEntries);
+  saveGlobalSettings();
+  return log;
+}
+
+function clearCommunicationLogs() {
+  const settings = getGlobalSettings();
+  getCommunicationLogStore(settings).entries = [];
+  saveGlobalSettings();
+}
+
+function formatCommunicationLogForCopy(log) {
+  return [
+    `模块：${log.moduleName}`,
+    `任务：${log.taskType}`,
+    `状态：${log.status === 'failure' ? '失败' : '成功'}`,
+    `时间：${log.startedAt}`,
+    `耗时：${log.durationMs === null ? '未记录' : `${log.durationMs}ms`}`,
+    `API Profile：${log.profileName || '未记录'}`,
+    `模型：${log.model || '未记录'}`,
+    `请求地址：${log.url || '未记录'}`,
+    `HTTP 状态：${log.httpStatus || '未记录'}`,
+    '',
+    '【messages】',
+    stringifyLogField(log.messages) || '未记录',
+    '',
+    '【请求体】',
+    stringifyLogField(log.requestBody) || '未记录',
+    '',
+    '【响应全文】',
+    stringifyLogField(log.responseText) || '未记录',
+    '',
+    '【解析结果】',
+    stringifyLogField(log.parsedResult) || '未记录',
+    '',
+    '【错误信息】',
+    stringifyLogField(log.errorStack) || '未记录',
+  ].join('\n');
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
 }
 
 function getContextSafe() {
@@ -247,6 +371,76 @@ function renderDiagnosticLine(label, value) {
   return `<div class="slx-info-line"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
 }
 
+function renderLogDetailBlock(title, value) {
+  const content = stringifyLogField(value);
+  if (!content) {
+    return '';
+  }
+
+  return `
+    <details class="slx-log-details">
+      <summary>${escapeHtml(title)}</summary>
+      <pre>${escapeHtml(content)}</pre>
+    </details>
+  `;
+}
+
+function renderCommunicationLogPanel(settings) {
+  if (!communicationLogOpen) {
+    return '';
+  }
+
+  const logs = getCommunicationLogs(settings);
+  const failedCount = logs.filter(log => log.status === 'failure').length;
+  const emptyContent = `
+    <div class="slx-log-empty">
+      <div class="slx-log-empty-icon">📡</div>
+      <b>暂无通讯记录</b>
+      <p>后续插件自己调用 API 时，请求、响应和报错会统一写到这里。</p>
+    </div>
+  `;
+  const logItems = logs.map(log => `
+    <article class="slx-log-item slx-log-item-${log.status}" data-slx-log-id="${escapeHtml(log.id)}">
+      <div class="slx-log-item-head">
+        <span class="slx-log-status">${log.status === 'failure' ? '失败' : '成功'}</span>
+        <div class="slx-log-summary">
+          <b>${escapeHtml(log.moduleName)} / ${escapeHtml(log.taskType)}</b>
+          <small>${escapeHtml(log.startedAt)}${log.durationMs === null ? '' : ` · ${escapeHtml(log.durationMs)}ms`}</small>
+        </div>
+        <button class="slx-soft-btn slx-log-copy-btn" type="button" data-slx-copy-log="${escapeHtml(log.id)}">复制</button>
+      </div>
+      <div class="slx-log-meta">
+        <span>Profile：${escapeHtml(log.profileName || '未记录')}</span>
+        <span>模型：${escapeHtml(log.model || '未记录')}</span>
+        <span>HTTP：${escapeHtml(log.httpStatus || '未记录')}</span>
+      </div>
+      ${renderLogDetailBlock('messages', log.messages)}
+      ${renderLogDetailBlock('请求体', log.requestBody)}
+      ${renderLogDetailBlock('响应全文', log.responseText)}
+      ${renderLogDetailBlock('解析结果', log.parsedResult)}
+      ${renderLogDetailBlock('错误信息', log.errorStack)}
+    </article>
+  `).join('');
+
+  return `
+    <aside class="slx-log-panel" aria-label="通讯日志">
+      <div class="slx-log-head">
+        <div>
+          <div class="slx-log-title">通讯日志</div>
+          <div class="slx-log-subtitle">最近 ${escapeHtml(getCommunicationLogStore(settings).maxEntries)} 次插件 API 通讯${failedCount ? `，${escapeHtml(failedCount)} 条失败` : ''}</div>
+        </div>
+        <div class="slx-log-actions">
+          <button class="slx-soft-btn" type="button" data-slx-clear-logs ${logs.length ? '' : 'disabled'}>清空</button>
+          <button class="slx-icon-btn" type="button" data-slx-log-close title="关闭通讯日志">×</button>
+        </div>
+      </div>
+      <div class="slx-log-list">
+        ${logs.length ? logItems : emptyContent}
+      </div>
+    </aside>
+  `;
+}
+
 function renderModuleDetail(module, settings) {
   const info = getContextInfo();
   const chatState = getChatState();
@@ -297,6 +491,7 @@ function renderModuleDetail(module, settings) {
         ${renderDiagnosticLine('聊天保存函数', diagnostics.canSaveChat ? '可用' : '未发现，暂用设置保存兜底')}
         ${renderDiagnosticLine('全局测试值', diagnostics.globalProbe)}
         ${renderDiagnosticLine('聊天测试值', diagnostics.chatProbe)}
+        ${renderDiagnosticLine('通讯日志数', getCommunicationLogs(settings).length)}
         ${renderDiagnosticLine('全局最近保存', diagnostics.globalLastSavedAt)}
         ${renderDiagnosticLine('聊天最近保存', diagnostics.chatLastSavedAt)}
       </div>
@@ -343,6 +538,7 @@ function renderFloatingPanel(options = {}) {
           </span>
         </div>
         <div class="slx-header-actions">
+          <button class="slx-icon-btn slx-log-toggle${hasFailedCommunicationLog(settings) ? ' slx-log-toggle-alert' : ''}" type="button" data-slx-log-toggle title="通讯日志">📡</button>
           <button class="slx-icon-btn" type="button" data-slx-theme title="切换主题">${settings.theme === 'dark' ? '☀️' : '🌙'}</button>
           <button class="slx-icon-btn" type="button" data-slx-close="true" title="关闭">×</button>
         </div>
@@ -362,6 +558,7 @@ function renderFloatingPanel(options = {}) {
           ${renderModuleDetail(activeModule, settings)}
         </section>
       </main>
+      ${renderCommunicationLogPanel(settings)}
     </section>
   `;
 
@@ -374,6 +571,41 @@ function renderFloatingPanel(options = {}) {
     saveGlobalSettings();
     renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
     syncSettingsPanelState();
+  });
+
+  panelRoot.querySelector('[data-slx-log-toggle]')?.addEventListener('click', () => {
+    communicationLogOpen = !communicationLogOpen;
+    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+  });
+
+  panelRoot.querySelector('[data-slx-log-close]')?.addEventListener('click', () => {
+    communicationLogOpen = false;
+    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+  });
+
+  panelRoot.querySelector('[data-slx-clear-logs]')?.addEventListener('click', () => {
+    clearCommunicationLogs();
+    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+    syncSettingsPanelState();
+  });
+
+  panelRoot.querySelectorAll('[data-slx-copy-log]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const logId = button.dataset.slxCopyLog;
+      const log = getCommunicationLogs().find(item => item.id === logId);
+      if (!log) return;
+
+      try {
+        await copyText(formatCommunicationLogForCopy(log));
+        button.textContent = '已复制';
+        setTimeout(() => {
+          button.textContent = '复制';
+        }, 1200);
+      } catch (error) {
+        console.warn('[蜃灵助手] 复制通讯日志失败。', error);
+        button.textContent = '失败';
+      }
+    });
   });
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
@@ -434,6 +666,7 @@ function openFloatingPanel() {
 function closeFloatingPanel() {
   panelRoot?.classList.remove('slx-panel-open');
   document.body.classList.remove('slx-panel-open-lock');
+  communicationLogOpen = false;
 }
 
 function syncSettingsPanelState() {
