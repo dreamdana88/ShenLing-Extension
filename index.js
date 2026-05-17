@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.5.6';
+const PLUGIN_VERSION = '0.6.0';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -217,6 +217,7 @@ const summaryEventStops = [];
 const summaryProcessTimers = new Map();
 const summaryWriteIgnoreIds = new Set();
 let summaryEventsRegistered = false;
+let memoryEditorState = null;
 
 function syncViewportSize() {
   const viewportHeight = globalThis.visualViewport?.height || globalThis.innerHeight;
@@ -1384,6 +1385,200 @@ function getAutoSummaryFingerprint(messageId) {
   if (!body) return null;
   return createSimpleFingerprint(body);
 }
+function forceMemoryNumber(memory, number) {
+  const normalized = normalizeMemoryBlock(memory);
+  if (/<number>[\s\S]*?<\/number>/i.test(normalized)) {
+    return normalized.replace(/<number>[\s\S]*?<\/number>/i, `<number>\n${number}\n</number>`);
+  }
+  return normalized.replace(/<memory>/i, `<memory>\n<number>\n${number}\n</number>`);
+}
+
+function getLatestAssistantSummaryTargetId() {
+  const messages = getChatMessagesSafe(undefined, { hide_state: 'all' });
+  const latest = [...messages]
+    .reverse()
+    .find(message => message.role === 'assistant' && !message.is_hidden && !GRAND_MEMORY_BLOCK_RE.test(message.message));
+  return latest?.message_id ?? null;
+}
+
+function parseManualSummaryFloor(value, { defaultToLatest = false } = {}) {
+  const text = String(value ?? '').trim();
+  if (!text && defaultToLatest) return getLatestAssistantSummaryTargetId();
+  const messageId = Number.parseInt(text, 10);
+  return Number.isInteger(messageId) && messageId >= 0 ? messageId : null;
+}
+
+function getEditableSummaryMessage(messageId) {
+  const numericMessageId = Number(messageId);
+  if (!Number.isInteger(numericMessageId) || numericMessageId < 0) {
+    throw new Error('请输入有效楼层号。');
+  }
+  const chatMessage = getChatMessageById(numericMessageId);
+  if (!chatMessage) throw new Error(`未找到第 ${numericMessageId} 楼。`);
+  if (chatMessage.role !== 'assistant') throw new Error(`第 ${numericMessageId} 楼不是 AI 回复。`);
+  if (GRAND_MEMORY_BLOCK_RE.test(chatMessage.message)) throw new Error('大总结楼不生成或编辑小总结。');
+  return chatMessage;
+}
+
+function refreshSummaryPanelAfterAction() {
+  if (!panelRoot?.classList.contains('slx-panel-open')) return;
+  renderFloatingPanel({
+    moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0,
+    detailScrollTop: panelRoot.querySelector('.slx-detail')?.scrollTop ?? 0,
+  });
+}
+
+function markManualMemoryProcessed(messageId, body) {
+  const chatState = getChatState();
+  chatState.summary.lastSummaryMessageId = Number(messageId);
+  chatState.summary.lastSummaryAt = formatTimestamp();
+  chatState.summary.lastError = '';
+  chatState.summary.processedMessageFingerprints = {
+    ...(chatState.summary.processedMessageFingerprints || {}),
+    [messageId]: createSimpleFingerprint(body),
+  };
+  saveChatState();
+}
+
+async function writeManualMemoryToMessage(messageId, memoryContent) {
+  const chatMessage = getEditableSummaryMessage(messageId);
+  const body = stripMemoryBlock(chatMessage.message);
+  if (!body) throw new Error(`第 ${Number(messageId)} 楼没有可保留的正文。`);
+
+  const memory = normalizeMemoryBlock(memoryContent);
+  summaryWriteIgnoreIds.add(Number(messageId));
+  await setChatMessageContent(Number(messageId), `${body}\n\n${memory}`);
+  window.setTimeout(() => summaryWriteIgnoreIds.delete(Number(messageId)), 1500);
+  markManualMemoryProcessed(Number(messageId), body);
+}
+
+async function summarizeOpeningMessage() {
+  const chatState = getChatState();
+  if (chatState.summary.runningTask !== 'none') return;
+
+  const openingMessage = getChatMessageById(0);
+  if (!openingMessage) throw new Error('未找到第 0 楼。');
+  if (openingMessage.role !== 'assistant') throw new Error('第 0 楼不是 AI 回复，不能生成小总结。');
+
+  const body = stripMemoryBlock(openingMessage.message);
+  const summaryBody = extractSummarySourceContent(body, getSummarySettings());
+  if (!summaryBody) throw new Error('第 0 楼没有可总结的正文。');
+
+  chatState.summary.runningTask = 'opening_memory';
+  chatState.summary.lastError = '';
+  saveChatState();
+  notifySummary('info', '0楼小总结生成中。', '小总结管理');
+  refreshSummaryPanelAfterAction();
+
+  try {
+    const result = await generateSummaryMemory(buildMemorySummaryPrompt(summaryBody), { type: '0楼小总结' });
+    const memory = forceMemoryNumber(result, 0);
+    summaryWriteIgnoreIds.add(0);
+    await setChatMessageContent(0, `${body}\n\n${memory}`);
+    window.setTimeout(() => summaryWriteIgnoreIds.delete(0), 1500);
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastError = '';
+    saveChatState();
+    markManualMemoryProcessed(0, body);
+    notifySummary('success', '已为第 0 楼写入小总结。', '小总结管理');
+    refreshSummaryPanelAfterAction();
+  } catch (error) {
+    summaryWriteIgnoreIds.delete(0);
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastError = error.message || String(error);
+    saveChatState();
+    notifySummary('error', error.message || String(error), '0楼小总结失败');
+    refreshSummaryPanelAfterAction();
+  }
+}
+
+async function regenerateMemoryForMessage(messageId) {
+  const chatState = getChatState();
+  if (chatState.summary.runningTask !== 'none') return;
+
+  const chatMessage = getEditableSummaryMessage(messageId);
+  const rawBody = stripMemoryBlock(chatMessage.message);
+  if (!rawBody) throw new Error(`第 ${Number(messageId)} 楼没有可总结的正文。`);
+
+  const summary = getSummarySettings();
+  const summaryBody = extractSummarySourceContent(rawBody, summary);
+  if (!summaryBody) throw new Error(`第 ${Number(messageId)} 楼净化后没有可总结的正文。`);
+
+  chatState.summary.runningTask = 'manual_memory';
+  chatState.summary.lastError = '';
+  saveChatState();
+  notifySummary('info', `第 ${Number(messageId)} 楼小总结生成中。`, '重写小总结');
+  refreshSummaryPanelAfterAction();
+
+  try {
+    const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
+    const result = await generateSummaryMemory(buildMemorySummaryPrompt(summaryBody, priorMemories, summary), {
+      type: '手动重写小总结',
+    });
+    await writeManualMemoryToMessage(Number(messageId), result);
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastError = '';
+    saveChatState();
+    notifySummary('success', `已重写第 ${Number(messageId)} 楼小总结。`, '重写小总结');
+    refreshSummaryPanelAfterAction();
+  } catch (error) {
+    summaryWriteIgnoreIds.delete(Number(messageId));
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastError = error.message || String(error);
+    saveChatState();
+    notifySummary('error', error.message || String(error), '重写小总结失败');
+    refreshSummaryPanelAfterAction();
+  }
+}
+
+function openMemoryEditorForMessage(messageId) {
+  const chatMessage = getEditableSummaryMessage(messageId);
+  const memories = extractMemoryBlocks(chatMessage.message);
+  if (memories.length === 0) throw new Error(`第 ${Number(messageId)} 楼没有 <memory> 小总结。`);
+  memoryEditorState = {
+    messageId: Number(messageId),
+    content: memories.at(-1) || '',
+    saveLabel: '保存',
+  };
+  refreshSummaryPanelAfterAction();
+}
+
+function closeMemoryEditor() {
+  memoryEditorState = null;
+  refreshSummaryPanelAfterAction();
+}
+
+async function saveMemoryEditorContent() {
+  if (!memoryEditorState) return;
+  const messageId = memoryEditorState.messageId;
+  const textarea = panelRoot?.querySelector('[data-slx-memory-editor-content]');
+  const rawContent = String(textarea?.value || '').trim();
+  if (!rawContent) throw new Error('小总结内容不能为空。');
+
+  memoryEditorState.saveLabel = '保存中...';
+  refreshSummaryPanelAfterAction();
+  try {
+    await writeManualMemoryToMessage(messageId, rawContent);
+    memoryEditorState = {
+      messageId,
+      content: normalizeMemoryBlock(rawContent),
+      saveLabel: '已保存',
+    };
+    notifySummary('success', `已保存第 ${messageId} 楼小总结。`, '小总结管理');
+    refreshSummaryPanelAfterAction();
+    window.setTimeout(() => {
+      if (memoryEditorState?.messageId === messageId) {
+        memoryEditorState.saveLabel = '保存';
+        refreshSummaryPanelAfterAction();
+      }
+    }, 1500);
+  } catch (error) {
+    memoryEditorState.saveLabel = '保存';
+    notifySummary('error', error.message || String(error), '保存小总结失败');
+    refreshSummaryPanelAfterAction();
+  }
+}
+
 
 async function processAutoSummary(messageId, expectedFingerprint) {
   const settings = getGlobalSettings();
@@ -1848,12 +2043,31 @@ function renderSummarySettingsPanel(settings, chatState) {
     none: '空闲',
     opening_memory: '0楼总结中',
     memory: '小总结中',
+    manual_memory: '手动小总结中',
     grand_memory: '大总结中',
   };
   const runningLabel = runningTaskLabels[chatState.summary.runningTask] || chatState.summary.runningTask || '空闲';
   const presetMemoryLabel = summary.enabled ? '自动总结接管中' : '预设小总结接管中';
   const sourceTags = getSummarySourceTags(summary);
   const archiveRecordViews = [...archiveRecords].reverse().map(createArchiveRecordView);
+  const memoryEditorHtml = memoryEditorState ? `
+    <div class="slx-detail-card slx-memory-editor-card">
+      <div class="slx-summary-card-head">
+        <div>
+          <div class="slx-detail-title">第 ${escapeHtml(memoryEditorState.messageId)} 楼小总结</div>
+          <p>保存后只替换该楼 &lt;memory&gt;，不会改动正文。</p>
+        </div>
+      </div>
+      <label class="slx-field slx-field-wide">
+        <span>memory 内容</span>
+        <textarea class="slx-memory-editor-textarea" data-slx-memory-editor-content>${escapeHtml(memoryEditorState.content)}</textarea>
+      </label>
+      <div class="slx-action-row slx-summary-action-row">
+        <button class="slx-soft-btn" type="button" data-slx-cancel-memory-edit>取消</button>
+        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-save-memory-edit>${escapeHtml(memoryEditorState.saveLabel || '保存')}</button>
+      </div>
+    </div>
+  ` : '';
 
   return `
     <div class="slx-detail-card slx-summary-settings-card">
@@ -1921,10 +2135,10 @@ function renderSummarySettingsPanel(settings, chatState) {
       ${renderDiagnosticLine('最近通讯日志', latestLogLabel)}
       ${renderDiagnosticLine('上次错误', chatState.summary.lastError || '无')}
       <div class="slx-action-row slx-summary-action-row">
-        <button class="slx-soft-btn" type="button" disabled title="运行逻辑将在 5B 接入">
+        <button class="slx-soft-btn" type="button" data-slx-generate-opening-memory ${chatState.summary.runningTask !== 'none' ? 'disabled' : ''}>
           <span>为0楼生成小总结</span>
         </button>
-        <button class="slx-soft-btn" type="button" disabled title="运行逻辑将在 5B 接入">
+        <button class="slx-soft-btn" type="button" disabled title="将在 Step 7 接入">
           <span>重新生成上次大总结</span>
         </button>
       </div>
@@ -1947,24 +2161,26 @@ function renderSummarySettingsPanel(settings, chatState) {
       <label class="slx-field slx-field-wide">
         <span>重写指定楼层小总结</span>
         <div class="slx-model-row">
-          <input type="number" min="0" placeholder="留空默认最新AI楼层" disabled />
-          <button class="slx-mini-action-btn" type="button" disabled title="运行逻辑将在 5B 接入">↻</button>
+          <input type="number" min="0" data-slx-rewrite-memory-floor placeholder="留空默认最新AI楼层" />
+          <button class="slx-mini-action-btn" type="button" data-slx-rewrite-memory title="重新生成并覆盖该楼 memory" ${chatState.summary.runningTask !== 'none' ? 'disabled' : ''}>↻</button>
         </div>
         <small>适合大改楼层后刷新小总结，不会增加累计次数。</small>
       </label>
       <label class="slx-field slx-field-wide">
         <span>编辑指定楼层小总结</span>
         <div class="slx-model-row">
-          <input type="number" min="0" placeholder="输入楼层号" disabled />
-          <button class="slx-mini-action-btn" type="button" disabled title="运行逻辑将在 5B 接入">✎</button>
+          <input type="number" min="0" data-slx-edit-memory-floor placeholder="输入楼层号" />
+          <button class="slx-mini-action-btn" type="button" data-slx-edit-memory title="读取该楼 memory">✎</button>
         </div>
         <small>适合只改几个字，保存后只覆盖该楼 memory。</small>
       </label>
     </div>
 
+    ${memoryEditorHtml}
+
     <div class="slx-detail-card slx-muted-card">
-      <div class="slx-detail-title">5B 阶段边界</div>
-      <p>已接入自动小总结监听：新 AI 楼层会读取前 4 条 &lt;memory&gt; 与当前正文，调用当前启用 API 写回本楼 &lt;memory&gt;。自动大总结、0楼补档和指定楼层重写仍留到后续步骤。</p>
+      <div class="slx-detail-title">Step 6 阶段边界</div>
+      <p>已接入 0 楼小总结、指定楼层重写与指定楼层编辑。自动大总结、归档楼创建与隐藏区间留到 Step 7。</p>
     </div>
   `;
 }
@@ -2291,6 +2507,59 @@ function renderFloatingPanel(options = {}) {
   panelRoot.querySelector('[data-slx-refresh-archive-scan]')?.addEventListener('click', () => {
     scanExistingSummaryState();
     rerenderSummaryPanel();
+  });
+  panelRoot.querySelector('[data-slx-generate-opening-memory]')?.addEventListener('click', event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    void summarizeOpeningMessage().catch(error => {
+      notifySummary('warning', error.message || String(error), '0楼小总结失败');
+    }).finally(() => {
+      button.disabled = false;
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-rewrite-memory]')?.addEventListener('click', event => {
+    const button = event.currentTarget;
+    const input = panelRoot.querySelector('[data-slx-rewrite-memory-floor]');
+    const messageId = parseManualSummaryFloor(input?.value, { defaultToLatest: true });
+    if (messageId === null) {
+      notifySummary('warning', '请输入有效楼层号，或留空使用最新 AI 楼层。', '重写小总结');
+      return;
+    }
+    button.disabled = true;
+    void regenerateMemoryForMessage(messageId).catch(error => {
+      notifySummary('warning', error.message || String(error), '重写小总结失败');
+    }).finally(() => {
+      button.disabled = false;
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-edit-memory]')?.addEventListener('click', () => {
+    const input = panelRoot.querySelector('[data-slx-edit-memory-floor]');
+    const messageId = parseManualSummaryFloor(input?.value);
+    if (messageId === null) {
+      notifySummary('warning', '请输入有效楼层号。', '小总结管理');
+      return;
+    }
+    try {
+      openMemoryEditorForMessage(messageId);
+    } catch (error) {
+      notifySummary('warning', error.message || String(error), '小总结管理');
+    }
+  });
+
+  panelRoot.querySelector('[data-slx-save-memory-edit]')?.addEventListener('click', event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    void saveMemoryEditorContent().catch(error => {
+      notifySummary('warning', error.message || String(error), '保存小总结失败');
+    }).finally(() => {
+      button.disabled = false;
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-cancel-memory-edit]')?.addEventListener('click', () => {
+    closeMemoryEditor();
   });
 
   panelRoot.querySelectorAll('[data-slx-summary-field]').forEach(input => {
