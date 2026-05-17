@@ -2,6 +2,8 @@ const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
 const PLUGIN_VERSION = '0.5.0';
+const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
+const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 
 const MODULES = [
   { id: 'summary', icon: '🫧', shortTitle: '总结', title: '自动总结', desc: '副 API、小总结、大总结与归档管理。' },
@@ -30,6 +32,10 @@ const defaultGlobalSettings = Object.freeze({
       autoGrandMemoryEnabled: false,
       grandMemoryInterval: 6,
       intervalMessages: 1,
+      sourceTags: {
+        includeTags: [...DEFAULT_SUMMARY_INCLUDE_TAGS],
+        excludeTags: [...DEFAULT_SUMMARY_EXCLUDE_TAGS],
+      },
       promptTemplate: [
         '##浓缩梦境',
         '',
@@ -202,6 +208,72 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeTagName(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^<\/?/, '')
+    .replace(/>$/, '')
+    .replace(/\s.*$/, '')
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
+}
+
+function parseTagList(value) {
+  const items = Array.isArray(value) ? value : String(value || '').split(/[\n,，、;；\s]+/);
+  return [...new Set(items.map(normalizeTagName).filter(Boolean))];
+}
+
+function formatTagList(value) {
+  return parseTagList(value).join('\n');
+}
+
+function getSummarySourceTags(summary) {
+  if (!isPlainObject(summary.sourceTags)) {
+    summary.sourceTags = {};
+  }
+  summary.sourceTags.includeTags = Object.hasOwn(summary.sourceTags, 'includeTags')
+    ? parseTagList(summary.sourceTags.includeTags)
+    : [...DEFAULT_SUMMARY_INCLUDE_TAGS];
+  summary.sourceTags.excludeTags = Object.hasOwn(summary.sourceTags, 'excludeTags')
+    ? parseTagList(summary.sourceTags.excludeTags)
+    : [...DEFAULT_SUMMARY_EXCLUDE_TAGS];
+  const oldDefaultExcludeTags = ['thinking', 'wave', 'memory', 'grand_memory'];
+  if (oldDefaultExcludeTags.every(tag => summary.sourceTags.excludeTags.includes(tag)) && summary.sourceTags.excludeTags.length === oldDefaultExcludeTags.length) {
+    summary.sourceTags.excludeTags = [...DEFAULT_SUMMARY_EXCLUDE_TAGS];
+  }
+  return summary.sourceTags;
+}
+
+function stripTaggedBlocks(content, tags) {
+  return parseTagList(tags).reduce((text, tag) => {
+    const safeTag = escapeRegExp(tag);
+    const blockRe = new RegExp(`<${safeTag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${safeTag}>`, 'gi');
+    const selfClosingRe = new RegExp(`<${safeTag}(?:\\s[^>]*)?\\/>`, 'gi');
+    return text.replace(blockRe, '').replace(selfClosingRe, '');
+  }, String(content || ''));
+}
+
+function extractTaggedBlocks(content, tags) {
+  const source = String(content || '');
+  return parseTagList(tags).flatMap(tag => {
+    const safeTag = escapeRegExp(tag);
+    const blockRe = new RegExp(`<${safeTag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${safeTag}>`, 'gi');
+    return Array.from(source.matchAll(blockRe)).map(match => match[1].trim()).filter(Boolean);
+  });
+}
+
+function extractSummarySourceContent(content, summary = getSummarySettings()) {
+  const tags = getSummarySourceTags(summary);
+  const withoutExcluded = stripTaggedBlocks(content, tags.excludeTags).replace(/\n{3,}/g, '\n\n').trim();
+  const includedBlocks = extractTaggedBlocks(withoutExcluded, tags.includeTags);
+  return (includedBlocks.length ? includedBlocks.join('\n\n') : withoutExcluded).trim();
 }
 
 function stringifyLogField(value) {
@@ -1041,6 +1113,7 @@ function getSummarySettings(settings = getGlobalSettings()) {
     cloneData(defaultGlobalSettings.modules.summary),
   );
   delete settings.modules.summary.startMessageId;
+  getSummarySourceTags(settings.modules.summary);
   return settings.modules.summary;
 }
 
@@ -1066,6 +1139,7 @@ function renderSummarySettingsPanel(settings, chatState) {
   };
   const runningLabel = runningTaskLabels[chatState.summary.runningTask] || chatState.summary.runningTask || '空闲';
   const presetMemoryLabel = summary.enabled ? '自动总结接管中' : '预设小总结接管中';
+  const sourceTags = getSummarySourceTags(summary);
 
   return `
     <div class="slx-detail-card slx-summary-settings-card">
@@ -1089,6 +1163,32 @@ function renderSummarySettingsPanel(settings, chatState) {
         <input type="number" min="1" step="1" data-slx-summary-field="grandMemoryInterval" value="${escapeHtml(grandInterval)}" />
         <small>每 N 次成功小总结后触发一次大总结。</small>
       </label>
+    </div>
+
+    <div class="slx-detail-card slx-source-rules-card">
+      <div class="slx-summary-card-head">
+        <div>
+          <div class="slx-detail-title">正文读取规则</div>
+          <p>这里只处理正文里的杂讯标签。&lt;memory&gt; 与 &lt;grand_memory&gt; 会由小总结/大总结流程单独读取，不作为默认排除项。</p>
+        </div>
+        <button class="slx-mini-action-btn" type="button" data-slx-reset-source-tags title="恢复蜃灵默认标签">↺</button>
+      </div>
+      <div class="slx-form-grid">
+        <label class="slx-field slx-field-wide">
+          <span>纳入正文标签</span>
+          <textarea rows="3" data-slx-summary-tag-field="includeTags" placeholder="content">${escapeHtml(formatTagList(sourceTags.includeTags))}</textarea>
+          <small>例如 content。留空时会使用排除后的全文。</small>
+        </label>
+        <label class="slx-field slx-field-wide">
+          <span>排除正文杂讯标签</span>
+          <textarea rows="4" data-slx-summary-tag-field="excludeTags" placeholder="thinking&#10;wave">${escapeHtml(formatTagList(sourceTags.excludeTags))}</textarea>
+          <small>例如 thinking、wave。不要默认排除 memory / grand_memory，它们是归档素材。</small>
+        </label>
+      </div>
+      <div class="slx-tag-preview">
+        <span>当前纳入：${escapeHtml(sourceTags.includeTags.join('、') || '无，使用全文')}</span>
+        <span>当前排除：${escapeHtml(sourceTags.excludeTags.join('、') || '无')}</span>
+      </div>
     </div>
 
     <div class="slx-detail-card slx-muted-card">
@@ -1433,6 +1533,45 @@ function renderFloatingPanel(options = {}) {
     });
     syncSettingsPanelState();
   };
+
+  const syncSummaryTagFieldToSettings = input => {
+    const summary = getSummarySettings(settings);
+    const tags = getSummarySourceTags(summary);
+    const field = input.dataset.slxSummaryTagField;
+    if (!['includeTags', 'excludeTags'].includes(field)) return false;
+
+    tags[field] = parseTagList(input.value);
+    input.value = formatTagList(tags[field]);
+    saveGlobalSettings();
+    return true;
+  };
+
+  panelRoot.querySelectorAll('[data-slx-summary-tag-field]').forEach(input => {
+    input.addEventListener('change', () => {
+      if (syncSummaryTagFieldToSettings(input)) {
+        rerenderSummaryPanel();
+      }
+    });
+
+    input.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || !event.ctrlKey) return;
+      event.preventDefault();
+      if (syncSummaryTagFieldToSettings(input)) {
+        input.blur();
+        rerenderSummaryPanel();
+      }
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-reset-source-tags]')?.addEventListener('click', () => {
+    const summary = getSummarySettings(settings);
+    summary.sourceTags = {
+      includeTags: [...DEFAULT_SUMMARY_INCLUDE_TAGS],
+      excludeTags: [...DEFAULT_SUMMARY_EXCLUDE_TAGS],
+    };
+    saveGlobalSettings();
+    rerenderSummaryPanel();
+  });
 
   panelRoot.querySelectorAll('[data-slx-summary-field]').forEach(input => {
     input.addEventListener('change', () => {

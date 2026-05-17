@@ -552,6 +552,24 @@ body.slx-panel-open-lock {
   margin-top: 4px;
 }
 
+.slx-source-rules-card textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.slx-tag-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--slx-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 8px 10px;
+}
+
 .slx-model-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
