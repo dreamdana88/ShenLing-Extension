@@ -1,14 +1,14 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.5.3';
+const PLUGIN_VERSION = '0.5.6';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
 const GRAND_MEMORY_BLOCK_RE = /<grand_memory>[\s\S]*?<\/grand_memory>/i;
 const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
 const SUMMARY_EVENT_DELAY_MS = 700;
-const SUMMARY_PROMPT_VERSION = 2;
+const SUMMARY_PROMPT_VERSION = 4;
 const SUMMARY_GAZE_GUIDANCE = `##总结视角约束
 - 总结必须遵循女性凝视与女本位叙事：尊重女性主体性、欲望与选择，不客体化、矮化弱化女性。
 - 男性角色总结应突出尊重、共情、脆弱与情感坦诚，不写成征服者、拯救者、支配者或猎手。
@@ -102,8 +102,8 @@ const defaultGlobalSettings = Object.freeze({
         '',
         '<plot>',
         '以自然语言用第三人称客观梳理总结本轮演出剧情 (200 token)，必须包含：用户输入内容、关键事件/情节进展、重要互动、情绪变化、特殊世界规则发现或剧情推进。',
-        '{{user}}：${1句最关键的对话(可无)}',
-        '主要角色：${1句最关键的对话(可无)}',
+        '{{user}}：${本次正文中1句最重要台词(可无)}',
+        '主要角色：${本次正文中1句最重要台词(可无)}',
         '</plot>',
         '',
         '<psychology>',
@@ -114,7 +114,7 @@ const defaultGlobalSettings = Object.freeze({
         '</psychology>',
         '',
         '<list>',
-        '根据非{{user}}角色的人设、职业背景、生活作息等，简要列出角色当天日程表与行动安排（至就寝时间），随时间推进进行check',
+        '根据非{{user}}角色的人设、职业背景、生活作息等，简要列出角色当天全部日程表与行动安排（至就寝），随时间推进进行check',
         '',
         '格式:',
         '${日期}-${角色名}',
@@ -899,7 +899,17 @@ async function testSecondaryApiConnection() {
 
 function getGlobalFunction(name) {
   const context = getContextSafe();
-  return globalThis[name] || context?.[name] || null;
+  return globalThis[name] || globalThis.TavernHelper?.[name] || context?.[name] || null;
+}
+
+function notifySummary(type, message, title = '自动总结') {
+  const toastr = globalThis.toastr || globalThis.parent?.toastr;
+  if (toastr && typeof toastr[type] === 'function') {
+    toastr[type](message, title);
+    return;
+  }
+  const logger = type === 'error' ? console.error : console.info;
+  logger(`[蜃灵助手] ${title}：${message}`);
 }
 
 function normalizeChatMessage(message, index = 0) {
@@ -958,19 +968,28 @@ function isLatestMessage(messageId) {
   return Number(messageId) === getLastMessageId();
 }
 
+async function refreshChatMessageDisplay(messageId) {
+  const refreshOneMessage = getGlobalFunction('refreshOneMessage');
+  if (typeof refreshOneMessage === 'function') {
+    await refreshOneMessage(Number(messageId));
+  }
+}
+
 async function setChatMessageContent(messageId, message) {
+  const numericMessageId = Number(messageId);
   const setChatMessages = getGlobalFunction('setChatMessages');
   if (typeof setChatMessages === 'function') {
-    await setChatMessages([{ message_id: messageId, message }], { refresh: 'affected' });
+    await setChatMessages([{ message_id: numericMessageId, message }], { refresh: 'affected' });
+    await refreshChatMessageDisplay(numericMessageId);
     return;
   }
 
   const context = getContextSafe();
-  if (Array.isArray(context?.chat) && context.chat[messageId]) {
-    if ('mes' in context.chat[messageId]) {
-      context.chat[messageId].mes = message;
+  if (Array.isArray(context?.chat) && context.chat[numericMessageId]) {
+    if ('mes' in context.chat[numericMessageId]) {
+      context.chat[numericMessageId].mes = message;
     } else {
-      context.chat[messageId].message = message;
+      context.chat[numericMessageId].message = message;
     }
     const saveChatConditional = getGlobalFunction('saveChatConditional');
     if (typeof saveChatConditional === 'function') {
@@ -978,6 +997,7 @@ async function setChatMessageContent(messageId, message) {
     } else if (typeof context.saveChat === 'function') {
       await context.saveChat();
     }
+    await refreshChatMessageDisplay(numericMessageId);
     return;
   }
 
@@ -1389,6 +1409,7 @@ async function processAutoSummary(messageId, expectedFingerprint) {
   chatState.summary.runningTask = 'memory';
   chatState.summary.lastError = '';
   saveChatState();
+  notifySummary('info', '小总结生成中。');
 
   try {
     const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
@@ -1416,6 +1437,7 @@ async function processAutoSummary(messageId, expectedFingerprint) {
       chatState.summary.smallSummaryCount += 1;
     }
     saveChatState();
+    notifySummary('success', `已为第 ${Number(messageId)} 楼写入小总结。`);
 
     if (panelRoot?.classList.contains('slx-panel-open')) {
       renderFloatingPanel({
@@ -1428,6 +1450,7 @@ async function processAutoSummary(messageId, expectedFingerprint) {
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = error.message || String(error);
     saveChatState();
+    notifySummary('error', error.message || String(error));
     console.error('[蜃灵助手] 自动小总结失败。', error);
   }
 }
