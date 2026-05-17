@@ -1,9 +1,13 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.5.0';
+const PLUGIN_VERSION = '0.5.2';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
+const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
+const GRAND_MEMORY_BLOCK_RE = /<grand_memory>[\s\S]*?<\/grand_memory>/i;
+const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
+const SUMMARY_EVENT_DELAY_MS = 700;
 
 const MODULES = [
   { id: 'summary', icon: '🫧', shortTitle: '总结', title: '自动总结', desc: '副 API、小总结、大总结与归档管理。' },
@@ -138,8 +142,10 @@ const defaultChatState = Object.freeze({
     smallSummaryCount: 0,
     memoryCountSinceArchive: 0,
     memoryCountedMessageIds: [],
+    processedMessageFingerprints: {},
     lastSummaryMessageId: null,
     lastGrandSummaryMessageId: null,
+    lastArchivedMessageId: null,
     lastSummaryAt: '',
     lastArchiveId: '',
     archiveRecords: [],
@@ -167,6 +173,10 @@ const defaultChatState = Object.freeze({
 
 let panelRoot = null;
 let communicationLogOpen = false;
+const summaryEventStops = [];
+const summaryProcessTimers = new Map();
+const summaryWriteIgnoreIds = new Set();
+let summaryEventsRegistered = false;
 
 function syncViewportSize() {
   const viewportHeight = globalThis.visualViewport?.height || globalThis.innerHeight;
@@ -231,7 +241,7 @@ function parseTagList(value) {
 }
 
 function formatTagList(value) {
-  return parseTagList(value).join('\n');
+  return parseTagList(value).join(', ');
 }
 
 function getSummarySourceTags(summary) {
@@ -847,6 +857,619 @@ async function testSecondaryApiConnection() {
   }
 }
 
+function getGlobalFunction(name) {
+  const context = getContextSafe();
+  return globalThis[name] || context?.[name] || null;
+}
+
+function normalizeChatMessage(message, index = 0) {
+  if (!message) return null;
+  const messageId = Number(message.message_id ?? message.id ?? index);
+  const rawMessage = message.message ?? message.mes ?? message.content ?? '';
+  const role = message.role || (message.is_user ? 'user' : 'assistant');
+  return {
+    ...message,
+    message_id: Number.isFinite(messageId) ? messageId : index,
+    role,
+    message: String(rawMessage || ''),
+    is_hidden: Boolean(message.is_hidden ?? message.is_system ?? message.extra?.isSmallSys),
+  };
+}
+
+function getChatMessagesSafe(range, options = {}) {
+  const getChatMessages = getGlobalFunction('getChatMessages');
+  if (typeof getChatMessages === 'function') {
+    try {
+      const getLastMessageIdFunction = getGlobalFunction('getLastMessageId');
+      const actualRange = range === undefined && typeof getLastMessageIdFunction === 'function'
+        ? `0-${Number(getLastMessageIdFunction())}`
+        : range;
+      if (actualRange === undefined) throw new Error('未提供聊天范围，转用 context.chat。');
+      const result = getChatMessages(actualRange, options);
+      return Array.isArray(result) ? result.map(normalizeChatMessage).filter(Boolean) : [];
+    } catch (error) {
+      console.warn('[蜃灵助手] getChatMessages 调用失败，尝试读取 context.chat。', error);
+    }
+  }
+
+  const context = getContextSafe();
+  const chat = Array.isArray(context?.chat) ? context.chat : [];
+  const normalized = chat.map((message, index) => normalizeChatMessage(message, index)).filter(Boolean);
+  if (typeof range === 'number') {
+    return normalized.filter(message => message.message_id === range);
+  }
+  if (typeof range === 'string' && /^\d+-\d+$/.test(range)) {
+    const [from, to] = range.split('-').map(Number);
+    return normalized.filter(message => message.message_id >= from && message.message_id <= to);
+  }
+  return normalized;
+}
+
+function getChatMessageById(messageId) {
+  return getChatMessagesSafe(Number(messageId), { hide_state: 'all' })[0] || null;
+}
+
+function getLastMessageId() {
+  const messages = getChatMessagesSafe(undefined, { hide_state: 'all' });
+  return messages.length ? Math.max(...messages.map(message => message.message_id)) : -1;
+}
+
+function isLatestMessage(messageId) {
+  return Number(messageId) === getLastMessageId();
+}
+
+async function setChatMessageContent(messageId, message) {
+  const setChatMessages = getGlobalFunction('setChatMessages');
+  if (typeof setChatMessages === 'function') {
+    await setChatMessages([{ message_id: messageId, message }], { refresh: 'affected' });
+    return;
+  }
+
+  const context = getContextSafe();
+  if (Array.isArray(context?.chat) && context.chat[messageId]) {
+    if ('mes' in context.chat[messageId]) {
+      context.chat[messageId].mes = message;
+    } else {
+      context.chat[messageId].message = message;
+    }
+    const saveChatConditional = getGlobalFunction('saveChatConditional');
+    if (typeof saveChatConditional === 'function') {
+      await saveChatConditional();
+    } else if (typeof context.saveChat === 'function') {
+      await context.saveChat();
+    }
+    return;
+  }
+
+  throw new Error('当前环境未发现 setChatMessages，无法写回聊天楼层。');
+}
+
+function createSimpleFingerprint(content) {
+  let hash = 0;
+  const text = String(content || '');
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash << 5) - hash + text.charCodeAt(index);
+    hash |= 0;
+  }
+  return `${text.length}:${hash}`;
+}
+
+function stripMemoryBlock(content) {
+  return String(content || '').replace(MEMORY_BLOCK_RE, '').trim();
+}
+
+function stripListBlocks(content) {
+  return String(content || '').replace(LIST_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function extractMemoryBlocks(content) {
+  return Array.from(String(content || '').matchAll(/<memory>[\s\S]*?<\/memory>/gi)).map(match => match[0].trim());
+}
+
+function normalizeMemoryBlock(content) {
+  const matched = String(content || '').match(/<memory>[\s\S]*?<\/memory>/i);
+  if (matched) return matched[0].trim();
+  return `<memory>\n${String(content || '').trim()}\n</memory>`;
+}
+
+function shouldRunAutoSummary(settings = getGlobalSettings()) {
+  return Boolean(settings.enabled && getSummarySettings(settings).enabled);
+}
+
+function hasMessageBeenCountedForMemory(chatState, messageId) {
+  return (
+    chatState.summary.memoryCountedMessageIds.includes(messageId) ||
+    Object.hasOwn(chatState.summary.processedMessageFingerprints || {}, String(messageId))
+  );
+}
+
+function collectPriorMemoriesForSummary(messageId) {
+  if (!Number.isFinite(Number(messageId)) || Number(messageId) <= 0) return [];
+
+  const chatState = getChatState();
+  const allMessages = getChatMessagesSafe(`0-${Number(messageId) - 1}`, { hide_state: 'all' });
+  const latestArchiveBoundary = [...(chatState.summary.archiveRecords || [])]
+    .filter(record => Number(record.summaryMessageId) < Number(messageId))
+    .at(-1)?.summaryMessageId ?? -1;
+  const latestGrandMemoryMessage = [...allMessages]
+    .reverse()
+    .find(message => message.role === 'assistant' && GRAND_MEMORY_BLOCK_RE.test(message.message)) || null;
+  const latestGrandMemory = latestGrandMemoryMessage?.message.match(GRAND_MEMORY_BLOCK_RE)?.[0]?.trim() || '';
+  const archiveBoundary = Math.max(Number(latestArchiveBoundary), Number(latestGrandMemoryMessage?.message_id ?? -1));
+  const allPriorMemories = allMessages
+    .filter(message => (
+      message.message_id > archiveBoundary &&
+      message.role === 'assistant' &&
+      !GRAND_MEMORY_BLOCK_RE.test(message.message)
+    ))
+    .flatMap(message => extractMemoryBlocks(message.message));
+
+  const latestMemories = allPriorMemories.slice(-4);
+  const priorMemories = latestMemories.map((memory, index) => (
+    index < latestMemories.length - 1 ? stripListBlocks(memory) : memory
+  ));
+  return latestGrandMemory && allPriorMemories.length < 4 ? [latestGrandMemory, ...priorMemories] : priorMemories;
+}
+
+function buildMemorySummaryPrompt(content, priorMemories = [], summary = getSummarySettings()) {
+  const priorSection = priorMemories.length > 0
+    ? `\n\n【过往梦境档案（编号勿重复）】\n${priorMemories.join('\n\n')}`
+    : '';
+  return `蜃灵处于梦境档案编制状态。\n\n${summary.promptTemplate}\n${priorSection}\n\n现在只处理以下最新正文。请不要续写剧情，不要输出 <content>，严格按照格式要求输出完整的 <memory>...</memory>。\n\n【最新正文】\n${content}`;
+}
+
+function getOpenAiResponseContent(data) {
+  const firstChoice = data?.choices?.[0];
+  const messageContent = firstChoice?.message?.content;
+  if (typeof messageContent === 'string') return messageContent;
+  if (Array.isArray(messageContent)) {
+    return messageContent.map(item => (typeof item === 'string' ? item : item?.text || '')).join('');
+  }
+  if (typeof firstChoice?.text === 'string') return firstChoice.text;
+  return '';
+}
+
+async function generateSummaryMemory(prompt, { type = '自动小总结' } = {}) {
+  const settings = getGlobalSettings();
+  const api = getApiSettings(settings);
+  const startedAt = performance.now();
+  const messages = [{ role: 'user', content: prompt }];
+
+  if (api.mode === 'main_api') {
+    const requestBody = {
+      user_input: prompt,
+      ordered_prompts: [],
+      should_silence: true,
+      max_chat_history: 0,
+    };
+    try {
+      const generateRaw = getGenerateRawFunction();
+      if (typeof generateRaw !== 'function') {
+        throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
+      }
+      const result = await generateRaw(requestBody);
+      addCommunicationLog({
+        moduleName: '自动总结 / 主 API',
+        taskType: type,
+        status: 'success',
+        startedAt: formatTimestamp(),
+        durationMs: Math.round(performance.now() - startedAt),
+        profileName: '酒馆当前连接',
+        model: '酒馆主 API',
+        url: '酒馆当前连接',
+        messages,
+        requestBody,
+        responseText: result,
+        parsedResult: result,
+      });
+      return String(result || '').trim();
+    } catch (error) {
+      addCommunicationLog({
+        moduleName: '自动总结 / 主 API',
+        taskType: type,
+        status: 'failure',
+        startedAt: formatTimestamp(),
+        durationMs: Math.round(performance.now() - startedAt),
+        profileName: '酒馆当前连接',
+        model: '酒馆主 API',
+        url: '酒馆当前连接',
+        messages,
+        requestBody,
+        errorStack: error.stack || error.message || error,
+      });
+      throw error;
+    }
+  }
+
+  const profile = getActiveApiProfile(settings);
+  let url = '';
+  let requestBody = null;
+  try {
+    url = buildApiUrl(profile);
+    if (!String(profile.model || '').trim()) {
+      throw new Error('请先在设置页选择总结模型。');
+    }
+    requestBody = {
+      model: String(profile.model).trim(),
+      messages,
+      stream: false,
+    };
+    const headers = { 'Content-Type': 'application/json' };
+    if (String(profile.apiKey || '').trim()) {
+      headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
+    }
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestBody),
+    });
+    const responseText = await response.text();
+    let parsedResult = null;
+    try {
+      parsedResult = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      parsedResult = null;
+    }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} ${response.statusText}: ${responseText}`);
+    }
+    const content = getOpenAiResponseContent(parsedResult).trim();
+    if (!content) {
+      throw new Error(`接口返回成功，但没有读取到回复正文：${responseText}`);
+    }
+    addCommunicationLog({
+      moduleName: '自动总结 / 副 API',
+      taskType: type,
+      status: 'success',
+      startedAt: formatTimestamp(),
+      durationMs: Math.round(performance.now() - startedAt),
+      profileName: profile.name,
+      model: profile.model,
+      url,
+      httpStatus: response.status,
+      messages,
+      requestBody,
+      responseText,
+      parsedResult: content,
+    });
+    return content;
+  } catch (error) {
+    addCommunicationLog({
+      moduleName: '自动总结 / 副 API',
+      taskType: type,
+      status: 'failure',
+      startedAt: formatTimestamp(),
+      durationMs: Math.round(performance.now() - startedAt),
+      profileName: profile.name,
+      model: profile.model,
+      url,
+      messages,
+      requestBody,
+      errorStack: error.stack || error.message || error,
+    });
+    throw error;
+  }
+}
+
+function createMessageIdRange(from, to) {
+  const start = Number(from);
+  const end = Number(to);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return [];
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+}
+
+function parseGrandMemoryRange(content) {
+  const match = String(content || '').match(/编号范围[:：]\s*(\d+)\s*[-~—–]\s*(\d+)/);
+  if (!match) return null;
+  const archiveFrom = Number(match[1]);
+  const archiveTo = Number(match[2]);
+  if (!Number.isFinite(archiveFrom) || !Number.isFinite(archiveTo) || archiveFrom > archiveTo) return null;
+  return { archiveFrom, archiveTo };
+}
+
+function hasMemoryBlock(content) {
+  return /<memory>[\s\S]*?<\/memory>/i.test(String(content || ''));
+}
+
+function createScannedSummaryState(baseSummary = getChatState().summary) {
+  const summarySettings = getSummarySettings();
+  const messages = getChatMessagesSafe(undefined, { hide_state: 'all' });
+  const messagesById = new Map(messages.map(message => [message.message_id, message]));
+  const validBaseRecords = (baseSummary.archiveRecords || []).filter(record => {
+    const message = messagesById.get(Number(record.summaryMessageId));
+    return Boolean(message && GRAND_MEMORY_BLOCK_RE.test(message.message));
+  });
+  const recordsBySummaryId = new Map(validBaseRecords.map(record => [Number(record.summaryMessageId), record]));
+  const grandMemoryMessages = messages.filter(
+    message => message.role === 'assistant' && GRAND_MEMORY_BLOCK_RE.test(message.message),
+  );
+
+  for (const [index, message] of grandMemoryMessages.entries()) {
+    const range = parseGrandMemoryRange(message.message);
+    const positionalArchiveFrom = index === 0 ? 0 : grandMemoryMessages[index - 1].message_id + 1;
+    const positionalArchiveTo = message.message_id - 1;
+    const archiveFrom = positionalArchiveFrom <= positionalArchiveTo ? positionalArchiveFrom : range?.archiveFrom;
+    const archiveTo = positionalArchiveFrom <= positionalArchiveTo ? positionalArchiveTo : range?.archiveTo;
+    if (archiveFrom === undefined || archiveTo === undefined || archiveFrom > archiveTo) continue;
+    const baseRecord = recordsBySummaryId.get(message.message_id);
+    recordsBySummaryId.set(message.message_id, {
+      id: baseRecord?.id || `${message.message_id}-scanned`,
+      summaryMessageId: message.message_id,
+      archiveFrom,
+      archiveTo,
+      createdAt: baseRecord?.createdAt || Date.now(),
+    });
+  }
+
+  const archiveRecords = [...recordsBySummaryId.values()].sort((a, b) => a.summaryMessageId - b.summaryMessageId);
+  const latestArchiveRecord = archiveRecords.at(-1) || null;
+  const latestGrandMemoryMessage = [...messages]
+    .reverse()
+    .find(message => message.role === 'assistant' && GRAND_MEMORY_BLOCK_RE.test(message.message)) || null;
+  const lastGrandSummaryMessageId = latestArchiveRecord?.summaryMessageId ?? latestGrandMemoryMessage?.message_id ?? null;
+  const archiveFloorBoundary = lastGrandSummaryMessageId ?? 0;
+
+  const countedMessages = messages.filter(message => (
+    message.message_id > archiveFloorBoundary &&
+    message.role === 'assistant' &&
+    !GRAND_MEMORY_BLOCK_RE.test(message.message) &&
+    hasMemoryBlock(message.message)
+  ));
+  const memoryCountedMessageIds = countedMessages.map(message => message.message_id);
+  const processedMessageFingerprints = countedMessages.reduce((fingerprints, message) => {
+    const body = stripMemoryBlock(message.message);
+    const summaryBody = extractSummarySourceContent(body, summarySettings) || body;
+    fingerprints[message.message_id] = createSimpleFingerprint(summaryBody);
+    return fingerprints;
+  }, {});
+  const allMemoryMessageIds = messages
+    .filter(message => message.role === 'assistant' && !GRAND_MEMORY_BLOCK_RE.test(message.message) && hasMemoryBlock(message.message))
+    .map(message => message.message_id);
+
+  return {
+    memoryCountSinceArchive: memoryCountedMessageIds.length,
+    memoryCountedMessageIds,
+    processedMessageFingerprints,
+    smallSummaryCount: allMemoryMessageIds.length,
+    lastSummaryMessageId: memoryCountedMessageIds.at(-1) ?? null,
+    lastGrandSummaryMessageId,
+    lastArchivedMessageId: latestArchiveRecord?.archiveTo ?? baseSummary.lastArchivedMessageId ?? null,
+    archiveRecords,
+  };
+}
+
+function scanExistingSummaryState() {
+  const chatState = getChatState();
+  const scannedState = createScannedSummaryState(chatState.summary);
+  chatState.summary = {
+    ...chatState.summary,
+    ...scannedState,
+  };
+  saveChatState();
+  return chatState;
+}
+
+function formatMessageIdList(ids) {
+  return ids.length > 10 ? `${ids.slice(0, 10).join('、')} 等 ${ids.length} 楼` : ids.join('、');
+}
+
+function createArchiveRecordView(record) {
+  const totalIds = createMessageIdRange(record.archiveFrom, record.archiveTo);
+  const hiddenIds = [];
+  const visibleIds = [];
+  const missingIds = [];
+
+  totalIds.forEach(messageId => {
+    const message = getChatMessageById(messageId);
+    if (!message) {
+      missingIds.push(messageId);
+    } else if (message.is_hidden) {
+      hiddenIds.push(messageId);
+    } else {
+      visibleIds.push(messageId);
+    }
+  });
+
+  const summaryMessage = getChatMessageById(record.summaryMessageId);
+  const summaryMissing = !summaryMessage;
+  const summaryHidden = Boolean(summaryMessage?.is_hidden);
+  const summaryStatus = summaryMissing ? '大总结缺失' : summaryHidden ? '大总结被隐藏' : '大总结显示中';
+
+  return {
+    record,
+    totalIds,
+    hiddenIds,
+    visibleIds,
+    missingIds,
+    summaryHidden,
+    summaryMissing,
+    summaryStatus,
+  };
+}
+
+function renderArchiveRecordView(view) {
+  const warnClass = view.summaryHidden || view.summaryMissing ? ' slx-archive-pill-warn' : '';
+  return `
+    <div class="slx-archive-item">
+      <div class="slx-archive-top">
+        <div class="slx-archive-title">
+          第 ${escapeHtml(view.record.summaryMessageId)} 楼大总结
+          <span>归档 ${escapeHtml(view.record.archiveFrom)}-${escapeHtml(view.record.archiveTo)}</span>
+        </div>
+      </div>
+      <div class="slx-archive-statline">
+        <span class="slx-archive-pill">隐藏 ${view.hiddenIds.length}/${view.totalIds.length}</span>
+        <span class="slx-archive-pill">显示 ${view.visibleIds.length}</span>
+        ${view.missingIds.length ? `<span class="slx-archive-pill slx-archive-pill-warn">缺失 ${view.missingIds.length}</span>` : ''}
+        <span class="slx-archive-pill${warnClass}">${escapeHtml(view.summaryStatus)}</span>
+      </div>
+      ${view.visibleIds.length ? `<div class="slx-archive-detail">例外显示楼层：${escapeHtml(formatMessageIdList(view.visibleIds))}</div>` : ''}
+      ${view.missingIds.length ? `<div class="slx-archive-detail slx-archive-warn">未找到楼层：${escapeHtml(formatMessageIdList(view.missingIds))}</div>` : ''}
+    </div>
+  `;
+}
+
+function getAutoSummaryFingerprint(messageId) {
+  const chatMessage = getChatMessageById(messageId);
+  if (!chatMessage || chatMessage.role !== 'assistant' || chatMessage.is_hidden) return null;
+  if (GRAND_MEMORY_BLOCK_RE.test(chatMessage.message)) return null;
+  const body = extractSummarySourceContent(stripMemoryBlock(chatMessage.message));
+  if (!body) return null;
+  return createSimpleFingerprint(body);
+}
+
+async function processAutoSummary(messageId, expectedFingerprint) {
+  const settings = getGlobalSettings();
+  const summary = getSummarySettings(settings);
+  const chatState = getChatState();
+  if (!shouldRunAutoSummary(settings)) return;
+  if (summaryWriteIgnoreIds.has(Number(messageId))) return;
+  if (chatState.summary.runningTask !== 'none') return;
+  if (!isLatestMessage(Number(messageId))) return;
+
+  const chatMessage = getChatMessageById(Number(messageId));
+  if (!chatMessage || chatMessage.role !== 'assistant' || chatMessage.is_hidden) return;
+  if (GRAND_MEMORY_BLOCK_RE.test(chatMessage.message)) return;
+
+  const body = stripMemoryBlock(chatMessage.message);
+  const summaryBody = extractSummarySourceContent(body, summary);
+  if (!summaryBody) return;
+
+  const fingerprint = createSimpleFingerprint(summaryBody);
+  if (expectedFingerprint && fingerprint !== expectedFingerprint) return;
+  if ((chatState.summary.processedMessageFingerprints || {})[messageId] === fingerprint) return;
+
+  chatState.summary.runningTask = 'memory';
+  chatState.summary.lastError = '';
+  saveChatState();
+
+  try {
+    const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
+    const prompt = buildMemorySummaryPrompt(summaryBody, priorMemories, summary);
+    const result = await generateSummaryMemory(prompt, { type: '自动小总结' });
+    const memory = normalizeMemoryBlock(result);
+    const nextMessage = `${body}\n\n${memory}`;
+
+    summaryWriteIgnoreIds.add(Number(messageId));
+    await setChatMessageContent(Number(messageId), nextMessage);
+    window.setTimeout(() => summaryWriteIgnoreIds.delete(Number(messageId)), 1500);
+
+    const alreadyCounted = hasMessageBeenCountedForMemory(chatState, Number(messageId));
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastSummaryMessageId = Number(messageId);
+    chatState.summary.lastSummaryAt = formatTimestamp();
+    chatState.summary.lastError = '';
+    chatState.summary.processedMessageFingerprints = {
+      ...(chatState.summary.processedMessageFingerprints || {}),
+      [messageId]: fingerprint,
+    };
+    if (!alreadyCounted) {
+      chatState.summary.memoryCountedMessageIds = [...chatState.summary.memoryCountedMessageIds, Number(messageId)];
+      chatState.summary.memoryCountSinceArchive += 1;
+      chatState.summary.smallSummaryCount += 1;
+    }
+    saveChatState();
+
+    if (panelRoot?.classList.contains('slx-panel-open')) {
+      renderFloatingPanel({
+        moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0,
+        detailScrollTop: panelRoot.querySelector('.slx-detail')?.scrollTop ?? 0,
+      });
+    }
+  } catch (error) {
+    summaryWriteIgnoreIds.delete(Number(messageId));
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastError = error.message || String(error);
+    saveChatState();
+    console.error('[蜃灵助手] 自动小总结失败。', error);
+  }
+}
+
+function scheduleAutoSummary(messageId) {
+  const numericMessageId = Number(messageId);
+  if (!Number.isFinite(numericMessageId)) return;
+  if (!shouldRunAutoSummary()) return;
+  if (summaryWriteIgnoreIds.has(numericMessageId)) return;
+  if (!isLatestMessage(numericMessageId)) return;
+
+  const expectedFingerprint = getAutoSummaryFingerprint(numericMessageId);
+  if (!expectedFingerprint) return;
+
+  const oldTimer = summaryProcessTimers.get(numericMessageId);
+  if (oldTimer !== undefined) {
+    window.clearTimeout(oldTimer);
+  }
+  const timer = window.setTimeout(() => {
+    summaryProcessTimers.delete(numericMessageId);
+    void processAutoSummary(numericMessageId, expectedFingerprint);
+  }, SUMMARY_EVENT_DELAY_MS);
+  summaryProcessTimers.set(numericMessageId, timer);
+}
+
+function getTavernEventsSafe() {
+  const context = getContextSafe();
+  return globalThis.tavern_events || context?.tavern_events || context?.event_types || {};
+}
+
+function registerTavernEvent(eventName, handler) {
+  if (!eventName) return null;
+  const eventOn = getGlobalFunction('eventOn');
+  if (typeof eventOn === 'function') {
+    return eventOn(eventName, handler);
+  }
+
+  const context = getContextSafe();
+  if (context?.eventSource?.on) {
+    context.eventSource.on(eventName, handler);
+    return {
+      stop: () => context.eventSource.off?.(eventName, handler),
+    };
+  }
+  return null;
+}
+
+function resolveEventMessageId(payload) {
+  if (Number.isFinite(Number(payload))) return Number(payload);
+  if (payload && typeof payload === 'object') {
+    const candidate = payload.message_id ?? payload.id ?? payload.messageId;
+    if (Number.isFinite(Number(candidate))) return Number(candidate);
+  }
+  const latestId = getLastMessageId();
+  return latestId >= 0 ? latestId : null;
+}
+
+function registerAutoSummaryEvents() {
+  if (summaryEventsRegistered) return;
+  const tavernEvents = getTavernEventsSafe();
+  const eventNames = [tavernEvents.MESSAGE_RECEIVED, tavernEvents.CHARACTER_MESSAGE_RENDERED].filter(Boolean);
+  if (eventNames.length === 0) {
+    console.warn('[蜃灵助手] 未发现 SillyTavern 事件接口，自动小总结暂不能监听新楼层。');
+    return;
+  }
+
+  const handleMessage = payload => {
+    const messageId = resolveEventMessageId(payload);
+    if (messageId !== null) scheduleAutoSummary(messageId);
+  };
+  const handleChatChanged = () => {
+    summaryProcessTimers.forEach(timer => window.clearTimeout(timer));
+    summaryProcessTimers.clear();
+    scanExistingSummaryState();
+  };
+
+  eventNames.forEach(eventName => {
+    const stop = registerTavernEvent(eventName, handleMessage);
+    if (stop) summaryEventStops.push(stop);
+  });
+  const chatChangedStop = registerTavernEvent(tavernEvents.CHAT_CHANGED, handleChatChanged);
+  if (chatChangedStop) summaryEventStops.push(chatChangedStop);
+
+  summaryEventsRegistered = summaryEventStops.length > 0;
+  if (!summaryEventsRegistered) {
+    console.warn('[蜃灵助手] 找到了事件名称，但未能注册监听器，自动小总结暂不会运行。');
+  }
+}
+
 function getContextSafe() {
   return globalThis.SillyTavern?.getContext?.() ?? null;
 }
@@ -1125,9 +1748,9 @@ function renderSummarySettingsPanel(settings, chatState) {
   const grandInterval = Math.max(1, Number(summary.grandMemoryInterval) || 6);
   const memoryCount = Number(chatState.summary.memoryCountSinceArchive ?? chatState.summary.smallSummaryCount ?? 0);
   const archiveRecords = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [];
-  const latestArchiveRecord = archiveRecords[0] || archiveRecords.at(-1);
+  const latestArchiveRecord = archiveRecords.at(-1) || null;
   const latestArchiveLabel = latestArchiveRecord
-    ? `第 ${latestArchiveRecord.summaryMessageId ?? '?'} 楼 / ${latestArchiveRecord.archiveFrom ?? '?'}-${latestArchiveRecord.archiveTo ?? '?'}`
+    ? `第 ${latestArchiveRecord.summaryMessageId ?? '?'} 楼 | 隐藏 ${latestArchiveRecord.archiveFrom ?? '?'}-${latestArchiveRecord.archiveTo ?? '?'}`
     : '无';
   const latestLog = settings.communicationLog?.entries?.[0];
   const latestLogLabel = latestLog ? `${latestLog.status === 'failure' ? '失败' : '成功'} · ${latestLog.startedAt}` : '无';
@@ -1140,6 +1763,7 @@ function renderSummarySettingsPanel(settings, chatState) {
   const runningLabel = runningTaskLabels[chatState.summary.runningTask] || chatState.summary.runningTask || '空闲';
   const presetMemoryLabel = summary.enabled ? '自动总结接管中' : '预设小总结接管中';
   const sourceTags = getSummarySourceTags(summary);
+  const archiveRecordViews = [...archiveRecords].reverse().map(createArchiveRecordView);
 
   return `
     <div class="slx-detail-card slx-summary-settings-card">
@@ -1176,13 +1800,13 @@ function renderSummarySettingsPanel(settings, chatState) {
       <div class="slx-form-grid">
         <label class="slx-field slx-field-wide">
           <span>纳入正文标签</span>
-          <textarea rows="3" data-slx-summary-tag-field="includeTags" placeholder="content">${escapeHtml(formatTagList(sourceTags.includeTags))}</textarea>
-          <small>例如 content。留空时会使用排除后的全文。</small>
+          <input type="text" data-slx-summary-tag-field="includeTags" value="${escapeHtml(formatTagList(sourceTags.includeTags))}" placeholder="content" />
+          <small>用逗号分隔，例如 content。留空时会使用排除后的全文。</small>
         </label>
         <label class="slx-field slx-field-wide">
           <span>排除正文杂讯标签</span>
-          <textarea rows="4" data-slx-summary-tag-field="excludeTags" placeholder="thinking&#10;wave">${escapeHtml(formatTagList(sourceTags.excludeTags))}</textarea>
-          <small>例如 thinking、wave。不要默认排除 memory / grand_memory，它们是归档素材。</small>
+          <input type="text" data-slx-summary-tag-field="excludeTags" value="${escapeHtml(formatTagList(sourceTags.excludeTags))}" placeholder="thinking, wave" />
+          <small>用逗号分隔，例如 thinking, wave。不要默认排除 memory / grand_memory。</small>
         </label>
       </div>
       <div class="slx-tag-preview">
@@ -1199,6 +1823,7 @@ function renderSummarySettingsPanel(settings, chatState) {
       ${renderDiagnosticLine('小总结累计', `${memoryCount} / ${grandInterval}`)}
       ${renderDiagnosticLine('预设小总结', presetMemoryLabel)}
       ${renderDiagnosticLine('当前启用模型', activeModel)}
+      ${renderDiagnosticLine('上次归档', chatState.summary.lastArchivedMessageId ?? '无')}
       ${renderDiagnosticLine('上次小总结楼', chatState.summary.lastSummaryMessageId ?? '无')}
       ${renderDiagnosticLine('上次大总结楼', chatState.summary.lastGrandSummaryMessageId ?? '无')}
       ${renderDiagnosticLine('归档记录', `${archiveRecords.length} 条`)}
@@ -1221,9 +1846,9 @@ function renderSummarySettingsPanel(settings, chatState) {
           <div class="slx-detail-title">归档管理器</div>
           <p>查看大总结楼层与当前隐藏状态，可直接编辑大总结正文。</p>
         </div>
-        <button class="slx-mini-action-btn" type="button" disabled title="运行逻辑将在 5B 接入">↻</button>
+        <button class="slx-mini-action-btn" type="button" data-slx-refresh-archive-scan title="刷新归档状态">↻</button>
       </div>
-      <p>${archiveRecords.length ? '归档记录会在这里按楼层显示。' : '暂无归档记录。'}</p>
+      ${archiveRecordViews.length ? archiveRecordViews.map(renderArchiveRecordView).join('') : '<p>暂无归档记录。</p>'}
     </div>
 
     <div class="slx-detail-card slx-muted-card">
@@ -1248,8 +1873,8 @@ function renderSummarySettingsPanel(settings, chatState) {
     </div>
 
     <div class="slx-detail-card slx-muted-card">
-      <div class="slx-detail-title">5A 阶段边界</div>
-      <p>界面与状态结构先按蜃灵切换脚本对齐。后续接入时会先扫描既有蜃灵 &lt;memory&gt; 小总结并计入累积；没有可识别小总结的旧聊天，再用手动大总结补档并隐藏前文。</p>
+      <div class="slx-detail-title">5B 阶段边界</div>
+      <p>已接入自动小总结监听：新 AI 楼层会读取前 4 条 &lt;memory&gt; 与当前正文，调用当前启用 API 写回本楼 &lt;memory&gt;。自动大总结、0楼补档和指定楼层重写仍留到后续步骤。</p>
     </div>
   `;
 }
@@ -1554,7 +2179,7 @@ function renderFloatingPanel(options = {}) {
     });
 
     input.addEventListener('keydown', event => {
-      if (event.key !== 'Enter' || !event.ctrlKey) return;
+      if (event.key !== 'Enter') return;
       event.preventDefault();
       if (syncSummaryTagFieldToSettings(input)) {
         input.blur();
@@ -1570,6 +2195,11 @@ function renderFloatingPanel(options = {}) {
       excludeTags: [...DEFAULT_SUMMARY_EXCLUDE_TAGS],
     };
     saveGlobalSettings();
+    rerenderSummaryPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-refresh-archive-scan]')?.addEventListener('click', () => {
+    scanExistingSummaryState();
     rerenderSummaryPanel();
   });
 
@@ -1632,6 +2262,8 @@ function openFloatingPanel() {
   settings.ui.lastOpenedAt = formatTimestamp();
   saveGlobalSettings();
   syncViewportSize();
+  scanExistingSummaryState();
+  registerAutoSummaryEvents();
   renderFloatingPanel();
   document.body.classList.add('slx-panel-open-lock');
   panelRoot?.classList.add('slx-panel-open');
@@ -1675,7 +2307,7 @@ function renderSettingsPanel() {
             <span>第三方插件已加载</span>
           </div>
           <div class="shenling-assistant-title">蜃灵助手</div>
-          <div class="shenling-assistant-desc">独立插件项目空壳。当前用于验证主面板、模块导航和设置存储。</div>
+          <div class="shenling-assistant-desc">独立插件项目。当前已接入设置、通讯日志、副 API 配置与自动小总结外壳。</div>
           <button id="shenling-assistant-open" class="shenling-assistant-open-btn" type="button">
             <span>打开蜃灵助手</span>
             <span>›</span>
@@ -1717,6 +2349,8 @@ function init() {
   globalThis.visualViewport?.addEventListener?.('scroll', syncViewportSize, { passive: true });
   getGlobalSettings();
   getChatState();
+  scanExistingSummaryState();
+  registerAutoSummaryEvents();
   renderSettingsPanel();
 }
 
