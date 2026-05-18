@@ -1,14 +1,14 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.7.5';
+const PLUGIN_VERSION = '0.7.7';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
 const GRAND_MEMORY_BLOCK_RE = /<grand_memory>[\s\S]*?<\/grand_memory>/i;
 const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
 const SUMMARY_EVENT_DELAY_MS = 700;
-const SUMMARY_PROMPT_VERSION = 4;
+const SUMMARY_PROMPT_VERSION = 5;
 const SUMMARY_GAZE_GUIDANCE = `##总结视角约束
 - 总结必须遵循女性凝视与女本位叙事：尊重女性主体性、欲望与选择，不客体化、矮化弱化女性。
 - 男性角色总结应突出尊重、共情、脆弱与情感坦诚，不写成征服者、拯救者、支配者或猎手。
@@ -28,16 +28,44 @@ const DEFAULT_GRAND_MEMORY_TEMPLATE = `## 梦境大归档
 时间跨度：\${根据素材归纳起止时间，未知可写未明}
 
 ## 【剧情编年】
-按小总结编号或楼层顺序整理关键事件。保留时间、地点、人物、经过与重要台词回响。
+严格按时间顺序梳理所有关键剧情节点。（按剧情发展重新合并、拆分和命名节点。）
+
+### [编号段] \${事件名称}
+时空：\${时间} | \${地点}
+人物：\${在场角色}
+经过：\${关键情节与互动（约100字）}
+台词回响：
+- \${角色名}：\${最关键的1句对话}
+
+---
 
 ## 【情感轨迹】
-只记录确有连续变化的角色关系、态度与隐秘动机，不强行给每个角色写变化。
+追踪主要角色（非{{user}}）情感分层的流动与变化，只记录确有连续变化的角色关系、态度与隐秘动机，不强行给每个角色写变化。
+
+### \${角色名}
+起点 [编号X]：\${情感分层} | \${与{{user}}关系现状}
+转折：
+- [编号Y] \${触发事件} → \${情感变化}
+终点 [编号N]：\${当前情感分层} | \${关系演变方向}
+
+---
 
 ## 【世界档案】
-整理重要物品、地点、概念、承诺、规则与未解决伏笔。
+汇总各轮 database 积累的重要条目。
+
+重要物品/概念：
+- \${名称} - [首现编号] - \${作用/意义}
+
+地点图鉴：
+- \${地名} - [首现编号] - \${特性}
+
+---
 
 ## 【当前状态】
-概括归档结束时的主线进度、各方动向与下一阶段待发展方向。
+主线进度：\${currentTask 当前目标与进展}
+各方动向：
+- \${角色名}：\${长期目标推进状态} | \${当前处境}
+待发展方向：\${下一步可能展开的叙事线索}
 
 </details>
 </grand_memory>`;
