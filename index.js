@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.7.7';
+const PLUGIN_VERSION = '0.7.8';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -722,13 +722,6 @@ function renderModelOptions(profile) {
   ].join('');
 }
 
-function getApiTestMessages() {
-  return [
-    { role: 'system', content: '你是蜃灵助手的副 API 连通性测试。' },
-    { role: 'user', content: '请只回复 OK。' },
-  ];
-}
-
 function getGenerateRawFunction() {
   const context = getContextSafe();
   return globalThis.generateRaw || context?.generateRaw || null;
@@ -846,150 +839,6 @@ async function fetchSecondaryApiModels() {
     return [];
   }
 }
-async function testSecondaryApiConnection() {
-  const settings = getGlobalSettings();
-  const api = getApiSettings(settings);
-  const startedAt = performance.now();
-  const messages = getApiTestMessages();
-  let url = '';
-  let requestBody = null;
-
-  if (api.mode === 'main_api') {
-    url = '酒馆当前连接';
-    requestBody = {
-      user_input: '请只回复 OK。',
-      ordered_prompts: [{ role: 'system', content: '你是蜃灵助手的主 API 连通性测试。' }],
-      should_silence: true,
-      max_chat_history: 0,
-    };
-
-    try {
-      const generateRaw = getGenerateRawFunction();
-      if (typeof generateRaw !== 'function') {
-        throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
-      }
-      const result = await generateRaw(requestBody);
-      const durationMs = Math.round(performance.now() - startedAt);
-      api.lastTestAt = formatTimestamp();
-      api.lastTestStatus = '主 API 成功';
-      addCommunicationLog({
-        moduleName: '主 API',
-        taskType: '测试连接',
-        status: 'success',
-        startedAt: api.lastTestAt,
-        durationMs,
-        profileName: '酒馆当前连接',
-        model: '酒馆主 API',
-        url,
-        messages,
-        requestBody,
-        responseText: result,
-        parsedResult: result,
-      });
-      return true;
-    } catch (error) {
-      const durationMs = Math.round(performance.now() - startedAt);
-      api.lastTestAt = formatTimestamp();
-      api.lastTestStatus = `主 API 失败：${error.message || error}`;
-      addCommunicationLog({
-        moduleName: '主 API',
-        taskType: '测试连接',
-        status: 'failure',
-        startedAt: api.lastTestAt,
-        durationMs,
-        profileName: '酒馆当前连接',
-        model: '酒馆主 API',
-        url,
-        messages,
-        requestBody,
-        errorStack: error.stack || error.message || error,
-      });
-      return false;
-    }
-  }
-
-  const profile = getActiveApiProfile(settings);
-
-  try {
-    url = buildApiUrl(profile);
-    if (!String(profile.model || '').trim()) {
-      throw new Error('请先填写模型名。');
-    }
-
-    requestBody = {
-      model: String(profile.model).trim(),
-      messages,
-      temperature: 0,
-      max_tokens: 16,
-      stream: false,
-    };
-
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    if (String(profile.apiKey || '').trim()) {
-      headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
-    }
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody),
-    });
-    const responseText = await response.text();
-    let parsedResult = '';
-    try {
-      parsedResult = JSON.parse(responseText);
-    } catch {
-      parsedResult = '';
-    }
-
-    const durationMs = Math.round(performance.now() - startedAt);
-    const status = response.ok ? 'success' : 'failure';
-    api.lastTestAt = formatTimestamp();
-    api.lastTestStatus = response.ok ? '成功' : `失败 HTTP ${response.status}`;
-
-    addCommunicationLog({
-      moduleName: '副 API',
-      taskType: '测试连接',
-      status,
-      startedAt: api.lastTestAt,
-      durationMs,
-      profileName: profile.name,
-      model: profile.model,
-      url,
-      httpStatus: response.status,
-      messages,
-      requestBody,
-      responseText,
-      parsedResult,
-      errorStack: response.ok ? '' : `HTTP ${response.status} ${response.statusText}`,
-    });
-
-    return response.ok;
-  } catch (error) {
-    const durationMs = Math.round(performance.now() - startedAt);
-    api.lastTestAt = formatTimestamp();
-    api.lastTestStatus = `失败：${error.message || error}`;
-
-    addCommunicationLog({
-      moduleName: '副 API',
-      taskType: '测试连接',
-      status: 'failure',
-      startedAt: api.lastTestAt,
-      durationMs,
-      profileName: profile.name,
-      model: profile.model,
-      url,
-      messages,
-      requestBody,
-      errorStack: error.stack || error.message || error,
-    });
-
-    return false;
-  }
-}
-
 function getGlobalFunction(name) {
   const context = getContextSafe();
   return globalThis[name] || globalThis.TavernHelper?.[name] || context?.[name] || null;
@@ -2378,10 +2227,9 @@ function renderApiSettingsPanel(settings) {
       <div class="slx-api-actions">
         <button class="slx-soft-btn" type="button" data-slx-save-api>${isMainApi ? '保存模式' : '保存配置'}</button>
         <button class="slx-soft-btn" type="button" data-slx-fetch-models ${disabled}>拉取模型</button>
-        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-test-api>测试连接</button>
       </div>
       <div class="slx-api-status">
-        <span>最近测试：${escapeHtml(api.lastTestAt || '尚未测试')}</span>
+        <span>最近操作：${escapeHtml(api.lastTestAt || '尚未操作')}</span>
         <b>${escapeHtml(api.lastTestStatus || '未记录')}</b>
       </div>
     </div>
@@ -2820,18 +2668,6 @@ function renderFloatingPanel(options = {}) {
 
     await fetchSecondaryApiModels();
     saveGlobalSettings();
-
-    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
-    syncSettingsPanelState();
-  });
-  panelRoot.querySelector('[data-slx-test-api]')?.addEventListener('click', async event => {
-    const button = event.currentTarget;
-    syncApiFormToSettings();
-    saveGlobalSettings();
-    button.disabled = true;
-    button.textContent = '测试中...';
-
-    await testSecondaryApiConnection();
 
     renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
     syncSettingsPanelState();
