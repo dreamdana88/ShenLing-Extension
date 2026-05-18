@@ -554,10 +554,11 @@ body.slx-panel-open-lock {
 }
 
 .slx-collapse-toggle {
-  width: auto;
-  min-width: 42px;
-  padding: 0 9px;
-  font-size: 12px;
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 800;
 }
 
 .slx-summary-card-head b {
