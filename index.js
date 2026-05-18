@@ -2375,7 +2375,7 @@ function renderSummarySettingsPanel(settings, chatState) {
         </div>
         <div class="slx-card-actions">
           ${sourceRulesCollapsed ? '' : '<button class="slx-mini-action-btn" type="button" data-slx-reset-source-tags title="恢复蜃灵默认标签">↺</button>'}
-          <button class="slx-mini-action-btn slx-collapse-toggle" type="button" data-slx-toggle-source-rules title="${sourceRulesCollapsed ? '展开正文读取规则' : '收起正文读取规则'}">${sourceRulesCollapsed ? '展开' : '收起'}</button>
+          <button class="slx-mini-action-btn slx-collapse-toggle" type="button" data-slx-toggle-source-rules title="${sourceRulesCollapsed ? '展开正文读取规则' : '收起正文读取规则'}">${sourceRulesCollapsed ? '▸' : '▾'}</button>
         </div>
       </div>
       ${sourceRulesCollapsed ? '' : `
