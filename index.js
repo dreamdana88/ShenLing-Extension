@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.7.9';
+const PLUGIN_VERSION = '0.8.1';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -131,6 +131,7 @@ const defaultGlobalSettings = Object.freeze({
       autoGrandMemoryEnabled: false,
       grandMemoryInterval: 6,
       legacyArchiveBatchSize: '',
+      includeUserInput: false,
       intervalMessages: 1,
       sourceTags: {
         includeTags: [...DEFAULT_SUMMARY_INCLUDE_TAGS],
@@ -1185,7 +1186,7 @@ function buildMemorySummaryPrompt(content, priorMemories = [], summary = getSumm
   const priorSection = priorMemories.length > 0
     ? `\n\n【过往梦境档案（编号勿重复）】\n${priorMemories.join('\n\n')}`
     : '';
-  return `蜃灵处于梦境档案编制状态。\n\n${summary.promptTemplate}\n\n${SUMMARY_GAZE_GUIDANCE}${priorSection}\n\n现在只处理以下最新正文。请不要续写剧情，不要输出 <content>，严格按照格式要求输出完整的 <memory>...</memory>。\n\n【最新正文】\n${content}`;
+  return `蜃灵处于梦境档案编制状态。\n\n${summary.promptTemplate}\n\n${SUMMARY_GAZE_GUIDANCE}${priorSection}\n\n现在只处理以下本轮素材。请不要续写剧情，不要输出 <content>，严格按照格式要求输出完整的 <memory>...</memory>。\n\n【本轮素材】\n${content}`;
 }
 
 function buildMemorySummaryMessages(prompt) {
@@ -1502,13 +1503,55 @@ function renderArchiveRecordView(view) {
   `;
 }
 
-function getAutoSummaryFingerprint(messageId) {
-  const chatMessage = getChatMessageById(messageId);
+function getMessageSummarySource(message, summary = getSummarySettings()) {
+  const body = stripMemoryBlock(String(message?.message || ''));
+  return extractSummarySourceContent(body, summary).trim();
+}
+
+function getPreviousUserSummarySource(messageId, summary = getSummarySettings()) {
+  const numericMessageId = Number(messageId);
+  if (!Number.isFinite(numericMessageId) || numericMessageId <= 0) return '';
+  const priorMessages = getChatMessagesSafe(`0-${numericMessageId - 1}`, { hide_state: 'all' });
+  const latestUserMessage = [...priorMessages]
+    .reverse()
+    .find(message => message.role === 'user' && !message.is_hidden);
+  return latestUserMessage ? getMessageSummarySource(latestUserMessage, summary) : '';
+}
+
+function buildSummaryPromptContent(aiContent, userContent = '') {
+  const cleanAiContent = String(aiContent || '').trim();
+  const cleanUserContent = String(userContent || '').trim();
+  if (!cleanUserContent) return cleanAiContent;
+  return `【最新用户输入】
+${cleanUserContent}
+
+【最新正文】
+${cleanAiContent}`;
+}
+
+function createSummarySourceMaterial(messageId, summary = getSummarySettings()) {
+  const chatMessage = getChatMessageById(Number(messageId));
   if (!chatMessage || chatMessage.role !== 'assistant' || chatMessage.is_hidden) return null;
   if (GRAND_MEMORY_BLOCK_RE.test(chatMessage.message)) return null;
-  const body = extractSummarySourceContent(stripMemoryBlock(chatMessage.message));
-  if (!body) return null;
-  return createSimpleFingerprint(body);
+
+  const body = stripMemoryBlock(chatMessage.message);
+  const aiContent = extractSummarySourceContent(body, summary).trim();
+  if (!aiContent) return null;
+
+  const userContent = summary.includeUserInput ? getPreviousUserSummarySource(Number(messageId), summary) : '';
+  const promptContent = buildSummaryPromptContent(aiContent, userContent);
+  const fingerprintContent = userContent ? `${userContent}\n\n${aiContent}` : aiContent;
+  return {
+    body,
+    aiContent,
+    userContent,
+    promptContent,
+    fingerprint: createSimpleFingerprint(fingerprintContent),
+  };
+}
+
+function getAutoSummaryFingerprint(messageId) {
+  return createSummarySourceMaterial(messageId)?.fingerprint || null;
 }
 function forceMemoryNumber(memory, number) {
   const normalized = normalizeMemoryBlock(memory);
@@ -1558,9 +1601,10 @@ function markManualMemoryProcessed(messageId, body) {
   chatState.summary.lastSummaryMessageId = Number(messageId);
   chatState.summary.lastSummaryAt = formatTimestamp();
   chatState.summary.lastError = '';
+  const material = createSummarySourceMaterial(messageId);
   chatState.summary.processedMessageFingerprints = {
     ...(chatState.summary.processedMessageFingerprints || {}),
-    [messageId]: createSimpleFingerprint(body),
+    [messageId]: material?.fingerprint || createSimpleFingerprint(body),
   };
   saveChatState();
 }
@@ -1626,8 +1670,8 @@ async function regenerateMemoryForMessage(messageId) {
   if (!rawBody) throw new Error(`第 ${Number(messageId)} 楼没有可总结的正文。`);
 
   const summary = getSummarySettings();
-  const summaryBody = extractSummarySourceContent(rawBody, summary);
-  if (!summaryBody) throw new Error(`第 ${Number(messageId)} 楼净化后没有可总结的正文。`);
+  const material = createSummarySourceMaterial(Number(messageId), summary);
+  if (!material) throw new Error(`第 ${Number(messageId)} 楼净化后没有可总结的正文。`);
 
   chatState.summary.runningTask = 'manual_memory';
   chatState.summary.lastError = '';
@@ -1637,7 +1681,7 @@ async function regenerateMemoryForMessage(messageId) {
 
   try {
     const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
-    const result = await generateSummaryMemory(buildMemorySummaryPrompt(summaryBody, priorMemories, summary), {
+    const result = await generateSummaryMemory(buildMemorySummaryPrompt(material.promptContent, priorMemories, summary), {
       type: '手动重写小总结',
     });
     await writeManualMemoryToMessage(Number(messageId), result);
@@ -1841,17 +1885,21 @@ function getLegacyArchiveBatchSize(summary = getSummarySettings()) {
 }
 
 function cleanLegacyArchiveMessageContent(message, summary = getSummarySettings()) {
-  const body = stripMemoryBlock(String(message?.message || ''));
-  return extractSummarySourceContent(body, summary).trim();
+  return getMessageSummarySource(message, summary);
 }
 
 function collectLegacyArchiveMessages(summary = getSummarySettings()) {
   return getChatMessagesSafe(undefined, { hide_state: 'all' })
-    .filter(message => !message.is_hidden && !isGrandMemoryOnly(message.message))
     .map(message => ({
-      messageId: message.message_id,
+      message,
       role: message.role === 'user' || message.is_user ? 'user' : 'assistant',
-      content: cleanLegacyArchiveMessageContent(message, summary),
+    }))
+    .filter(record => !record.message.is_hidden && !isGrandMemoryOnly(record.message.message))
+    .filter(record => summary.includeUserInput || record.role === 'assistant')
+    .map(record => ({
+      messageId: record.message.message_id,
+      role: record.role,
+      content: cleanLegacyArchiveMessageContent(record.message, summary),
     }))
     .filter(entry => entry.content);
 }
@@ -2046,14 +2094,13 @@ async function processAutoSummary(messageId, expectedFingerprint) {
   if (!chatMessage || chatMessage.role !== 'assistant' || chatMessage.is_hidden) return;
   if (GRAND_MEMORY_BLOCK_RE.test(chatMessage.message)) return;
 
-  const body = stripMemoryBlock(chatMessage.message);
-  const summaryBody = extractSummarySourceContent(body, summary);
-  if (!summaryBody) {
+  const material = createSummarySourceMaterial(Number(messageId), summary);
+  if (!material) {
     notifySummary('info', '已跳过第 ' + Number(messageId) + ' 楼：没有可总结正文。');
     return;
   }
 
-  const fingerprint = createSimpleFingerprint(summaryBody);
+  const fingerprint = material.fingerprint;
   if (expectedFingerprint && fingerprint !== expectedFingerprint) return;
   if ((chatState.summary.processedMessageFingerprints || {})[messageId] === fingerprint) return;
 
@@ -2064,10 +2111,10 @@ async function processAutoSummary(messageId, expectedFingerprint) {
 
   try {
     const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
-    const prompt = buildMemorySummaryPrompt(summaryBody, priorMemories, summary);
+    const prompt = buildMemorySummaryPrompt(material.promptContent, priorMemories, summary);
     const result = await generateSummaryMemory(prompt, { type: '自动小总结' });
     const memory = normalizeMemoryBlock(result);
-    const nextMessage = `${body}\n\n${memory}`;
+    const nextMessage = `${material.body}\n\n${memory}`;
 
     summaryWriteIgnoreIds.add(Number(messageId));
     await setChatMessageContent(Number(messageId), nextMessage);
@@ -2510,6 +2557,8 @@ function renderSummarySettingsPanel(settings, chatState) {
   const sourceRulesCollapsed = settings.ui?.sourceRulesCollapsed !== false;
   const archiveRecordViews = [...archiveRecords].reverse().map(createArchiveRecordView);
   const legacyBatchSize = summary.legacyArchiveBatchSize || '';
+  const summarySourceModeLabel = summary.includeUserInput ? '续写模式：用户输入 + AI 正文' : '转述模式：仅 AI 正文';
+  const legacyScopeLabel = summary.includeUserInput ? '用户楼 + AI 楼' : '仅 AI 楼';
   const legacyPlan = createLegacyArchivePlan(getLegacyArchiveBatchSize(summary));
   const legacyStatus = chatState.summary.legacyArchiveStatus || {};
   const legacyStatusLabel = legacyStatus.lastResult || (legacyPlan.totalMessages ? '待归档 ' + legacyPlan.totalMessages + ' 楼。' : '未扫描到可归档正文。');
@@ -2541,6 +2590,14 @@ function renderSummarySettingsPanel(settings, chatState) {
           <small>预设小总结：${escapeHtml(presetMemoryLabel)}</small>
         </span>
         <input id="slx-summary-enabled" type="checkbox" data-slx-summary-field="enabled" ${summary.enabled ? 'checked' : ''} />
+      </label>
+      <label class="slx-setting-toggle-row" for="slx-summary-include-user-input">
+        <span>
+          <b>纳入用户输入</b>
+          <small>关闭适合“用户输入-转述”：只总结 AI 正文。</small>
+          <small>开启适合“用户输入”：自动小总结带最近 user 输入，旧聊天归档扫全部楼层。</small>
+        </span>
+        <input id="slx-summary-include-user-input" type="checkbox" data-slx-summary-field="includeUserInput" ${summary.includeUserInput ? 'checked' : ''} />
       </label>
       <label class="slx-setting-toggle-row" for="slx-summary-grand-enabled">
         <span>
@@ -2591,6 +2648,7 @@ function renderSummarySettingsPanel(settings, chatState) {
         <div class="slx-detail-title">运行状态</div>
         <b>${escapeHtml(runningLabel)}</b>
       </div>
+      ${renderDiagnosticLine('小总结取材', summarySourceModeLabel)}
       ${renderDiagnosticLine('小总结累计', `${memoryCount} / ${grandInterval}`)}
       ${renderDiagnosticLine('预设小总结', presetMemoryLabel)}
       ${renderDiagnosticLine('当前启用模型', activeModel)}
@@ -2624,13 +2682,14 @@ function renderSummarySettingsPanel(settings, chatState) {
 
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">旧聊天归档</div>
-      <p>按酒馆显示楼层顺序分批，包含用户与 AI 回复。适合没有 memory 的旧聊天。</p>
+      <p>按酒馆显示楼层顺序分批；当前范围：${escapeHtml(legacyScopeLabel)}。适合没有 memory 的旧聊天。</p>
       <label class="slx-field slx-field-wide">
         <span>每批楼层数</span>
         <input type="number" min="1" step="1" data-slx-legacy-archive-batch-size value="${escapeHtml(legacyBatchSize)}" placeholder="留空默认 30" />
         <small>输入 4 就按每 4 楼一批；留空默认每 30 楼一批。</small>
       </label>
       <div class="slx-diagnostics">
+        ${renderDiagnosticLine('归档取材', legacyScopeLabel)}
         ${renderDiagnosticLine('可归档楼层', legacyPlan.totalMessages + ' 楼')}
         ${renderDiagnosticLine('预计批次', legacyPlan.batchTotal ? legacyPlan.batchTotal + ' 批' : '无')}
         ${renderDiagnosticLine('批次进度', legacyStatus.batchTotal ? (legacyStatus.batchIndex || 0) + ' / ' + legacyStatus.batchTotal : '未开始')}
