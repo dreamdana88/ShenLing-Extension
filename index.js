@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.7.1';
+const PLUGIN_VERSION = '0.7.3';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -336,8 +336,37 @@ function stripTaggedBlocks(content, tags) {
     const safeTag = escapeRegExp(tag);
     const blockRe = new RegExp(`<${safeTag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${safeTag}>`, 'gi');
     const selfClosingRe = new RegExp(`<${safeTag}(?:\\s[^>]*)?\\/>`, 'gi');
-    return text.replace(blockRe, '').replace(selfClosingRe, '');
+    const orphanOpenRe = new RegExp(`<${safeTag}(?:\\s[^>]*)?>`, 'gi');
+    const orphanCloseRe = new RegExp(`<\\/${safeTag}>`, 'gi');
+    return text
+      .replace(blockRe, '')
+      .replace(selfClosingRe, '')
+      .replace(orphanOpenRe, '')
+      .replace(orphanCloseRe, '');
   }, String(content || ''));
+}
+
+function hasTaggedBlocks(content, tags) {
+  const source = String(content || '');
+  return parseTagList(tags).some(tag => {
+    const safeTag = escapeRegExp(tag);
+    const blockRe = new RegExp(`<${safeTag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${safeTag}>`, 'i');
+    const selfClosingRe = new RegExp(`<${safeTag}(?:\\s[^>]*)?\\/>`, 'i');
+    return blockRe.test(source) || selfClosingRe.test(source);
+  });
+}
+
+function getMeaningfulSourceText(content) {
+  return String(content || '')
+    .replace(/<br\s*\/?>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;|&#160;|&ensp;|&emsp;/gi, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim();
+}
+
+function hasMeaningfulSourceContent(content) {
+  return getMeaningfulSourceText(content).length > 0;
 }
 
 function extractTaggedBlocks(content, tags) {
@@ -345,15 +374,21 @@ function extractTaggedBlocks(content, tags) {
   return parseTagList(tags).flatMap(tag => {
     const safeTag = escapeRegExp(tag);
     const blockRe = new RegExp(`<${safeTag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${safeTag}>`, 'gi');
-    return Array.from(source.matchAll(blockRe)).map(match => match[1].trim()).filter(Boolean);
+    return Array.from(source.matchAll(blockRe))
+      .map(match => match[1].trim())
+      .filter(hasMeaningfulSourceContent);
   });
 }
 
 function extractSummarySourceContent(content, summary = getSummarySettings()) {
   const tags = getSummarySourceTags(summary);
   const withoutExcluded = stripTaggedBlocks(content, tags.excludeTags).replace(/\n{3,}/g, '\n\n').trim();
-  const includedBlocks = extractTaggedBlocks(withoutExcluded, tags.includeTags);
-  return (includedBlocks.length ? includedBlocks.join('\n\n') : withoutExcluded).trim();
+  const includeTags = parseTagList(tags.includeTags);
+  const includedBlocks = extractTaggedBlocks(withoutExcluded, includeTags);
+  if (includeTags.length && hasTaggedBlocks(withoutExcluded, includeTags)) {
+    return includedBlocks.join('\n\n').trim();
+  }
+  return hasMeaningfulSourceContent(withoutExcluded) ? withoutExcluded.trim() : '';
 }
 
 function stringifyLogField(value) {
@@ -1867,7 +1902,10 @@ async function processAutoSummary(messageId, expectedFingerprint) {
 
   const body = stripMemoryBlock(chatMessage.message);
   const summaryBody = extractSummarySourceContent(body, summary);
-  if (!summaryBody) return;
+  if (!summaryBody) {
+    notifySummary('info', '已跳过第 ' + Number(messageId) + ' 楼：没有可总结正文。');
+    return;
+  }
 
   const fingerprint = createSimpleFingerprint(summaryBody);
   if (expectedFingerprint && fingerprint !== expectedFingerprint) return;
