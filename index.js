@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.7.0';
+const PLUGIN_VERSION = '0.7.1';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -95,6 +95,7 @@ const defaultGlobalSettings = Object.freeze({
   activeModule: 'summary',
   ui: {
     lastOpenedAt: '',
+    sourceRulesCollapsed: true,
   },
   modules: {
     summary: {
@@ -2321,6 +2322,7 @@ function renderSummarySettingsPanel(settings, chatState) {
   const runningLabel = runningTaskLabels[chatState.summary.runningTask] || chatState.summary.runningTask || '空闲';
   const presetMemoryLabel = summary.enabled ? '自动总结接管中' : '预设小总结接管中';
   const sourceTags = getSummarySourceTags(summary);
+  const sourceRulesCollapsed = settings.ui?.sourceRulesCollapsed !== false;
   const archiveRecordViews = [...archiveRecords].reverse().map(createArchiveRecordView);
   const memoryEditorHtml = memoryEditorState ? `
     <div class="slx-detail-card slx-memory-editor-card">
@@ -2365,32 +2367,36 @@ function renderSummarySettingsPanel(settings, chatState) {
       </label>
     </div>
 
-    <div class="slx-detail-card slx-source-rules-card">
+    <div class="slx-detail-card slx-source-rules-card${sourceRulesCollapsed ? ' slx-source-rules-card-collapsed' : ''}">
       <div class="slx-summary-card-head">
         <div>
           <div class="slx-detail-title">正文读取规则</div>
-          <p>这里只处理正文里的杂讯标签。&lt;memory&gt; 与 &lt;grand_memory&gt; 会由小总结/大总结流程单独读取，不作为默认排除项。</p>
+          ${sourceRulesCollapsed ? '' : '<p>这里只处理正文里的杂讯标签。&lt;memory&gt; 与 &lt;grand_memory&gt; 会由小总结/大总结流程单独读取，不作为默认排除项。</p>'}
         </div>
-        <button class="slx-mini-action-btn" type="button" data-slx-reset-source-tags title="恢复蜃灵默认标签">↺</button>
+        <div class="slx-card-actions">
+          ${sourceRulesCollapsed ? '' : '<button class="slx-mini-action-btn" type="button" data-slx-reset-source-tags title="恢复蜃灵默认标签">↺</button>'}
+          <button class="slx-mini-action-btn slx-collapse-toggle" type="button" data-slx-toggle-source-rules title="${sourceRulesCollapsed ? '展开正文读取规则' : '收起正文读取规则'}">${sourceRulesCollapsed ? '展开' : '收起'}</button>
+        </div>
       </div>
-      <div class="slx-form-grid">
-        <label class="slx-field slx-field-wide">
-          <span>纳入正文标签</span>
-          <input type="text" data-slx-summary-tag-field="includeTags" value="${escapeHtml(formatTagList(sourceTags.includeTags))}" placeholder="content" />
-          <small>用逗号分隔，例如 content。留空时会使用排除后的全文。</small>
-        </label>
-        <label class="slx-field slx-field-wide">
-          <span>排除正文杂讯标签</span>
-          <input type="text" data-slx-summary-tag-field="excludeTags" value="${escapeHtml(formatTagList(sourceTags.excludeTags))}" placeholder="thinking, wave" />
-          <small>用逗号分隔，例如 thinking, wave。不要默认排除 memory / grand_memory。</small>
-        </label>
-      </div>
-      <div class="slx-tag-preview">
-        <span>当前纳入：${escapeHtml(sourceTags.includeTags.join('、') || '无，使用全文')}</span>
-        <span>当前排除：${escapeHtml(sourceTags.excludeTags.join('、') || '无')}</span>
-      </div>
+      ${sourceRulesCollapsed ? '' : `
+        <div class="slx-form-grid">
+          <label class="slx-field slx-field-wide">
+            <span>纳入正文标签</span>
+            <input type="text" data-slx-summary-tag-field="includeTags" value="${escapeHtml(formatTagList(sourceTags.includeTags))}" placeholder="content" />
+            <small>用逗号分隔，例如 content。留空时会使用排除后的全文。</small>
+          </label>
+          <label class="slx-field slx-field-wide">
+            <span>排除正文杂讯标签</span>
+            <input type="text" data-slx-summary-tag-field="excludeTags" value="${escapeHtml(formatTagList(sourceTags.excludeTags))}" placeholder="thinking, wave" />
+            <small>用逗号分隔，例如 thinking, wave。不要默认排除 memory / grand_memory。</small>
+          </label>
+        </div>
+        <div class="slx-tag-preview">
+          <span>当前纳入：${escapeHtml(sourceTags.includeTags.join('、') || '无，使用全文')}</span>
+          <span>当前排除：${escapeHtml(sourceTags.excludeTags.join('、') || '无')}</span>
+        </div>
+      `}
     </div>
-
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-summary-card-head">
         <div class="slx-detail-title">运行状态</div>
@@ -2776,6 +2782,11 @@ function renderFloatingPanel(options = {}) {
     rerenderSummaryPanel();
   });
 
+  panelRoot.querySelector('[data-slx-toggle-source-rules]')?.addEventListener('click', () => {
+    settings.ui.sourceRulesCollapsed = settings.ui?.sourceRulesCollapsed === false;
+    saveGlobalSettings();
+    rerenderSummaryPanel();
+  });
   panelRoot.querySelector('[data-slx-refresh-archive-scan]')?.addEventListener('click', () => {
     scanExistingSummaryState();
     rerenderSummaryPanel();

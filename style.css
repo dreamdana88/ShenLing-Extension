@@ -546,6 +546,20 @@ body.slx-panel-open-lock {
   gap: 12px;
 }
 
+.slx-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.slx-collapse-toggle {
+  width: auto;
+  min-width: 42px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
 .slx-summary-card-head b {
   color: var(--slx-text);
   font-size: 13px;
