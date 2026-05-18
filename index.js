@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.6.0';
+const PLUGIN_VERSION = '0.7.0';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -14,6 +14,33 @@ const SUMMARY_GAZE_GUIDANCE = `##总结视角约束
 - 男性角色总结应突出尊重、共情、脆弱与情感坦诚，不写成征服者、拯救者、支配者或猎手。
 - 若原文出现男权、厌女、爹味、性别刻板或权力落差表达，总结时应净化为中性/女本位表述，不复述其冒犯性措辞，杜绝性别刻板印象。
 - 归档应保留关系与情节事实，避免强化“女性被拯救/被征服/被占有”的刻板框架。`;
+const DEFAULT_GRAND_MEMORY_TEMPLATE = `## 梦境大归档
+
+请把一组连续小总结整合为独立、可读、可追溯的大总结。
+
+必须输出 <grand_memory> 结构，并使用以下框架：
+
+<grand_memory>
+<details>
+<summary>【梦境档案：第\${archiveFrom}-\${archiveTo}卷】</summary>
+
+编号范围：\${archiveFrom}-\${archiveTo}
+时间跨度：\${根据素材归纳起止时间，未知可写未明}
+
+## 【剧情编年】
+按小总结编号或楼层顺序整理关键事件。保留时间、地点、人物、经过与重要台词回响。
+
+## 【情感轨迹】
+只记录确有连续变化的角色关系、态度与隐秘动机，不强行给每个角色写变化。
+
+## 【世界档案】
+整理重要物品、地点、概念、承诺、规则与未解决伏笔。
+
+## 【当前状态】
+概括归档结束时的主线进度、各方动向与下一阶段待发展方向。
+
+</details>
+</grand_memory>`;
 const SUMMARY_SUPPORT_MESSAGES = Object.freeze([
   {
     role: 'user',
@@ -80,6 +107,7 @@ const defaultGlobalSettings = Object.freeze({
         excludeTags: [...DEFAULT_SUMMARY_EXCLUDE_TAGS],
       },
       promptTemplateVersion: SUMMARY_PROMPT_VERSION,
+      grandPromptTemplate: DEFAULT_GRAND_MEMORY_TEMPLATE,
       promptTemplate: [
         '##浓缩梦境',
         '',
@@ -1033,6 +1061,123 @@ function normalizeMemoryBlock(content) {
   return `<memory>\n${String(content || '').trim()}\n</memory>`;
 }
 
+function normalizeGrandMemoryBlock(content) {
+  const matched = String(content || '').match(GRAND_MEMORY_BLOCK_RE);
+  if (matched) return matched[0].trim();
+  return `<grand_memory>\n${String(content || '').trim()}\n</grand_memory>`;
+}
+
+function isGrandMemoryOnly(content) {
+  return normalizeGrandMemoryBlock(content) === String(content || '').trim();
+}
+
+function getGrandMemoryPromptTemplate(summary = getSummarySettings()) {
+  return String(summary.grandPromptTemplate || DEFAULT_GRAND_MEMORY_TEMPLATE);
+}
+
+function fillGrandMemoryTemplate(template, archiveFrom, archiveTo) {
+  return String(template || '')
+    .replaceAll('${archiveFrom}', String(archiveFrom))
+    .replaceAll('${archiveTo}', String(archiveTo));
+}
+
+function buildGrandMemoryMaterialPrompt(archiveFrom, archiveTo, archiveMaterial, { regenerate = false } = {}) {
+  const summary = getSummarySettings();
+  const grandMemoryTemplate = fillGrandMemoryTemplate(getGrandMemoryPromptTemplate(summary), archiveFrom, archiveTo);
+  const verb = regenerate ? '重新生成' : '生成';
+  return `蜃灵处于梦境档案编制状态。\n\n${grandMemoryTemplate}\n\n${SUMMARY_GAZE_GUIDANCE}\n\n现在请根据以下归档素材${verb}本轮归档大总结。\n归档素材已包含 ${archiveFrom}-${archiveTo} 范围内可读取的全部 <memory>；若楼层没有 <memory>，会以正文兜底。\n若归档素材中出现多个 <list> 角色行程，只参考最新一条 <list>，旧 <list> 不纳入大总结。\n编号范围必须写为：${archiveFrom}-${archiveTo}\n请不要续写剧情，不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。\n\n【归档素材：${archiveFrom}-${archiveTo}】\n${archiveMaterial}`;
+}
+
+function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
+  const messages = createMessageIdRange(archiveFrom, archiveTo)
+    .flatMap(messageId => getChatMessagesSafe(messageId, { hide_state: 'all' }))
+    .filter(message => message.role === 'assistant' && !isGrandMemoryOnly(message.message));
+
+  const entries = messages.flatMap(message => {
+    const memories = extractMemoryBlocks(message.message);
+    const body = extractSummarySourceContent(stripMemoryBlock(message.message));
+    if (memories.length > 0) {
+      return memories.map(memory => ({
+        messageId: message.message_id,
+        body: '',
+        hasMemory: true,
+        memory,
+      }));
+    }
+
+    return body
+      ? [{ messageId: message.message_id, body: '', hasMemory: false, memory: `<memory>\n${body}\n</memory>` }]
+      : [];
+  });
+
+  const recentMemoryIndexes = entries
+    .map((entry, index) => (entry.hasMemory ? index : -1))
+    .filter(index => index >= 0)
+    .slice(-2);
+
+  for (const index of recentMemoryIndexes) {
+    const message = messages.find(item => item.message_id === entries[index].messageId);
+    if (message) entries[index].body = extractSummarySourceContent(stripMemoryBlock(message.message));
+  }
+
+  const lastEntryIndex = entries.length - 1;
+  return entries
+    .map((entry, index) => {
+      const memory = index === lastEntryIndex ? entry.memory : stripListBlocks(entry.memory);
+      const body = entry.body ? `【正文】\n${entry.body}\n\n` : '';
+      return `### 第 ${entry.messageId} 楼\n${body}【小总结】\n${memory}`;
+    })
+    .join('\n\n')
+    .trim();
+}
+
+async function createAssistantChatMessage(message) {
+  const createChatMessages = getGlobalFunction('createChatMessages');
+  if (typeof createChatMessages === 'function') {
+    await createChatMessages([{ role: 'assistant', message }], { insert_before: 'end', refresh: 'affected' });
+    return getLastMessageId();
+  }
+
+  const context = getContextSafe();
+  if (Array.isArray(context?.chat)) {
+    const nextId = context.chat.length;
+    context.chat.push({ name: context.name2 || 'Assistant', is_user: false, role: 'assistant', mes: message, message });
+    const saveChatConditional = getGlobalFunction('saveChatConditional');
+    if (typeof saveChatConditional === 'function') await saveChatConditional();
+    else if (typeof context.saveChat === 'function') await context.saveChat();
+    await refreshChatMessageDisplay(nextId);
+    return nextId;
+  }
+
+  throw new Error('当前环境未发现 createChatMessages，无法创建大总结楼。');
+}
+
+async function setChatMessagesPartial(updates, options = { refresh: 'affected' }) {
+  const setChatMessages = getGlobalFunction('setChatMessages');
+  if (typeof setChatMessages === 'function') {
+    await setChatMessages(updates, options);
+    if (options.refresh === 'affected') {
+      await Promise.all(updates.map(update => refreshChatMessageDisplay(update.message_id)));
+    }
+    return;
+  }
+
+  const context = getContextSafe();
+  if (Array.isArray(context?.chat)) {
+    updates.forEach(update => {
+      const message = context.chat[Number(update.message_id)];
+      if (!message) return;
+      Object.assign(message, update);
+      if (Object.hasOwn(update, 'message')) message.mes = update.message;
+    });
+    const saveChatConditional = getGlobalFunction('saveChatConditional');
+    if (typeof saveChatConditional === 'function') await saveChatConditional();
+    else if (typeof context.saveChat === 'function') await context.saveChat();
+    return;
+  }
+
+  throw new Error('当前环境未发现 setChatMessages，无法批量更新聊天楼层。');
+}
 function shouldRunAutoSummary(settings = getGlobalSettings()) {
   return Boolean(settings.enabled && getSummarySettings(settings).enabled);
 }
@@ -1580,6 +1725,132 @@ async function saveMemoryEditorContent() {
 }
 
 
+function shouldTriggerAutoGrandMemory(chatState = getChatState(), settings = getGlobalSettings()) {
+  const summary = getSummarySettings(settings);
+  return Boolean(
+    settings.enabled &&
+    summary.autoGrandMemoryEnabled &&
+    Number(chatState.summary.memoryCountSinceArchive || 0) >= Math.max(1, Number(summary.grandMemoryInterval) || 1)
+  );
+}
+
+function getLatestArchiveBoundary(chatState = getChatState()) {
+  const archiveRecords = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [];
+  const latestRecord = archiveRecords.at(-1) || null;
+  return Number(latestRecord?.summaryMessageId ?? chatState.summary.lastGrandSummaryMessageId ?? -1);
+}
+
+async function processAutoGrandMemory() {
+  const settings = getGlobalSettings();
+  const chatState = getChatState();
+  if (!shouldTriggerAutoGrandMemory(chatState, settings)) return;
+  if (chatState.summary.runningTask !== 'none') return;
+
+  const archiveTo = getLastMessageId();
+  const previousGrandSummaryMessageId = getLatestArchiveBoundary(chatState);
+  const archiveFrom = previousGrandSummaryMessageId >= 0 ? previousGrandSummaryMessageId + 1 : 0;
+  if (archiveFrom > archiveTo) return;
+
+  chatState.summary.runningTask = 'grand_memory';
+  chatState.summary.lastError = '';
+  saveChatState();
+  notifySummary('info', '大总结生成中。');
+  refreshSummaryPanelAfterAction();
+
+  try {
+    const archiveMaterial = buildArchiveMemoryMaterial(archiveFrom, archiveTo);
+    if (!archiveMaterial) {
+      throw new Error(`归档区间 ${archiveFrom}-${archiveTo} 未读取到可用 memory 素材。`);
+    }
+
+    const prompt = buildGrandMemoryMaterialPrompt(archiveFrom, archiveTo, archiveMaterial);
+    const result = await generateSummaryMemory(prompt, { type: '自动大总结' });
+    const grandMemory = normalizeGrandMemoryBlock(result);
+    const summaryMessageId = await createAssistantChatMessage(grandMemory);
+
+    summaryWriteIgnoreIds.add(Number(summaryMessageId));
+    window.setTimeout(() => summaryWriteIgnoreIds.delete(Number(summaryMessageId)), 1500);
+
+    const archiveMessageIds = createMessageIdRange(archiveFrom, archiveTo);
+    if (archiveMessageIds.length > 0) {
+      await setChatMessagesPartial(
+        archiveMessageIds.map(message_id => ({ message_id, is_hidden: true })),
+        { refresh: 'all' },
+      );
+    }
+
+    const archiveRecord = {
+      id: `${summaryMessageId}-${Date.now()}`,
+      summaryMessageId,
+      archiveFrom,
+      archiveTo,
+      createdAt: Date.now(),
+    };
+
+    chatState.summary.runningTask = 'none';
+    chatState.summary.memoryCountSinceArchive = 0;
+    chatState.summary.memoryCountedMessageIds = [];
+    chatState.summary.lastArchivedMessageId = archiveTo;
+    chatState.summary.lastGrandSummaryMessageId = Number(summaryMessageId);
+    chatState.summary.archiveRecords = [...(chatState.summary.archiveRecords || []), archiveRecord];
+    chatState.summary.lastError = '';
+    saveChatState();
+    scanExistingSummaryState();
+    notifySummary('success', `已生成第 ${summaryMessageId} 楼大总结，并隐藏 ${archiveFrom}-${archiveTo}。`);
+    refreshSummaryPanelAfterAction();
+  } catch (error) {
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastError = error.message || String(error);
+    saveChatState();
+    notifySummary('error', error.message || String(error), '自动大总结失败');
+    refreshSummaryPanelAfterAction();
+  }
+}
+
+async function regenerateLatestGrandMemory() {
+  const chatState = getChatState();
+  const record = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords.at(-1) : null;
+  if (!record) {
+    notifySummary('warning', '暂无可重新生成的大总结记录。', '归档管理器');
+    return;
+  }
+  if (chatState.summary.runningTask !== 'none') return;
+
+  chatState.summary.runningTask = 'grand_memory';
+  chatState.summary.lastError = '';
+  saveChatState();
+  notifySummary('info', `正在重新生成第 ${record.summaryMessageId} 楼大总结。`, '归档管理器');
+  refreshSummaryPanelAfterAction();
+
+  try {
+    const archiveMaterial = buildArchiveMemoryMaterial(record.archiveFrom, record.archiveTo);
+    if (!archiveMaterial) {
+      throw new Error(`归档区间 ${record.archiveFrom}-${record.archiveTo} 未读取到可用 memory 素材。`);
+    }
+
+    const prompt = buildGrandMemoryMaterialPrompt(record.archiveFrom, record.archiveTo, archiveMaterial, { regenerate: true });
+    const result = await generateSummaryMemory(prompt, { type: '重新生成大总结' });
+    const grandMemory = normalizeGrandMemoryBlock(result);
+
+    summaryWriteIgnoreIds.add(Number(record.summaryMessageId));
+    await setChatMessageContent(Number(record.summaryMessageId), grandMemory);
+    window.setTimeout(() => summaryWriteIgnoreIds.delete(Number(record.summaryMessageId)), 1500);
+
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastError = '';
+    saveChatState();
+    scanExistingSummaryState();
+    notifySummary('success', `已重新生成第 ${record.summaryMessageId} 楼大总结。`, '归档管理器');
+    refreshSummaryPanelAfterAction();
+  } catch (error) {
+    summaryWriteIgnoreIds.delete(Number(record.summaryMessageId));
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastError = error.message || String(error);
+    saveChatState();
+    notifySummary('error', error.message || String(error), '重新生成大总结失败');
+    refreshSummaryPanelAfterAction();
+  }
+}
 async function processAutoSummary(messageId, expectedFingerprint) {
   const settings = getGlobalSettings();
   const summary = getSummarySettings(settings);
@@ -1633,6 +1904,7 @@ async function processAutoSummary(messageId, expectedFingerprint) {
     }
     saveChatState();
     notifySummary('success', `已为第 ${Number(messageId)} 楼写入小总结。`);
+    await processAutoGrandMemory();
 
     if (panelRoot?.classList.contains('slx-panel-open')) {
       renderFloatingPanel({
@@ -2138,7 +2410,7 @@ function renderSummarySettingsPanel(settings, chatState) {
         <button class="slx-soft-btn" type="button" data-slx-generate-opening-memory ${chatState.summary.runningTask !== 'none' ? 'disabled' : ''}>
           <span>为0楼生成小总结</span>
         </button>
-        <button class="slx-soft-btn" type="button" disabled title="将在 Step 7 接入">
+        <button class="slx-soft-btn" type="button" data-slx-regenerate-grand-memory ${archiveRecords.length && chatState.summary.runningTask === 'none' ? '' : 'disabled'}>
           <span>重新生成上次大总结</span>
         </button>
       </div>
@@ -2179,8 +2451,8 @@ function renderSummarySettingsPanel(settings, chatState) {
     ${memoryEditorHtml}
 
     <div class="slx-detail-card slx-muted-card">
-      <div class="slx-detail-title">Step 6 阶段边界</div>
-      <p>已接入 0 楼小总结、指定楼层重写与指定楼层编辑。自动大总结、归档楼创建与隐藏区间留到 Step 7。</p>
+      <div class="slx-detail-title">Step 7 阶段边界</div>
+      <p>已接入 0 楼小总结、指定楼层重写、指定楼层编辑、自动大总结、归档楼创建、隐藏区间与上次大总结重生成。</p>
     </div>
   `;
 }
@@ -2507,6 +2779,15 @@ function renderFloatingPanel(options = {}) {
   panelRoot.querySelector('[data-slx-refresh-archive-scan]')?.addEventListener('click', () => {
     scanExistingSummaryState();
     rerenderSummaryPanel();
+  });
+  panelRoot.querySelector('[data-slx-regenerate-grand-memory]')?.addEventListener('click', event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    void regenerateLatestGrandMemory().catch(error => {
+      notifySummary('warning', error.message || String(error), '重新生成大总结失败');
+    }).finally(() => {
+      button.disabled = false;
+    });
   });
   panelRoot.querySelector('[data-slx-generate-opening-memory]')?.addEventListener('click', event => {
     const button = event.currentTarget;
