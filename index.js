@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.7.8';
+const PLUGIN_VERSION = '0.7.9';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -130,6 +130,7 @@ const defaultGlobalSettings = Object.freeze({
       enabled: false,
       autoGrandMemoryEnabled: false,
       grandMemoryInterval: 6,
+      legacyArchiveBatchSize: '',
       intervalMessages: 1,
       sourceTags: {
         includeTags: [...DEFAULT_SUMMARY_INCLUDE_TAGS],
@@ -246,6 +247,14 @@ const defaultChatState = Object.freeze({
     lastSummaryAt: '',
     lastArchiveId: '',
     archiveRecords: [],
+    legacyArchiveStatus: {
+      phase: 'idle',
+      totalMessages: 0,
+      batchSize: 30,
+      batchTotal: 0,
+      batchIndex: 0,
+      lastResult: '',
+    },
     runningTask: 'none',
     lastError: '',
   },
@@ -1367,6 +1376,7 @@ function createScannedSummaryState(baseSummary = getChatState().summary) {
       archiveTo,
       memoryFrom: baseRecord?.memoryFrom ?? memoryRange?.archiveFrom ?? null,
       memoryTo: baseRecord?.memoryTo ?? memoryRange?.archiveTo ?? null,
+      rangeType: baseRecord?.rangeType || 'memory',
       createdAt: baseRecord?.createdAt || Date.now(),
     });
   }
@@ -1467,12 +1477,17 @@ function createArchiveRecordView(record) {
 
 function renderArchiveRecordView(view) {
   const warnClass = view.summaryHidden || view.summaryMissing ? ' slx-archive-pill-warn' : '';
+  const rangePrefix = view.record.rangeType === 'floor'
+    ? '旧聊 ' + escapeHtml(view.record.archiveFrom) + '-' + escapeHtml(view.record.archiveTo) + '｜'
+    : view.record.memoryFrom !== null && view.record.memoryFrom !== undefined
+      ? '记忆 ' + escapeHtml(view.record.memoryFrom) + '-' + escapeHtml(view.record.memoryTo) + '｜'
+      : '';
   return `
     <div class="slx-archive-item">
       <div class="slx-archive-top">
         <div class="slx-archive-title">
           第 ${escapeHtml(view.record.summaryMessageId)} 楼大总结
-          <span>${view.record.memoryFrom !== null && view.record.memoryFrom !== undefined ? `记忆 ${escapeHtml(view.record.memoryFrom)}-${escapeHtml(view.record.memoryTo)}｜` : ''}隐藏 ${escapeHtml(view.record.archiveFrom)}-${escapeHtml(view.record.archiveTo)}</span>
+          <span>${rangePrefix}隐藏 ${escapeHtml(view.record.archiveFrom)}-${escapeHtml(view.record.archiveTo)}</span>
         </div>
       </div>
       <div class="slx-archive-statline">
@@ -1816,6 +1831,205 @@ async function regenerateLatestGrandMemory() {
     chatState.summary.lastError = error.message || String(error);
     saveChatState();
     notifySummary('error', error.message || String(error), '重新生成大总结失败');
+    refreshSummaryPanelAfterAction();
+  }
+}
+
+function getLegacyArchiveBatchSize(summary = getSummarySettings()) {
+  const value = Number.parseInt(String(summary.legacyArchiveBatchSize || '').trim(), 10);
+  return Number.isInteger(value) && value > 0 ? value : 30;
+}
+
+function cleanLegacyArchiveMessageContent(message, summary = getSummarySettings()) {
+  const body = stripMemoryBlock(String(message?.message || ''));
+  return extractSummarySourceContent(body, summary).trim();
+}
+
+function collectLegacyArchiveMessages(summary = getSummarySettings()) {
+  return getChatMessagesSafe(undefined, { hide_state: 'all' })
+    .filter(message => !message.is_hidden && !isGrandMemoryOnly(message.message))
+    .map(message => ({
+      messageId: message.message_id,
+      role: message.role === 'user' || message.is_user ? 'user' : 'assistant',
+      content: cleanLegacyArchiveMessageContent(message, summary),
+    }))
+    .filter(entry => entry.content);
+}
+
+function createLegacyArchiveBatches(entries, batchSize) {
+  const safeBatchSize = Math.max(1, Number(batchSize) || 30);
+  const batches = [];
+  for (let index = 0; index < entries.length; index += safeBatchSize) {
+    batches.push(entries.slice(index, index + safeBatchSize));
+  }
+  return batches;
+}
+
+function createLegacyArchivePlan(batchSize = getLegacyArchiveBatchSize()) {
+  const entries = collectLegacyArchiveMessages();
+  const batches = createLegacyArchiveBatches(entries, batchSize);
+  return {
+    entries,
+    batches,
+    batchSize,
+    batchTotal: batches.length,
+    totalMessages: entries.length,
+    archiveFrom: entries[0]?.messageId ?? null,
+    archiveTo: entries.at(-1)?.messageId ?? null,
+  };
+}
+
+function updateLegacyArchiveStatus(patch = {}) {
+  const chatState = getChatState();
+  chatState.summary.legacyArchiveStatus = {
+    ...(chatState.summary.legacyArchiveStatus || {}),
+    ...patch,
+  };
+  saveChatState();
+  refreshSummaryPanelAfterAction();
+  return chatState.summary.legacyArchiveStatus;
+}
+
+function buildLegacyArchiveBatchMaterial(batch) {
+  return batch.map(entry => (
+    '### 第 ' + entry.messageId + ' 楼｜' + entry.role + '\n' + entry.content
+  )).join('\n\n');
+}
+
+function buildLegacyArchiveBatchPrompt(batch, batchIndex, batchTotal) {
+  const firstId = batch[0]?.messageId ?? '?';
+  const lastId = batch.at(-1)?.messageId ?? '?';
+  return [
+    '蜃灵处于梦境档案编制状态。',
+    '',
+    '请把以下旧聊天片段压缩为批次归档摘要。',
+    '这是第 ' + (batchIndex + 1) + ' / ' + batchTotal + ' 批，楼层范围 ' + firstId + '-' + lastId + '。',
+    '要求：',
+    '1. 严格按时间顺序梳理剧情。',
+    '2. 保留时间、地点、人物、关键互动、重要台词、世界设定和未解决伏笔。',
+    '3. 不要续写剧情，不要输出 <content>、<memory> 或 <grand_memory>。',
+    '4. 输出独立可读的纯文本批次摘要。',
+    '',
+    '【旧聊天片段】',
+    buildLegacyArchiveBatchMaterial(batch),
+  ].join('\n');
+}
+
+function buildLegacyArchiveFinalMaterial(batchSummaries) {
+  return batchSummaries.map((item, index) => (
+    '### 批次 ' + (index + 1) + '（楼层 ' + item.archiveFrom + '-' + item.archiveTo + '）\n' + item.summary
+  )).join('\n\n');
+}
+
+async function processLegacyGrandArchive() {
+  const settings = getGlobalSettings();
+  const summary = getSummarySettings(settings);
+  const chatState = getChatState();
+  if (chatState.summary.runningTask !== 'none') return;
+
+  const batchSize = getLegacyArchiveBatchSize(summary);
+  const plan = createLegacyArchivePlan(batchSize);
+  if (!plan.totalMessages) {
+    notifySummary('warning', '没有读取到可归档的旧聊天正文。', '旧聊天归档');
+    return;
+  }
+
+  chatState.summary.runningTask = 'legacy_grand_memory';
+  chatState.summary.lastError = '';
+  chatState.summary.legacyArchiveStatus = {
+    phase: 'running',
+    totalMessages: plan.totalMessages,
+    batchSize,
+    batchTotal: plan.batchTotal,
+    batchIndex: 0,
+    lastResult: '准备归档 ' + plan.totalMessages + ' 楼。',
+  };
+  saveChatState();
+  notifySummary('info', '旧聊天归档开始：' + plan.batchTotal + ' 批。', '旧聊天归档');
+  refreshSummaryPanelAfterAction();
+
+  try {
+    let finalMaterial = '';
+    if (plan.batchTotal === 1) {
+      finalMaterial = buildLegacyArchiveBatchMaterial(plan.batches[0]);
+    } else {
+      const batchSummaries = [];
+      for (const [index, batch] of plan.batches.entries()) {
+        updateLegacyArchiveStatus({
+          phase: 'batching',
+          batchIndex: index + 1,
+          lastResult: '正在生成批次 ' + (index + 1) + ' / ' + plan.batchTotal,
+        });
+        const prompt = buildLegacyArchiveBatchPrompt(batch, index, plan.batchTotal);
+        const result = await generateSummaryMemory(prompt, { type: '旧聊天批次摘要' });
+        batchSummaries.push({
+          archiveFrom: batch[0]?.messageId ?? plan.archiveFrom,
+          archiveTo: batch.at(-1)?.messageId ?? plan.archiveTo,
+          summary: String(result || '').trim(),
+        });
+      }
+      finalMaterial = buildLegacyArchiveFinalMaterial(batchSummaries);
+    }
+
+    updateLegacyArchiveStatus({
+      phase: 'finalizing',
+      batchIndex: plan.batchTotal,
+      lastResult: '正在合并最终大总结。',
+    });
+
+    const prompt = buildGrandMemoryMaterialPrompt(plan.archiveFrom, plan.archiveTo, finalMaterial);
+    const result = await generateSummaryMemory(prompt, { type: '旧聊天大总结' });
+    const grandMemory = forceGrandMemoryRange(result, plan.archiveFrom, plan.archiveTo);
+    const summaryMessageId = await createAssistantChatMessage(grandMemory);
+
+    summaryWriteIgnoreIds.add(Number(summaryMessageId));
+    window.setTimeout(() => summaryWriteIgnoreIds.delete(Number(summaryMessageId)), 1500);
+
+    await setChatMessagesPartial(
+      plan.entries.map(entry => ({ message_id: entry.messageId, is_hidden: true })),
+      { refresh: 'all' },
+    );
+
+    const archiveRecord = {
+      id: String(summaryMessageId) + '-' + Date.now(),
+      summaryMessageId,
+      archiveFrom: plan.archiveFrom,
+      archiveTo: plan.archiveTo,
+      memoryFrom: null,
+      memoryTo: null,
+      rangeType: 'floor',
+      createdAt: Date.now(),
+    };
+
+    chatState.summary.runningTask = 'none';
+    chatState.summary.memoryCountSinceArchive = 0;
+    chatState.summary.memoryCountedMessageIds = [];
+    chatState.summary.lastArchivedMessageId = plan.archiveTo;
+    chatState.summary.lastGrandSummaryMessageId = Number(summaryMessageId);
+    chatState.summary.archiveRecords = [...(chatState.summary.archiveRecords || []), archiveRecord];
+    chatState.summary.legacyArchiveStatus = {
+      phase: 'done',
+      totalMessages: plan.totalMessages,
+      batchSize,
+      batchTotal: plan.batchTotal,
+      batchIndex: plan.batchTotal,
+      lastResult: '已生成第 ' + summaryMessageId + ' 楼旧聊天大总结，并隐藏 ' + plan.totalMessages + ' 楼。',
+    };
+    chatState.summary.lastError = '';
+    saveChatState();
+    scanExistingSummaryState();
+    notifySummary('success', '已生成第 ' + summaryMessageId + ' 楼旧聊天大总结。', '旧聊天归档');
+    refreshSummaryPanelAfterAction();
+  } catch (error) {
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastError = error.message || String(error);
+    chatState.summary.legacyArchiveStatus = {
+      ...(chatState.summary.legacyArchiveStatus || {}),
+      phase: 'error',
+      lastResult: error.message || String(error),
+    };
+    saveChatState();
+    notifySummary('error', error.message || String(error), '旧聊天归档失败');
     refreshSummaryPanelAfterAction();
   }
 }
@@ -2288,12 +2502,17 @@ function renderSummarySettingsPanel(settings, chatState) {
     memory: '小总结中',
     manual_memory: '手动小总结中',
     grand_memory: '大总结中',
+    legacy_grand_memory: '旧聊天归档中',
   };
   const runningLabel = runningTaskLabels[chatState.summary.runningTask] || chatState.summary.runningTask || '空闲';
   const presetMemoryLabel = summary.enabled ? '自动总结接管中' : '预设小总结接管中';
   const sourceTags = getSummarySourceTags(summary);
   const sourceRulesCollapsed = settings.ui?.sourceRulesCollapsed !== false;
   const archiveRecordViews = [...archiveRecords].reverse().map(createArchiveRecordView);
+  const legacyBatchSize = summary.legacyArchiveBatchSize || '';
+  const legacyPlan = createLegacyArchivePlan(getLegacyArchiveBatchSize(summary));
+  const legacyStatus = chatState.summary.legacyArchiveStatus || {};
+  const legacyStatusLabel = legacyStatus.lastResult || (legacyPlan.totalMessages ? '待归档 ' + legacyPlan.totalMessages + ' 楼。' : '未扫描到可归档正文。');
   const memoryEditorHtml = memoryEditorState ? `
     <div class="slx-detail-card slx-memory-editor-card">
       <div class="slx-summary-card-head">
@@ -2404,6 +2623,25 @@ function renderSummarySettingsPanel(settings, chatState) {
     </div>
 
     <div class="slx-detail-card slx-muted-card">
+      <div class="slx-detail-title">旧聊天归档</div>
+      <p>按酒馆显示楼层顺序分批，包含用户与 AI 回复。适合没有 memory 的旧聊天。</p>
+      <label class="slx-field slx-field-wide">
+        <span>每批楼层数</span>
+        <input type="number" min="1" step="1" data-slx-legacy-archive-batch-size value="${escapeHtml(legacyBatchSize)}" placeholder="留空默认 30" />
+        <small>输入 4 就按每 4 楼一批；留空默认每 30 楼一批。</small>
+      </label>
+      <div class="slx-diagnostics">
+        ${renderDiagnosticLine('可归档楼层', legacyPlan.totalMessages + ' 楼')}
+        ${renderDiagnosticLine('预计批次', legacyPlan.batchTotal ? legacyPlan.batchTotal + ' 批' : '无')}
+        ${renderDiagnosticLine('批次进度', legacyStatus.batchTotal ? (legacyStatus.batchIndex || 0) + ' / ' + legacyStatus.batchTotal : '未开始')}
+        ${renderDiagnosticLine('归档状态', legacyStatusLabel)}
+      </div>
+      <div class="slx-action-row slx-summary-action-row">
+        <button class="slx-soft-btn" type="button" data-slx-scan-legacy-archive>扫描旧聊天</button>
+        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-start-legacy-archive ${legacyPlan.totalMessages && chatState.summary.runningTask === 'none' ? '' : 'disabled'}>开始归档</button>
+      </div>
+    </div>
+    <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">小总结管理</div>
       <p>指定楼层重写或手动编辑 memory，并覆盖回原楼层。</p>
       <label class="slx-field slx-field-wide">
@@ -2428,7 +2666,7 @@ function renderSummarySettingsPanel(settings, chatState) {
 
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">Step 7 阶段边界</div>
-      <p>已接入 0 楼小总结、指定楼层重写、指定楼层编辑、自动大总结、归档楼创建、隐藏区间与上次大总结重生成。</p>
+      <p>已接入 0 楼小总结、指定楼层重写、指定楼层编辑、自动大总结、旧聊天分批归档、归档楼创建、隐藏区间与上次大总结重生成。</p>
     </div>
   `;
 }
@@ -2750,6 +2988,51 @@ function renderFloatingPanel(options = {}) {
     scanExistingSummaryState();
     if (reset) notifySummary('info', '已重置未完成的总结任务状态。', '归档管理器');
     rerenderSummaryPanel();
+  });
+  const syncLegacyArchiveBatchSize = () => {
+    const input = panelRoot.querySelector('[data-slx-legacy-archive-batch-size]');
+    const summary = getSummarySettings(settings);
+    summary.legacyArchiveBatchSize = String(input?.value || '').trim();
+    saveGlobalSettings();
+    return getLegacyArchiveBatchSize(summary);
+  };
+
+  panelRoot.querySelector('[data-slx-legacy-archive-batch-size]')?.addEventListener('change', () => {
+    syncLegacyArchiveBatchSize();
+    rerenderSummaryPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-legacy-archive-batch-size]')?.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    syncLegacyArchiveBatchSize();
+    event.currentTarget.blur();
+    rerenderSummaryPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-scan-legacy-archive]')?.addEventListener('click', () => {
+    const batchSize = syncLegacyArchiveBatchSize();
+    const plan = createLegacyArchivePlan(batchSize);
+    updateLegacyArchiveStatus({
+      phase: 'scanned',
+      totalMessages: plan.totalMessages,
+      batchSize,
+      batchTotal: plan.batchTotal,
+      batchIndex: 0,
+      lastResult: plan.totalMessages ? '已扫描 ' + plan.totalMessages + ' 楼，预计 ' + plan.batchTotal + ' 批。' : '没有读取到可归档正文。',
+    });
+    rerenderSummaryPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-start-legacy-archive]')?.addEventListener('click', event => {
+    const button = event.currentTarget;
+    syncLegacyArchiveBatchSize();
+    button.disabled = true;
+    void processLegacyGrandArchive().catch(error => {
+      notifySummary('warning', error.message || String(error), '旧聊天归档失败');
+    }).finally(() => {
+      button.disabled = false;
+    });
   });
   panelRoot.querySelector('[data-slx-regenerate-grand-memory]')?.addEventListener('click', event => {
     const button = event.currentTarget;
