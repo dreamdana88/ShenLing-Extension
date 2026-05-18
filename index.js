@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.7.3';
+const PLUGIN_VERSION = '0.7.5';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -1091,6 +1091,13 @@ function extractMemoryBlocks(content) {
   return Array.from(String(content || '').matchAll(/<memory>[\s\S]*?<\/memory>/gi)).map(match => match[0].trim());
 }
 
+function parseMemoryNumber(content) {
+  const match = String(content || '').match(/<number>\s*(\d+)\s*<\/number>/i);
+  if (!match) return null;
+  const number = Number(match[1]);
+  return Number.isInteger(number) && number >= 0 ? number : null;
+}
+
 function normalizeMemoryBlock(content) {
   const matched = String(content || '').match(/<memory>[\s\S]*?<\/memory>/i);
   if (matched) return matched[0].trim();
@@ -1101,6 +1108,26 @@ function normalizeGrandMemoryBlock(content) {
   const matched = String(content || '').match(GRAND_MEMORY_BLOCK_RE);
   if (matched) return matched[0].trim();
   return `<grand_memory>\n${String(content || '').trim()}\n</grand_memory>`;
+}
+
+function forceGrandMemoryRange(content, memoryFrom, memoryTo) {
+  const summaryText = `<summary>【梦境档案：第${memoryFrom}-${memoryTo}卷】</summary>`;
+  const rangeText = `编号范围：${memoryFrom}-${memoryTo}`;
+  let grandMemory = normalizeGrandMemoryBlock(content);
+
+  if (/<summary>[\s\S]*?<\/summary>/i.test(grandMemory)) {
+    grandMemory = grandMemory.replace(/<summary>[\s\S]*?<\/summary>/i, summaryText);
+  } else if (/<details>/i.test(grandMemory)) {
+    grandMemory = grandMemory.replace(/<details>/i, `<details>\n${summaryText}`);
+  } else {
+    grandMemory = grandMemory.replace(/<grand_memory>/i, `<grand_memory>\n${summaryText}`);
+  }
+
+  if (/编号范围[:：][^\r\n]*/i.test(grandMemory)) {
+    return grandMemory.replace(/编号范围[:：][^\r\n]*/i, rangeText).trim();
+  }
+
+  return grandMemory.replace(/(<summary>[\s\S]*?<\/summary>)/i, `$1\n\n${rangeText}`).trim();
 }
 
 function isGrandMemoryOnly(content) {
@@ -1117,11 +1144,11 @@ function fillGrandMemoryTemplate(template, archiveFrom, archiveTo) {
     .replaceAll('${archiveTo}', String(archiveTo));
 }
 
-function buildGrandMemoryMaterialPrompt(archiveFrom, archiveTo, archiveMaterial, { regenerate = false } = {}) {
+function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMaterial, { regenerate = false } = {}) {
   const summary = getSummarySettings();
-  const grandMemoryTemplate = fillGrandMemoryTemplate(getGrandMemoryPromptTemplate(summary), archiveFrom, archiveTo);
+  const grandMemoryTemplate = fillGrandMemoryTemplate(getGrandMemoryPromptTemplate(summary), memoryFrom, memoryTo);
   const verb = regenerate ? '重新生成' : '生成';
-  return `蜃灵处于梦境档案编制状态。\n\n${grandMemoryTemplate}\n\n${SUMMARY_GAZE_GUIDANCE}\n\n现在请根据以下归档素材${verb}本轮归档大总结。\n归档素材已包含 ${archiveFrom}-${archiveTo} 范围内可读取的全部 <memory>；若楼层没有 <memory>，会以正文兜底。\n若归档素材中出现多个 <list> 角色行程，只参考最新一条 <list>，旧 <list> 不纳入大总结。\n编号范围必须写为：${archiveFrom}-${archiveTo}\n请不要续写剧情，不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。\n\n【归档素材：${archiveFrom}-${archiveTo}】\n${archiveMaterial}`;
+  return `蜃灵处于梦境档案编制状态。\n\n${grandMemoryTemplate}\n\n${SUMMARY_GAZE_GUIDANCE}\n\n现在请根据以下梦境记忆${verb}本轮归档大总结。\n请只依据素材内容归纳，不要续写剧情。\n请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。\n\n【梦境记忆素材】\n${archiveMaterial}`;
 }
 
 function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
@@ -1135,6 +1162,7 @@ function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
     if (memories.length > 0) {
       return memories.map(memory => ({
         messageId: message.message_id,
+        memoryNumber: parseMemoryNumber(memory),
         body: '',
         hasMemory: true,
         memory,
@@ -1142,8 +1170,16 @@ function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
     }
 
     return body
-      ? [{ messageId: message.message_id, body: '', hasMemory: false, memory: `<memory>\n${body}\n</memory>` }]
+      ? [{ messageId: message.message_id, memoryNumber: null, body: '', hasMemory: false, memory: `<memory>\n${body}\n</memory>` }]
       : [];
+  });
+
+  let nextMemoryNumber = 0;
+  entries.forEach(entry => {
+    if (!Number.isInteger(entry.memoryNumber)) {
+      entry.memoryNumber = nextMemoryNumber;
+    }
+    nextMemoryNumber = Math.max(nextMemoryNumber, entry.memoryNumber + 1);
   });
 
   const recentMemoryIndexes = entries
@@ -1156,15 +1192,21 @@ function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
     if (message) entries[index].body = extractSummarySourceContent(stripMemoryBlock(message.message));
   }
 
-  const lastEntryIndex = entries.length - 1;
-  return entries
+  const material = entries
     .map((entry, index) => {
-      const memory = index === lastEntryIndex ? entry.memory : stripListBlocks(entry.memory);
+      const memory = stripListBlocks(entry.memory);
       const body = entry.body ? `【正文】\n${entry.body}\n\n` : '';
-      return `### 第 ${entry.messageId} 楼\n${body}【小总结】\n${memory}`;
+      return `### 记忆编号 ${entry.memoryNumber}\n${body}【小总结】\n${memory}`;
     })
     .join('\n\n')
     .trim();
+
+  return {
+    material,
+    memoryFrom: entries[0]?.memoryNumber ?? null,
+    memoryTo: entries.at(-1)?.memoryNumber ?? null,
+    entryCount: entries.length,
+  };
 }
 
 async function createAssistantChatMessage(message) {
@@ -1434,18 +1476,20 @@ function createScannedSummaryState(baseSummary = getChatState().summary) {
   );
 
   for (const [index, message] of grandMemoryMessages.entries()) {
-    const range = parseGrandMemoryRange(message.message);
+    const memoryRange = parseGrandMemoryRange(message.message);
     const positionalArchiveFrom = index === 0 ? 0 : grandMemoryMessages[index - 1].message_id + 1;
     const positionalArchiveTo = message.message_id - 1;
-    const archiveFrom = positionalArchiveFrom <= positionalArchiveTo ? positionalArchiveFrom : range?.archiveFrom;
-    const archiveTo = positionalArchiveFrom <= positionalArchiveTo ? positionalArchiveTo : range?.archiveTo;
-    if (archiveFrom === undefined || archiveTo === undefined || archiveFrom > archiveTo) continue;
     const baseRecord = recordsBySummaryId.get(message.message_id);
+    const archiveFrom = baseRecord?.archiveFrom ?? (positionalArchiveFrom <= positionalArchiveTo ? positionalArchiveFrom : undefined);
+    const archiveTo = baseRecord?.archiveTo ?? (positionalArchiveFrom <= positionalArchiveTo ? positionalArchiveTo : undefined);
+    if (archiveFrom === undefined || archiveTo === undefined || archiveFrom > archiveTo) continue;
     recordsBySummaryId.set(message.message_id, {
       id: baseRecord?.id || `${message.message_id}-scanned`,
       summaryMessageId: message.message_id,
       archiveFrom,
       archiveTo,
+      memoryFrom: baseRecord?.memoryFrom ?? memoryRange?.archiveFrom ?? null,
+      memoryTo: baseRecord?.memoryTo ?? memoryRange?.archiveTo ?? null,
       createdAt: baseRecord?.createdAt || Date.now(),
     });
   }
@@ -1498,6 +1542,14 @@ function scanExistingSummaryState() {
   return chatState;
 }
 
+function clearStaleSummaryRunningTask(reason = '') {
+  const chatState = getChatState();
+  if (!chatState.summary.runningTask || chatState.summary.runningTask === 'none') return false;
+  chatState.summary.runningTask = 'none';
+  chatState.summary.lastError = reason ? `已重置未完成任务：${reason}` : chatState.summary.lastError;
+  saveChatState();
+  return true;
+}
 function formatMessageIdList(ids) {
   return ids.length > 10 ? `${ids.slice(0, 10).join('、')} 等 ${ids.length} 楼` : ids.join('、');
 }
@@ -1543,7 +1595,7 @@ function renderArchiveRecordView(view) {
       <div class="slx-archive-top">
         <div class="slx-archive-title">
           第 ${escapeHtml(view.record.summaryMessageId)} 楼大总结
-          <span>归档 ${escapeHtml(view.record.archiveFrom)}-${escapeHtml(view.record.archiveTo)}</span>
+          <span>${view.record.memoryFrom !== null && view.record.memoryFrom !== undefined ? `记忆 ${escapeHtml(view.record.memoryFrom)}-${escapeHtml(view.record.memoryTo)}｜` : ''}隐藏 ${escapeHtml(view.record.archiveFrom)}-${escapeHtml(view.record.archiveTo)}</span>
         </div>
       </div>
       <div class="slx-archive-statline">
@@ -1794,14 +1846,14 @@ async function processAutoGrandMemory() {
   refreshSummaryPanelAfterAction();
 
   try {
-    const archiveMaterial = buildArchiveMemoryMaterial(archiveFrom, archiveTo);
-    if (!archiveMaterial) {
+    const archiveData = buildArchiveMemoryMaterial(archiveFrom, archiveTo);
+    if (!archiveData.material) {
       throw new Error(`归档区间 ${archiveFrom}-${archiveTo} 未读取到可用 memory 素材。`);
     }
 
-    const prompt = buildGrandMemoryMaterialPrompt(archiveFrom, archiveTo, archiveMaterial);
+    const prompt = buildGrandMemoryMaterialPrompt(archiveData.memoryFrom, archiveData.memoryTo, archiveData.material);
     const result = await generateSummaryMemory(prompt, { type: '自动大总结' });
-    const grandMemory = normalizeGrandMemoryBlock(result);
+    const grandMemory = forceGrandMemoryRange(result, archiveData.memoryFrom, archiveData.memoryTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
 
     summaryWriteIgnoreIds.add(Number(summaryMessageId));
@@ -1820,6 +1872,8 @@ async function processAutoGrandMemory() {
       summaryMessageId,
       archiveFrom,
       archiveTo,
+      memoryFrom: archiveData.memoryFrom,
+      memoryTo: archiveData.memoryTo,
       createdAt: Date.now(),
     };
 
@@ -1859,17 +1913,18 @@ async function regenerateLatestGrandMemory() {
   refreshSummaryPanelAfterAction();
 
   try {
-    const archiveMaterial = buildArchiveMemoryMaterial(record.archiveFrom, record.archiveTo);
-    if (!archiveMaterial) {
+    const archiveData = buildArchiveMemoryMaterial(record.archiveFrom, record.archiveTo);
+    if (!archiveData.material) {
       throw new Error(`归档区间 ${record.archiveFrom}-${record.archiveTo} 未读取到可用 memory 素材。`);
     }
 
-    const prompt = buildGrandMemoryMaterialPrompt(record.archiveFrom, record.archiveTo, archiveMaterial, { regenerate: true });
+    const prompt = buildGrandMemoryMaterialPrompt(archiveData.memoryFrom, archiveData.memoryTo, archiveData.material, { regenerate: true });
     const result = await generateSummaryMemory(prompt, { type: '重新生成大总结' });
-    const grandMemory = normalizeGrandMemoryBlock(result);
-
+    const grandMemory = forceGrandMemoryRange(result, archiveData.memoryFrom, archiveData.memoryTo);
     summaryWriteIgnoreIds.add(Number(record.summaryMessageId));
     await setChatMessageContent(Number(record.summaryMessageId), grandMemory);
+    record.memoryFrom = archiveData.memoryFrom;
+    record.memoryTo = archiveData.memoryTo;
     window.setTimeout(() => summaryWriteIgnoreIds.delete(Number(record.summaryMessageId)), 1500);
 
     chatState.summary.runningTask = 'none';
@@ -2030,6 +2085,7 @@ function registerAutoSummaryEvents() {
   const handleChatChanged = () => {
     summaryProcessTimers.forEach(timer => window.clearTimeout(timer));
     summaryProcessTimers.clear();
+    clearStaleSummaryRunningTask('聊天切换');
     scanExistingSummaryState();
   };
 
@@ -2826,7 +2882,9 @@ function renderFloatingPanel(options = {}) {
     rerenderSummaryPanel();
   });
   panelRoot.querySelector('[data-slx-refresh-archive-scan]')?.addEventListener('click', () => {
+    const reset = clearStaleSummaryRunningTask('手动刷新归档状态');
     scanExistingSummaryState();
+    if (reset) notifySummary('info', '已重置未完成的总结任务状态。', '归档管理器');
     rerenderSummaryPanel();
   });
   panelRoot.querySelector('[data-slx-regenerate-grand-memory]')?.addEventListener('click', event => {
@@ -3038,6 +3096,7 @@ function init() {
   globalThis.visualViewport?.addEventListener?.('scroll', syncViewportSize, { passive: true });
   getGlobalSettings();
   getChatState();
+  clearStaleSummaryRunningTask('插件重新加载');
   scanExistingSummaryState();
   registerAutoSummaryEvents();
   renderSettingsPanel();
