@@ -15,6 +15,11 @@ import {
   mergeDefaults,
 } from '../utils/text.js';
 import { getContextSafe } from './chat.js';
+import {
+  getDefaultWordReplaceSettings,
+  normalizeReplacementRules,
+  REPLACEMENT_DEFAULTS_VERSION,
+} from '../features/word-replace/core.js';
 
 export const defaultGlobalSettings = Object.freeze({
   schemaVersion: STORAGE_VERSION,
@@ -101,6 +106,7 @@ export const defaultGlobalSettings = Object.freeze({
       thresholdMinutes: 60,
       appendToChat: true,
     },
+    replace: getDefaultWordReplaceSettings(),
   },
   communicationLog: {
     maxEntries: 10,
@@ -306,4 +312,23 @@ export function getSummarySettings(settings = getGlobalSettings()) {
   }
   getSummarySourceTags(summary);
   return summary;
+}
+
+export function getWordReplaceSettings(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.modules)) {
+    settings.modules = cloneData(defaultGlobalSettings.modules);
+  }
+  settings.modules.replace = mergeDefaults(
+    settings.modules.replace,
+    cloneData(defaultGlobalSettings.modules.replace),
+  );
+
+  const replace = settings.modules.replace;
+  replace.rules = normalizeReplacementRules(replace.rules, replace.defaultsVersion);
+  replace.defaultsVersion = REPLACEMENT_DEFAULTS_VERSION;
+  if (!isPlainObject(replace.expandedGroups)) {
+    replace.expandedGroups = cloneData(defaultGlobalSettings.modules.replace.expandedGroups);
+  }
+  replace.importCollapsed = replace.importCollapsed !== false;
+  return replace;
 }

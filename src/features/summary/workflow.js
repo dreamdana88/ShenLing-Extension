@@ -23,8 +23,10 @@ import {
   getChatState,
   getGlobalSettings,
   getSummarySettings,
+  getWordReplaceSettings,
   saveChatState,
 } from '../../core/settings.js';
+import { applyReplacementRulesByScope } from '../word-replace/core.js';
 import {
   buildGrandMemoryMaterialPrompt,
   buildLegacyArchiveBatchMaterial,
@@ -172,6 +174,14 @@ export function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
 
 export function shouldRunAutoSummary(settings = getGlobalSettings()) {
   return Boolean(settings.enabled && getSummarySettings(settings).enabled);
+}
+
+export function shouldRunWordReplace(settings = getGlobalSettings()) {
+  return Boolean(settings.enabled && getWordReplaceSettings(settings).enabled);
+}
+
+export function shouldRunMessagePostprocess(settings = getGlobalSettings()) {
+  return shouldRunAutoSummary(settings) || shouldRunWordReplace(settings);
 }
 
 export function hasMessageBeenCountedForMemory(chatState, messageId) {
@@ -547,8 +557,12 @@ export async function summarizeOpeningMessage() {
   try {
     const result = await generateSummaryMemory(buildMemorySummaryPrompt(summaryBody, [], getSummarySettings()), { type: '0楼小总结' });
     const memory = forceMemoryNumber(result, 0);
+    const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
+    if (memoryReplacementResult.errors.length > 0) {
+      throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
+    }
     markSummaryWriteIgnored(0);
-    await setChatMessageContent(0, `${body}\n\n${memory}`);
+    await setChatMessageContent(0, `${body}\n\n${memoryReplacementResult.text}`);
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = '';
     saveChatState();
@@ -588,7 +602,11 @@ export async function regenerateMemoryForMessage(messageId) {
     const result = await generateSummaryMemory(buildMemorySummaryPrompt(material.promptContent, priorMemories, summary), {
       type: '手动重写小总结',
     });
-    await writeManualMemoryToMessage(Number(messageId), result);
+    const memoryReplacementResult = applyReplacementRulesByScope(normalizeMemoryBlock(result), getWordReplaceSettings());
+    if (memoryReplacementResult.errors.length > 0) {
+      throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
+    }
+    await writeManualMemoryToMessage(Number(messageId), memoryReplacementResult.text);
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = '';
     saveChatState();
@@ -897,8 +915,11 @@ export async function processLegacyGrandArchive() {
 export async function processAutoSummary(messageId, expectedFingerprint) {
   const settings = getGlobalSettings();
   const summary = getSummarySettings(settings);
+  const wordReplace = getWordReplaceSettings(settings);
   const chatState = getChatState();
-  if (!shouldRunAutoSummary(settings)) return;
+  const shouldSummarize = shouldRunAutoSummary(settings);
+  const shouldReplace = shouldRunWordReplace(settings);
+  if (!shouldSummarize && !shouldReplace) return;
   if (summaryWriteIgnoreIds.has(Number(messageId))) return;
   if (chatState.summary.runningTask !== 'none') return;
   if (!isLatestMessage(Number(messageId))) return;
@@ -908,14 +929,42 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
   if (GRAND_MEMORY_BLOCK_RE.test(chatMessage.message)) return;
 
   const material = createSummarySourceMaterial(Number(messageId), summary);
-  if (!material) {
+  if (!material && shouldSummarize) {
     notifySummary('info', '已跳过第 ' + Number(messageId) + ' 楼：没有可总结正文。');
     return;
   }
+  if (!material && !shouldReplace) return;
 
-  const fingerprint = material.fingerprint;
+  const fingerprint = material?.fingerprint || createSimpleFingerprint(chatMessage.message);
   if (expectedFingerprint && fingerprint !== expectedFingerprint) return;
-  if ((chatState.summary.processedMessageFingerprints || {})[messageId] === fingerprint) return;
+  if (shouldSummarize && (chatState.summary.processedMessageFingerprints || {})[messageId] === fingerprint) return;
+
+  const replacementResult = applyReplacementRulesByScope(chatMessage.message, wordReplace);
+  if (replacementResult.errors.length > 0) {
+    const message = `词汇替换规则错误：${replacementResult.errors.join('；')}`;
+    chatState.summary.lastError = message;
+    saveChatState();
+    notifySummary('error', message, '词汇替换失败');
+    return;
+  }
+
+  const replacedBody = stripMemoryBlock(replacementResult.text);
+  const replacedAiContent = extractSummarySourceContent(replacedBody, summary).trim();
+
+  if (!shouldSummarize) {
+    if (replacementResult.changed) {
+      markSummaryWriteIgnored(Number(messageId));
+      await setChatMessageContent(Number(messageId), replacementResult.text);
+      notifySummary('success', `已替换 ${replacementResult.replacements} 处词汇。`, '词汇替换');
+      refreshSummaryPanelAfterAction();
+    }
+    return;
+  }
+
+  if (!replacedAiContent) {
+    notifySummary('warning', '正文净化后没有可总结内容，已跳过自动小总结。', '自动总结');
+    return;
+  }
 
   chatState.summary.runningTask = 'memory';
   chatState.summary.lastError = '';
@@ -924,10 +973,16 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
 
   try {
     const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
-    const prompt = buildMemorySummaryPrompt(material.promptContent, priorMemories, summary);
+    const userContent = summary.includeUserInput ? getPreviousUserSummarySource(Number(messageId), summary) : '';
+    const promptContent = buildSummaryPromptContent(replacedAiContent, userContent);
+    const prompt = buildMemorySummaryPrompt(promptContent, priorMemories, summary);
     const result = await generateSummaryMemory(prompt, { type: '自动小总结' });
     const memory = normalizeMemoryBlock(result);
-    const nextMessage = `${material.body}\n\n${memory}`;
+    const memoryReplacementResult = applyReplacementRulesByScope(memory, wordReplace);
+    if (memoryReplacementResult.errors.length > 0) {
+      throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
+    }
+    const nextMessage = `${replacedBody}\n\n${memoryReplacementResult.text}`;
 
     markSummaryWriteIgnored(Number(messageId));
     await setChatMessageContent(Number(messageId), nextMessage);
@@ -964,7 +1019,7 @@ export function scheduleAutoSummary(messageId) {
   const numericMessageId = Number(messageId);
   if (!Number.isFinite(numericMessageId)) return;
   if (numericMessageId <= 0) return;
-  if (!shouldRunAutoSummary()) return;
+  if (!shouldRunMessagePostprocess()) return;
   if (summaryWriteIgnoreIds.has(numericMessageId)) return;
   if (!isLatestMessage(numericMessageId)) return;
 

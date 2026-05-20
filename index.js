@@ -46,6 +46,11 @@ import {
   refreshSummaryPanelAfterAction,
   renderSummarySettingsPanel,
 } from './src/features/summary/panel.js';
+import {
+  bindWordReplacePanelEvents,
+  configureWordReplacePanel,
+  renderWordReplacePanel,
+} from './src/features/word-replace/panel.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -464,6 +469,10 @@ function renderModuleDetail(module, settings) {
     return renderSummarySettingsPanel(settings, chatState);
   }
 
+  if (module.id === 'replace') {
+    return renderWordReplacePanel(settings);
+  }
+
   if (module.id === 'settings') {
     return `
 
@@ -697,6 +706,7 @@ function renderFloatingPanel(options = {}) {
 
 
   bindSummaryPanelEvents(panelRoot, settings);
+  bindWordReplacePanelEvents(panelRoot, settings);
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
     button.addEventListener('click', () => {
@@ -831,6 +841,10 @@ function init() {
     getPanelRoot: () => panelRoot,
     refreshPanel: renderFloatingPanel,
     syncSettingsPanelState,
+  });
+  configureWordReplacePanel({
+    getPanelRoot: () => panelRoot,
+    refreshPanel: renderFloatingPanel,
   });
   configureSummaryWorkflow({
     addCommunicationLog,
