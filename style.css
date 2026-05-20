@@ -549,15 +549,15 @@ body.slx-panel-open-lock {
 .slx-card-actions {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .slx-collapse-toggle {
-  width: 30px;
-  min-width: 30px;
+  width: 28px;
+  min-width: 28px;
   padding: 0;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -611,10 +611,11 @@ body.slx-panel-open-lock {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 
 .slx-archive-title {
+  min-width: 0;
   color: var(--slx-text);
   font-size: 12px;
   font-weight: 700;
@@ -666,15 +667,24 @@ body.slx-panel-open-lock {
 }
 
 .slx-mini-action-btn {
-  min-width: 38px;
-  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 7px;
   background: var(--slx-bg-btn);
   color: var(--slx-muted);
   cursor: pointer;
-  font: inherit;
+  font-size: 12px;
   font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s, opacity 0.2s;
 }
 
 .slx-mini-action-btn:hover:not(:disabled) {

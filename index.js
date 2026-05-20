@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.8.2';
+const PLUGIN_VERSION = '0.8.3';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -1491,7 +1491,7 @@ function renderArchiveRecordView(view) {
           第 ${escapeHtml(view.record.summaryMessageId)} 楼大总结
           <span>${rangePrefix}隐藏 ${escapeHtml(view.record.archiveFrom)}-${escapeHtml(view.record.archiveTo)}</span>
         </div>
-        <button class="slx-mini-action-btn" type="button" data-slx-edit-grand-memory="${escapeHtml(view.record.summaryMessageId)}" title="编辑大总结正文" ${view.summaryMissing ? 'disabled' : ''}>✎</button>
+        <button class="slx-mini-action-btn" type="button" data-slx-edit-grand-memory="${escapeHtml(view.record.summaryMessageId)}" title="编辑大总结正文" ${view.summaryMissing ? 'disabled' : ''}><i class="fa-solid fa-pen-to-square"></i></button>
       </div>
       <div class="slx-archive-statline">
         <span class="slx-archive-pill">隐藏 ${view.hiddenIds.length}/${view.totalIds.length}</span>
@@ -2694,8 +2694,8 @@ function renderSummarySettingsPanel(settings, chatState) {
           ${sourceRulesCollapsed ? '' : '<p>这里只处理正文里的杂讯标签。&lt;memory&gt; 与 &lt;grand_memory&gt; 会由小总结/大总结流程单独读取，不作为默认排除项。</p>'}
         </div>
         <div class="slx-card-actions">
-          ${sourceRulesCollapsed ? '' : '<button class="slx-mini-action-btn" type="button" data-slx-reset-source-tags title="恢复蜃灵默认标签">↺</button>'}
-          <button class="slx-mini-action-btn slx-collapse-toggle" type="button" data-slx-toggle-source-rules title="${sourceRulesCollapsed ? '展开正文读取规则' : '收起正文读取规则'}">${sourceRulesCollapsed ? '▸' : '▾'}</button>
+          ${sourceRulesCollapsed ? '' : '<button class="slx-mini-action-btn" type="button" data-slx-reset-source-tags title="恢复蜃灵默认标签"><i class="fa-solid fa-rotate-left"></i></button>'}
+          <button class="slx-mini-action-btn slx-collapse-toggle" type="button" data-slx-toggle-source-rules title="${sourceRulesCollapsed ? '展开正文读取规则' : '收起正文读取规则'}"><i class="fa-solid ${sourceRulesCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'}"></i></button>
         </div>
       </div>
       ${sourceRulesCollapsed ? '' : `
@@ -2749,7 +2749,7 @@ function renderSummarySettingsPanel(settings, chatState) {
           <div class="slx-detail-title">归档管理器</div>
           <p>查看大总结楼层与当前隐藏状态，可直接编辑大总结正文。</p>
         </div>
-        <button class="slx-mini-action-btn" type="button" data-slx-refresh-archive-scan title="刷新归档状态">↻</button>
+        <button class="slx-mini-action-btn" type="button" data-slx-refresh-archive-scan title="刷新归档状态"><i class="fa-solid fa-rotate-right"></i></button>
       </div>
       ${archiveRecordViews.length ? archiveRecordViews.map(renderArchiveRecordView).join('') : '<p>暂无归档记录。</p>'}
     </div>
@@ -2782,7 +2782,7 @@ function renderSummarySettingsPanel(settings, chatState) {
         <span>重写指定楼层小总结</span>
         <div class="slx-model-row">
           <input type="number" min="0" data-slx-rewrite-memory-floor placeholder="留空默认最新AI楼层" />
-          <button class="slx-mini-action-btn" type="button" data-slx-rewrite-memory title="重新生成并覆盖该楼 memory" ${chatState.summary.runningTask !== 'none' ? 'disabled' : ''}>↻</button>
+          <button class="slx-mini-action-btn" type="button" data-slx-rewrite-memory title="重新生成并覆盖该楼 memory" ${chatState.summary.runningTask !== 'none' ? 'disabled' : ''}><i class="fa-solid fa-rotate-right"></i></button>
         </div>
         <small>适合大改楼层后刷新小总结，不会增加累计次数。</small>
       </label>
@@ -2790,7 +2790,7 @@ function renderSummarySettingsPanel(settings, chatState) {
         <span>编辑指定楼层小总结</span>
         <div class="slx-model-row">
           <input type="number" min="0" data-slx-edit-memory-floor placeholder="输入楼层号" />
-          <button class="slx-mini-action-btn" type="button" data-slx-edit-memory title="读取该楼 memory">✎</button>
+          <button class="slx-mini-action-btn" type="button" data-slx-edit-memory title="读取该楼 memory"><i class="fa-solid fa-pen-to-square"></i></button>
         </div>
         <small>适合只改几个字，保存后只覆盖该楼 memory。</small>
       </label>
