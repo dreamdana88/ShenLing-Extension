@@ -4,16 +4,12 @@ import {
   DEFAULT_SUMMARY_EXCLUDE_TAGS,
   DEFAULT_SUMMARY_INCLUDE_TAGS,
   GRAND_MEMORY_BLOCK_RE,
-  LIST_BLOCK_RE,
-  MEMORY_BLOCK_RE,
   MODULE_NAME,
   MODULES,
   PLUGIN_VERSION,
   STORAGE_VERSION,
   SUMMARY_EVENT_DELAY_MS,
-  SUMMARY_GAZE_GUIDANCE,
   SUMMARY_PROMPT_VERSION,
-  SUMMARY_SUPPORT_MESSAGES,
 } from './src/constants.js';
 import {
   cloneData,
@@ -40,6 +36,27 @@ import {
   sanitizeCommunicationLog,
   stringifyLogField,
 } from './src/core/logs.js';
+import {
+  buildGrandMemoryMaterialPrompt,
+  buildLegacyArchiveBatchMaterial,
+  buildLegacyArchiveBatchPrompt,
+  buildLegacyArchiveFinalMaterial,
+  buildMemorySummaryMessages,
+  buildMemorySummaryPrompt,
+  buildSummaryPromptContent,
+  createLegacyArchiveBatches,
+  extractMemoryBlocks,
+  forceGrandMemoryRange,
+  forceMemoryNumber,
+  getLegacyArchiveBatchSize,
+  getOpenAiResponseContent,
+  isGrandMemoryOnly,
+  normalizeGrandMemoryBlock,
+  normalizeMemoryBlock,
+  parseMemoryNumber,
+  stripListBlocks,
+  stripMemoryBlock,
+} from './src/core/summary.js';
 
 const defaultGlobalSettings = Object.freeze({
   schemaVersion: STORAGE_VERSION,
@@ -579,78 +596,6 @@ function createSimpleFingerprint(content) {
   return `${text.length}:${hash}`;
 }
 
-function stripMemoryBlock(content) {
-  return String(content || '').replace(MEMORY_BLOCK_RE, '').trim();
-}
-
-function stripListBlocks(content) {
-  return String(content || '').replace(LIST_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n').trim();
-}
-
-function extractMemoryBlocks(content) {
-  return Array.from(String(content || '').matchAll(/<memory>[\s\S]*?<\/memory>/gi)).map(match => match[0].trim());
-}
-
-function parseMemoryNumber(content) {
-  const match = String(content || '').match(/<number>\s*(\d+)\s*<\/number>/i);
-  if (!match) return null;
-  const number = Number(match[1]);
-  return Number.isInteger(number) && number >= 0 ? number : null;
-}
-
-function normalizeMemoryBlock(content) {
-  const matched = String(content || '').match(/<memory>[\s\S]*?<\/memory>/i);
-  if (matched) return matched[0].trim();
-  return `<memory>\n${String(content || '').trim()}\n</memory>`;
-}
-
-function normalizeGrandMemoryBlock(content) {
-  const matched = String(content || '').match(GRAND_MEMORY_BLOCK_RE);
-  if (matched) return matched[0].trim();
-  return `<grand_memory>\n${String(content || '').trim()}\n</grand_memory>`;
-}
-
-function forceGrandMemoryRange(content, memoryFrom, memoryTo) {
-  const summaryText = `<summary>【梦境档案：第${memoryFrom}-${memoryTo}卷】</summary>`;
-  const rangeText = `编号范围：${memoryFrom}-${memoryTo}`;
-  let grandMemory = normalizeGrandMemoryBlock(content);
-
-  if (/<summary>[\s\S]*?<\/summary>/i.test(grandMemory)) {
-    grandMemory = grandMemory.replace(/<summary>[\s\S]*?<\/summary>/i, summaryText);
-  } else if (/<details>/i.test(grandMemory)) {
-    grandMemory = grandMemory.replace(/<details>/i, `<details>\n${summaryText}`);
-  } else {
-    grandMemory = grandMemory.replace(/<grand_memory>/i, `<grand_memory>\n${summaryText}`);
-  }
-
-  if (/编号范围[:：][^\r\n]*/i.test(grandMemory)) {
-    return grandMemory.replace(/编号范围[:：][^\r\n]*/i, rangeText).trim();
-  }
-
-  return grandMemory.replace(/(<summary>[\s\S]*?<\/summary>)/i, `$1\n\n${rangeText}`).trim();
-}
-
-function isGrandMemoryOnly(content) {
-  return normalizeGrandMemoryBlock(content) === String(content || '').trim();
-}
-
-function getGrandMemoryPromptTemplate(summary = getSummarySettings()) {
-  return String(summary.grandPromptTemplate || DEFAULT_GRAND_MEMORY_TEMPLATE);
-}
-
-function fillGrandMemoryTemplate(template, archiveFrom, archiveTo) {
-  return String(template || '')
-    .replaceAll('${archiveFrom}', String(archiveFrom))
-    .replaceAll('${archiveTo}', String(archiveTo));
-}
-
-function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMaterial, { regenerate = false } = {}) {
-  const summary = getSummarySettings();
-  const grandMemoryTemplate = fillGrandMemoryTemplate(getGrandMemoryPromptTemplate(summary), memoryFrom, memoryTo);
-  const verb = regenerate ? '重新生成' : '生成';
-  return `蜃灵处于梦境档案编制状态。\n\n${grandMemoryTemplate}\n\n${SUMMARY_GAZE_GUIDANCE}\n\n现在请根据以下梦境记忆${verb}本轮归档大总结。\n请只依据素材内容归纳，不要续写剧情。\n请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。\n\n【梦境记忆素材】\n${archiveMaterial}`;
-}
-
 function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
   const messages = createMessageIdRange(archiveFrom, archiveTo)
     .flatMap(messageId => getChatMessagesSafe(messageId, { hide_state: 'all' }))
@@ -793,31 +738,6 @@ function collectPriorMemoriesForSummary(messageId) {
     index < latestMemories.length - 1 ? stripListBlocks(memory) : memory
   ));
   return latestGrandMemory && allPriorMemories.length < 4 ? [latestGrandMemory, ...priorMemories] : priorMemories;
-}
-
-function buildMemorySummaryPrompt(content, priorMemories = [], summary = getSummarySettings()) {
-  const priorSection = priorMemories.length > 0
-    ? `\n\n【过往梦境档案（编号勿重复）】\n${priorMemories.join('\n\n')}`
-    : '';
-  return `蜃灵处于梦境档案编制状态。\n\n${summary.promptTemplate}\n\n${SUMMARY_GAZE_GUIDANCE}${priorSection}\n\n现在只处理以下本轮素材。请不要续写剧情，不要输出 <content>，严格按照格式要求输出完整的 <memory>...</memory>。\n\n【本轮素材】\n${content}`;
-}
-
-function buildMemorySummaryMessages(prompt) {
-  return [
-    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
-    { role: 'user', content: prompt },
-  ];
-}
-
-function getOpenAiResponseContent(data) {
-  const firstChoice = data?.choices?.[0];
-  const messageContent = firstChoice?.message?.content;
-  if (typeof messageContent === 'string') return messageContent;
-  if (Array.isArray(messageContent)) {
-    return messageContent.map(item => (typeof item === 'string' ? item : item?.text || '')).join('');
-  }
-  if (typeof firstChoice?.text === 'string') return firstChoice.text;
-  return '';
 }
 
 async function generateSummaryMemory(prompt, { type = '自动小总结' } = {}) {
@@ -1132,17 +1052,6 @@ function getPreviousUserSummarySource(messageId, summary = getSummarySettings())
   return latestUserMessage ? getMessageSummarySource(latestUserMessage, summary) : '';
 }
 
-function buildSummaryPromptContent(aiContent, userContent = '') {
-  const cleanAiContent = String(aiContent || '').trim();
-  const cleanUserContent = String(userContent || '').trim();
-  if (!cleanUserContent) return cleanAiContent;
-  return `【最新用户输入】
-${cleanUserContent}
-
-【最新正文】
-${cleanAiContent}`;
-}
-
 function createSummarySourceMaterial(messageId, summary = getSummarySettings()) {
   const chatMessage = getChatMessageById(Number(messageId));
   if (!chatMessage || chatMessage.role !== 'assistant' || chatMessage.is_hidden) return null;
@@ -1167,14 +1076,6 @@ function createSummarySourceMaterial(messageId, summary = getSummarySettings()) 
 function getAutoSummaryFingerprint(messageId) {
   return createSummarySourceMaterial(messageId)?.fingerprint || null;
 }
-function forceMemoryNumber(memory, number) {
-  const normalized = normalizeMemoryBlock(memory);
-  if (/<number>[\s\S]*?<\/number>/i.test(normalized)) {
-    return normalized.replace(/<number>[\s\S]*?<\/number>/i, `<number>\n${number}\n</number>`);
-  }
-  return normalized.replace(/<memory>/i, `<memory>\n<number>\n${number}\n</number>`);
-}
-
 function getLatestAssistantSummaryTargetId() {
   const messages = getChatMessagesSafe(undefined, { hide_state: 'all' });
   const latest = [...messages]
@@ -1254,7 +1155,7 @@ async function summarizeOpeningMessage() {
   refreshSummaryPanelAfterAction();
 
   try {
-    const result = await generateSummaryMemory(buildMemorySummaryPrompt(summaryBody), { type: '0楼小总结' });
+    const result = await generateSummaryMemory(buildMemorySummaryPrompt(summaryBody, [], getSummarySettings()), { type: '0楼小总结' });
     const memory = forceMemoryNumber(result, 0);
     summaryWriteIgnoreIds.add(0);
     await setChatMessageContent(0, `${body}\n\n${memory}`);
@@ -1455,7 +1356,9 @@ async function processAutoGrandMemory() {
       throw new Error(`归档区间 ${archiveFrom}-${archiveTo} 未读取到可用 memory 素材。`);
     }
 
-    const prompt = buildGrandMemoryMaterialPrompt(archiveData.memoryFrom, archiveData.memoryTo, archiveData.material);
+    const prompt = buildGrandMemoryMaterialPrompt(archiveData.memoryFrom, archiveData.memoryTo, archiveData.material, {
+      summary: getSummarySettings(),
+    });
     const result = await generateSummaryMemory(prompt, { type: '自动大总结' });
     const grandMemory = forceGrandMemoryRange(result, archiveData.memoryFrom, archiveData.memoryTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
@@ -1522,7 +1425,10 @@ async function regenerateLatestGrandMemory() {
       throw new Error(`归档区间 ${record.archiveFrom}-${record.archiveTo} 未读取到可用 memory 素材。`);
     }
 
-    const prompt = buildGrandMemoryMaterialPrompt(archiveData.memoryFrom, archiveData.memoryTo, archiveData.material, { regenerate: true });
+    const prompt = buildGrandMemoryMaterialPrompt(archiveData.memoryFrom, archiveData.memoryTo, archiveData.material, {
+      regenerate: true,
+      summary: getSummarySettings(),
+    });
     const result = await generateSummaryMemory(prompt, { type: '重新生成大总结' });
     const grandMemory = forceGrandMemoryRange(result, archiveData.memoryFrom, archiveData.memoryTo);
     summaryWriteIgnoreIds.add(Number(record.summaryMessageId));
@@ -1547,11 +1453,6 @@ async function regenerateLatestGrandMemory() {
   }
 }
 
-function getLegacyArchiveBatchSize(summary = getSummarySettings()) {
-  const value = Number.parseInt(String(summary.legacyArchiveBatchSize || '').trim(), 10);
-  return Number.isInteger(value) && value > 0 ? value : 30;
-}
-
 function cleanLegacyArchiveMessageContent(message, summary = getSummarySettings()) {
   return getMessageSummarySource(message, summary);
 }
@@ -1572,16 +1473,7 @@ function collectLegacyArchiveMessages(summary = getSummarySettings()) {
     .filter(entry => entry.content);
 }
 
-function createLegacyArchiveBatches(entries, batchSize) {
-  const safeBatchSize = Math.max(1, Number(batchSize) || 30);
-  const batches = [];
-  for (let index = 0; index < entries.length; index += safeBatchSize) {
-    batches.push(entries.slice(index, index + safeBatchSize));
-  }
-  return batches;
-}
-
-function createLegacyArchivePlan(batchSize = getLegacyArchiveBatchSize()) {
+function createLegacyArchivePlan(batchSize = getLegacyArchiveBatchSize(getSummarySettings())) {
   const entries = collectLegacyArchiveMessages();
   const batches = createLegacyArchiveBatches(entries, batchSize);
   return {
@@ -1604,37 +1496,6 @@ function updateLegacyArchiveStatus(patch = {}) {
   saveChatState();
   refreshSummaryPanelAfterAction();
   return chatState.summary.legacyArchiveStatus;
-}
-
-function buildLegacyArchiveBatchMaterial(batch) {
-  return batch.map(entry => (
-    '### 第 ' + entry.messageId + ' 楼｜' + entry.role + '\n' + entry.content
-  )).join('\n\n');
-}
-
-function buildLegacyArchiveBatchPrompt(batch, batchIndex, batchTotal) {
-  const firstId = batch[0]?.messageId ?? '?';
-  const lastId = batch.at(-1)?.messageId ?? '?';
-  return [
-    '蜃灵处于梦境档案编制状态。',
-    '',
-    '请把以下旧聊天片段压缩为批次归档摘要。',
-    '这是第 ' + (batchIndex + 1) + ' / ' + batchTotal + ' 批，楼层范围 ' + firstId + '-' + lastId + '。',
-    '要求：',
-    '1. 严格按时间顺序梳理剧情。',
-    '2. 保留时间、地点、人物、关键互动、重要台词、世界设定和未解决伏笔。',
-    '3. 不要续写剧情，不要输出 <content>、<memory> 或 <grand_memory>。',
-    '4. 输出独立可读的纯文本批次摘要。',
-    '',
-    '【旧聊天片段】',
-    buildLegacyArchiveBatchMaterial(batch),
-  ].join('\n');
-}
-
-function buildLegacyArchiveFinalMaterial(batchSummaries) {
-  return batchSummaries.map((item, index) => (
-    '### 批次 ' + (index + 1) + '（楼层 ' + item.archiveFrom + '-' + item.archiveTo + '）\n' + item.summary
-  )).join('\n\n');
 }
 
 async function processLegacyGrandArchive() {
@@ -1693,7 +1554,7 @@ async function processLegacyGrandArchive() {
       lastResult: '正在合并最终大总结。',
     });
 
-    const prompt = buildGrandMemoryMaterialPrompt(plan.archiveFrom, plan.archiveTo, finalMaterial);
+    const prompt = buildGrandMemoryMaterialPrompt(plan.archiveFrom, plan.archiveTo, finalMaterial, { summary });
     const result = await generateSummaryMemory(prompt, { type: '旧聊天大总结' });
     const grandMemory = forceGrandMemoryRange(result, plan.archiveFrom, plan.archiveTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
