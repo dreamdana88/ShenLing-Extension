@@ -155,11 +155,9 @@ function renderArchiveRecordView(view) {
 }
 
 export function refreshSummaryPanelAfterAction() {
+  const panelRoot = getPanelRoot();
   if (!panelRoot?.classList.contains('slx-panel-open')) return;
-  renderFloatingPanel({
-    moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0,
-    detailScrollTop: panelRoot.querySelector('.slx-detail')?.scrollTop ?? 0,
-  });
+  rerenderSummaryPanelFromRoot(panelRoot);
 }
 
 function openMemoryEditorForMessage(messageId) {
