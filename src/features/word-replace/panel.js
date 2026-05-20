@@ -163,10 +163,10 @@ function renderReplacementEditor() {
           <label class="slx-field slx-field-wide">
             <span>匹配模式</span>
             <select data-slx-replacement-draft-field="mode">
-              <option value="wildcard" ${wordReplaceUiState.draftMode === 'wildcard' ? 'selected' : ''}>通配</option>
-              <option value="independent" ${wordReplaceUiState.draftMode === 'independent' ? 'selected' : ''}>独立词</option>
-              <option value="family_swear" ${wordReplaceUiState.draftMode === 'family_swear' ? 'selected' : ''}>亲属脏话</option>
-              <option value="regex" ${wordReplaceUiState.draftMode === 'regex' ? 'selected' : ''}>正则</option>
+              <option value="wildcard" ${wordReplaceUiState.draftMode === 'wildcard' ? 'selected' : ''}>通配（用 * 表示模糊文字，插件自动处理）</option>
+              <option value="independent" ${wordReplaceUiState.draftMode === 'independent' ? 'selected' : ''}>独立词（只替换“独自出现”的词，不替换嵌在别的词/语义里的）</option>
+              <option value="family_swear" ${wordReplaceUiState.draftMode === 'family_swear' ? 'selected' : ''}>亲属脏话（“妈 / 娘 / 妹”这类亲属词作为脏话，保护正常语义）</option>
+              <option value="regex" ${wordReplaceUiState.draftMode === 'regex' ? 'selected' : ''}>正则（高级匹配，原词框填写正则表达式）</option>
             </select>
           </label>
         ` : ''}

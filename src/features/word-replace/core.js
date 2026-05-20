@@ -6,7 +6,7 @@ export const REPLACEMENT_GROUPS = Object.freeze([
   {
     kind: 'wildcard',
     title: '通配替换',
-    desc: '用 * 表示一小段文字，插件会自动安全处理。',
+    desc: '智能替换，内置防护减少语义误伤。',
     icon: 'fa-solid fa-asterisk',
   },
 ]);
