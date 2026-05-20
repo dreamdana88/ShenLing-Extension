@@ -1,7 +1,7 @@
 const MODULE_NAME = 'shenling_assistant';
 const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 const STORAGE_VERSION = 1;
-const PLUGIN_VERSION = '0.8.1';
+const PLUGIN_VERSION = '0.8.2';
 const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -285,6 +285,7 @@ const summaryProcessTimers = new Map();
 const summaryWriteIgnoreIds = new Set();
 let summaryEventsRegistered = false;
 let memoryEditorState = null;
+let grandMemoryEditorState = null;
 
 function syncViewportSize() {
   const viewportHeight = globalThis.visualViewport?.height || globalThis.innerHeight;
@@ -1490,6 +1491,7 @@ function renderArchiveRecordView(view) {
           第 ${escapeHtml(view.record.summaryMessageId)} 楼大总结
           <span>${rangePrefix}隐藏 ${escapeHtml(view.record.archiveFrom)}-${escapeHtml(view.record.archiveTo)}</span>
         </div>
+        <button class="slx-mini-action-btn" type="button" data-slx-edit-grand-memory="${escapeHtml(view.record.summaryMessageId)}" title="编辑大总结正文" ${view.summaryMissing ? 'disabled' : ''}>✎</button>
       </div>
       <div class="slx-archive-statline">
         <span class="slx-archive-pill">隐藏 ${view.hiddenIds.length}/${view.totalIds.length}</span>
@@ -1744,6 +1746,60 @@ async function saveMemoryEditorContent() {
   } catch (error) {
     memoryEditorState.saveLabel = '保存';
     notifySummary('error', error.message || String(error), '保存小总结失败');
+    refreshSummaryPanelAfterAction();
+  }
+}
+
+function openGrandMemoryEditor(summaryMessageId) {
+  const messageId = Number(summaryMessageId);
+  const chatMessage = getChatMessageById(messageId);
+  if (!chatMessage) throw new Error(`未找到第 ${messageId} 楼大总结。`);
+  if (!GRAND_MEMORY_BLOCK_RE.test(chatMessage.message)) throw new Error(`第 ${messageId} 楼没有 <grand_memory>。`);
+  grandMemoryEditorState = {
+    messageId,
+    content: chatMessage.message.trim(),
+    saveLabel: '保存',
+  };
+  refreshSummaryPanelAfterAction();
+}
+
+function closeGrandMemoryEditor() {
+  grandMemoryEditorState = null;
+  refreshSummaryPanelAfterAction();
+}
+
+async function saveGrandMemoryEditorContent() {
+  if (!grandMemoryEditorState) return;
+  const messageId = grandMemoryEditorState.messageId;
+  const textarea = panelRoot?.querySelector('[data-slx-grand-memory-editor-content]');
+  const rawContent = String(textarea?.value || '').trim();
+  if (!rawContent) throw new Error('大总结内容不能为空。');
+
+  const grandMemory = normalizeGrandMemoryBlock(rawContent);
+  grandMemoryEditorState.saveLabel = '保存中...';
+  refreshSummaryPanelAfterAction();
+  summaryWriteIgnoreIds.add(messageId);
+  try {
+    await setChatMessageContent(messageId, grandMemory);
+    window.setTimeout(() => summaryWriteIgnoreIds.delete(messageId), 1500);
+    grandMemoryEditorState = {
+      messageId,
+      content: grandMemory,
+      saveLabel: '已保存',
+    };
+    scanExistingSummaryState();
+    notifySummary('success', `已保存第 ${messageId} 楼大总结。`, '归档管理器');
+    refreshSummaryPanelAfterAction();
+    window.setTimeout(() => {
+      if (grandMemoryEditorState?.messageId === messageId) {
+        grandMemoryEditorState.saveLabel = '保存';
+        refreshSummaryPanelAfterAction();
+      }
+    }, 1500);
+  } catch (error) {
+    summaryWriteIgnoreIds.delete(messageId);
+    grandMemoryEditorState.saveLabel = '保存';
+    notifySummary('error', error.message || String(error), '保存大总结失败');
     refreshSummaryPanelAfterAction();
   }
 }
@@ -2580,6 +2636,24 @@ function renderSummarySettingsPanel(settings, chatState) {
       </div>
     </div>
   ` : '';
+  const grandMemoryEditorHtml = grandMemoryEditorState ? `
+    <div class="slx-detail-card slx-memory-editor-card">
+      <div class="slx-summary-card-head">
+        <div>
+          <div class="slx-detail-title">第 ${escapeHtml(grandMemoryEditorState.messageId)} 楼大总结</div>
+          <p>保存后只覆盖该楼 &lt;grand_memory&gt; 正文。</p>
+        </div>
+      </div>
+      <label class="slx-field slx-field-wide">
+        <span>grand_memory 内容</span>
+        <textarea class="slx-memory-editor-textarea" data-slx-grand-memory-editor-content>${escapeHtml(grandMemoryEditorState.content)}</textarea>
+      </label>
+      <div class="slx-action-row slx-summary-action-row">
+        <button class="slx-soft-btn" type="button" data-slx-cancel-grand-memory-edit>取消</button>
+        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-save-grand-memory-edit>${escapeHtml(grandMemoryEditorState.saveLabel || '保存')}</button>
+      </div>
+    </div>
+  ` : '';
 
   return `
     <div class="slx-detail-card slx-summary-settings-card">
@@ -2679,6 +2753,7 @@ function renderSummarySettingsPanel(settings, chatState) {
       </div>
       ${archiveRecordViews.length ? archiveRecordViews.map(renderArchiveRecordView).join('') : '<p>暂无归档记录。</p>'}
     </div>
+    ${grandMemoryEditorHtml}
 
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">旧聊天归档</div>
@@ -3154,6 +3229,30 @@ function renderFloatingPanel(options = {}) {
 
   panelRoot.querySelector('[data-slx-cancel-memory-edit]')?.addEventListener('click', () => {
     closeMemoryEditor();
+  });
+
+  panelRoot.querySelectorAll('[data-slx-edit-grand-memory]').forEach(button => {
+    button.addEventListener('click', () => {
+      try {
+        openGrandMemoryEditor(button.dataset.slxEditGrandMemory);
+      } catch (error) {
+        notifySummary('warning', error.message || String(error), '归档管理器');
+      }
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-save-grand-memory-edit]')?.addEventListener('click', event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    void saveGrandMemoryEditorContent().catch(error => {
+      notifySummary('warning', error.message || String(error), '保存大总结失败');
+    }).finally(() => {
+      button.disabled = false;
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-cancel-grand-memory-edit]')?.addEventListener('click', () => {
+    closeGrandMemoryEditor();
   });
 
   panelRoot.querySelectorAll('[data-slx-summary-field]').forEach(input => {
