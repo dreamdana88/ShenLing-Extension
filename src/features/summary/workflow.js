@@ -963,6 +963,7 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
 export function scheduleAutoSummary(messageId) {
   const numericMessageId = Number(messageId);
   if (!Number.isFinite(numericMessageId)) return;
+  if (numericMessageId <= 0) return;
   if (!shouldRunAutoSummary()) return;
   if (summaryWriteIgnoreIds.has(numericMessageId)) return;
   if (!isLatestMessage(numericMessageId)) return;
