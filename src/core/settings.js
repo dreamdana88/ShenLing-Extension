@@ -10,6 +10,8 @@ import {
 import {
   cloneData,
   formatTimestamp,
+  getSummarySourceTags,
+  isPlainObject,
   mergeDefaults,
 } from '../utils/text.js';
 import { getContextSafe } from './chat.js';
@@ -271,4 +273,37 @@ export function getStorageDiagnostics() {
     globalProbe: settings.diagnostics.globalProbe || '尚未写入',
     chatProbe: chatState.diagnostics.chatProbe || '尚未写入',
   };
+}
+
+export function getDefaultSummaryPromptTemplate() {
+  return defaultGlobalSettings.modules.summary.promptTemplate;
+}
+
+export function shouldResetSummaryPromptTemplate(summary) {
+  const prompt = String(summary.promptTemplate || '');
+  return (
+    summary.promptTemplateVersion !== SUMMARY_PROMPT_VERSION ||
+    prompt.includes('请为以下最新剧情生成一段简洁的小总结') ||
+    !prompt.includes('##浓缩梦境') ||
+    !prompt.includes('<worldstate>')
+  );
+}
+
+export function getSummarySettings(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.modules)) {
+    settings.modules = cloneData(defaultGlobalSettings.modules);
+  }
+  settings.modules.summary = mergeDefaults(
+    settings.modules.summary,
+    cloneData(defaultGlobalSettings.modules.summary),
+  );
+  const summary = settings.modules.summary;
+  delete summary.startMessageId;
+  if (shouldResetSummaryPromptTemplate(summary)) {
+    summary.promptTemplate = getDefaultSummaryPromptTemplate();
+    summary.promptTemplateVersion = SUMMARY_PROMPT_VERSION;
+    getContextSafe()?.saveSettingsDebounced?.();
+  }
+  getSummarySourceTags(summary);
+  return summary;
 }
