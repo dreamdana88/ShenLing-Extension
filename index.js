@@ -1052,9 +1052,9 @@ function getPreviousUserSummarySource(messageId, summary = getSummarySettings())
   return latestUserMessage ? getMessageSummarySource(latestUserMessage, summary) : '';
 }
 
-function createSummarySourceMaterial(messageId, summary = getSummarySettings()) {
+function createSummarySourceMaterial(messageId, summary = getSummarySettings(), { allowHidden = false } = {}) {
   const chatMessage = getChatMessageById(Number(messageId));
-  if (!chatMessage || chatMessage.role !== 'assistant' || chatMessage.is_hidden) return null;
+  if (!chatMessage || chatMessage.role !== 'assistant' || (!allowHidden && chatMessage.is_hidden)) return null;
   if (GRAND_MEMORY_BLOCK_RE.test(chatMessage.message)) return null;
 
   const body = stripMemoryBlock(chatMessage.message);
@@ -1185,7 +1185,7 @@ async function regenerateMemoryForMessage(messageId) {
   if (!rawBody) throw new Error(`第 ${Number(messageId)} 楼没有可总结的正文。`);
 
   const summary = getSummarySettings();
-  const material = createSummarySourceMaterial(Number(messageId), summary);
+  const material = createSummarySourceMaterial(Number(messageId), summary, { allowHidden: true });
   if (!material) throw new Error(`第 ${Number(messageId)} 楼净化后没有可总结的正文。`);
 
   chatState.summary.runningTask = 'manual_memory';
