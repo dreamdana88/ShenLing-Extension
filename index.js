@@ -51,6 +51,9 @@ import {
   configureWordReplacePanel,
   renderWordReplacePanel,
 } from './src/features/word-replace/panel.js';
+import {
+  renderEmotionProfilePanel,
+} from './src/features/emotion-profile/panel.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -561,6 +564,10 @@ function renderModuleDetail(module, settings) {
 
   if (module.id === 'replace') {
     return renderWordReplacePanel(settings);
+  }
+
+  if (module.id === 'profile') {
+    return renderEmotionProfilePanel(chatState);
   }
 
   if (module.id === 'settings') {

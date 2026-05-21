@@ -669,6 +669,85 @@ body.slx-panel-open-lock {
   flex-shrink: 0;
 }
 
+.slx-emotion-shell-card .slx-action-row {
+  margin-top: 2px;
+}
+
+.slx-emotion-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slx-emotion-profile-card {
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 12px;
+  background: var(--slx-bg-card);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slx-emotion-profile-section {
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 9px 10px;
+}
+
+.slx-emotion-profile-section span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--slx-muted);
+  font-size: 11px;
+}
+
+.slx-emotion-profile-section p {
+  margin: 0;
+  color: var(--slx-text);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.slx-emotion-history {
+  border-top: 1px solid var(--slx-border-dim);
+  padding-top: 8px;
+}
+
+.slx-emotion-history summary {
+  color: var(--slx-text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.slx-emotion-history ol {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.slx-emotion-history li {
+  margin: 0 0 8px;
+  color: var(--slx-muted);
+  font-size: 11px;
+}
+
+.slx-emotion-history li:last-child {
+  margin-bottom: 0;
+}
+
+.slx-emotion-history li span {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.slx-emotion-history li p {
+  margin: 0;
+  color: var(--slx-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 @media (max-width: 768px) {
   .shenling-assistant-fab {
     top: clamp(
