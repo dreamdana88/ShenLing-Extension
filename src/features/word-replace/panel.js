@@ -68,9 +68,9 @@ function refreshWordReplacePanel(panelRoot = wordReplacePanelOptions.getPanelRoo
 }
 
 function getReplacementKindDesc(kind) {
-  if (kind === 'delete') return '匹配到后直接删除，不需要替换词。';
-  if (kind === 'wildcard') return '用 * 代表一小段文字，例如 *妈的 -> *爹的。';
-  return '适合白嫖 -> 白剽这类稳定硬替换。';
+  if (kind === 'delete') return '匹配后直接删除。';
+  if (kind === 'wildcard') return '用 * 表示模糊文字。';
+  return '稳定的一对一替换。';
 }
 
 function getVisibleReplacementGroups(replace) {
@@ -188,7 +188,7 @@ export function renderWordReplacePanel(settings = getGlobalSettings()) {
       <label class="slx-setting-toggle-row" for="slx-word-replace-enabled">
         <span>
           <b>词汇替换</b>
-          <small>复刻蜃灵切换脚本：AI 回复完成后自动替换，也可手动重跑当前楼层。</small>
+          <small>AI 回复后自动替换，也可重跑当前楼层。</small>
           <small>规则数量：${escapeHtml(replace.rules.length)}｜启用规则：${escapeHtml(enabledCount)}</small>
         </span>
         <input id="slx-word-replace-enabled" type="checkbox" data-slx-word-replace-enabled ${replace.enabled ? 'checked' : ''} />
@@ -219,7 +219,7 @@ export function renderWordReplacePanel(settings = getGlobalSettings()) {
       <button class="slx-collapse-head" type="button" data-slx-toggle-replacement-import>
         <div>
           <div class="slx-detail-title">批量导入</div>
-          <p>支持中文/英文逗号分隔多个原词，支持 -、->、→ 表示替换。</p>
+          <p>支持逗号分隔，支持 - / -> / → 表示替换。</p>
         </div>
         <i class="fa-solid fa-chevron-down slx-collapse-icon${replace.importCollapsed ? '' : ' slx-collapse-icon-open'}"></i>
       </button>

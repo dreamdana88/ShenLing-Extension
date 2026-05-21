@@ -82,8 +82,9 @@
   border: 1px solid rgba(186, 148, 133, 0.34);
   border-radius: 999px;
   background:
-    radial-gradient(circle at 34% 24%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.18) 32%, transparent 62%),
-    linear-gradient(145deg, rgba(255, 249, 245, 0.96), rgba(226, 199, 187, 0.9));
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.34) 30%, transparent 58%),
+    radial-gradient(circle at 68% 72%, rgba(238, 184, 206, 0.42), transparent 48%),
+    linear-gradient(145deg, rgba(166, 222, 240, 0.84), rgba(239, 202, 216, 0.82));
   color: rgba(80, 52, 44, 0.96);
   box-shadow:
     0 10px 24px rgba(80, 52, 44, 0.2),
@@ -163,8 +164,9 @@
 .shenling-assistant-fab[data-theme='dark'] {
   border-color: rgba(100, 180, 210, 0.36);
   background:
-    radial-gradient(circle at 34% 24%, rgba(225, 246, 255, 0.5), rgba(225, 246, 255, 0.1) 32%, transparent 62%),
-    linear-gradient(145deg, rgba(10, 27, 46, 0.96), rgba(22, 72, 94, 0.9));
+    radial-gradient(circle at 30% 24%, rgba(230, 250, 255, 0.72), rgba(230, 250, 255, 0.16) 30%, transparent 58%),
+    radial-gradient(circle at 68% 72%, rgba(190, 128, 210, 0.32), transparent 48%),
+    linear-gradient(145deg, rgba(64, 153, 190, 0.72), rgba(64, 52, 112, 0.78));
   color: rgba(222, 244, 250, 0.96);
   box-shadow:
     0 12px 28px rgba(0, 0, 0, 0.42),
