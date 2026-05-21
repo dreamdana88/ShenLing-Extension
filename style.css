@@ -115,6 +115,12 @@
   transform: scale(0.96);
 }
 
+.shenling-assistant-fab-dragging {
+  cursor: grabbing;
+  transform: scale(1.04);
+  transition: opacity 0.18s ease, box-shadow 0.18s ease;
+}
+
 .shenling-assistant-fab-mark {
   position: absolute;
   inset: 0;

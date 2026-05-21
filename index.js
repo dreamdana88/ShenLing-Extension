@@ -54,12 +54,102 @@ import {
 
 let panelRoot = null;
 let communicationLogOpen = false;
+let floatingButtonIgnoreClick = false;
+
+const FLOATING_BUTTON_DRAG_THRESHOLD = 6;
 
 function syncViewportSize() {
   const viewportHeight = globalThis.visualViewport?.height || globalThis.innerHeight;
   if (viewportHeight) {
     document.documentElement.style.setProperty('--slx-viewport-height', `${viewportHeight}px`);
   }
+  syncFloatingButtonState();
+}
+
+function getViewportBox() {
+  const visualViewport = globalThis.visualViewport;
+  return {
+    width: Math.max(1, visualViewport?.width || globalThis.innerWidth || document.documentElement.clientWidth || 1),
+    height: Math.max(1, visualViewport?.height || globalThis.innerHeight || document.documentElement.clientHeight || 1),
+  };
+}
+
+function getFloatingButtonMode() {
+  return globalThis.matchMedia?.('(max-width: 768px)').matches ? 'mobile' : 'desktop';
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getFloatingButtonPositionStore(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.ui.floatingButtonPosition)) {
+    settings.ui.floatingButtonPosition = { desktop: null, mobile: null };
+  }
+  if (!isPlainObject(settings.ui.floatingButtonPosition.desktop)) {
+    settings.ui.floatingButtonPosition.desktop = null;
+  }
+  if (!isPlainObject(settings.ui.floatingButtonPosition.mobile)) {
+    settings.ui.floatingButtonPosition.mobile = null;
+  }
+  return settings.ui.floatingButtonPosition;
+}
+
+function getFloatingButtonCustomPosition(settings = getGlobalSettings()) {
+  const positionStore = getFloatingButtonPositionStore(settings);
+  const position = positionStore[getFloatingButtonMode()];
+  if (!isPlainObject(position)) return null;
+  const xRatio = Number(position.xRatio);
+  const yRatio = Number(position.yRatio);
+  if (!Number.isFinite(xRatio) || !Number.isFinite(yRatio)) return null;
+  return {
+    xRatio: clampNumber(xRatio, 0, 1),
+    yRatio: clampNumber(yRatio, 0, 1),
+  };
+}
+
+function clampFloatingButtonPoint(left, top, button) {
+  const viewport = getViewportBox();
+  const rect = button.getBoundingClientRect();
+  const width = rect.width || button.offsetWidth || 46;
+  const height = rect.height || button.offsetHeight || 46;
+  const margin = getFloatingButtonMode() === 'mobile' ? 10 : 12;
+
+  return {
+    left: clampNumber(left, margin, Math.max(margin, viewport.width - width - margin)),
+    top: clampNumber(top, margin, Math.max(margin, viewport.height - height - margin)),
+    width,
+    height,
+    viewport,
+  };
+}
+
+function applyFloatingButtonCustomPosition(button, settings = getGlobalSettings()) {
+  const position = getFloatingButtonCustomPosition(settings);
+  if (!position) {
+    button.dataset.position = 'default';
+    button.style.left = '';
+    button.style.top = '';
+    button.style.right = '';
+    button.style.bottom = '';
+    return;
+  }
+
+  const viewport = getViewportBox();
+  const rect = button.getBoundingClientRect();
+  const width = rect.width || button.offsetWidth || 46;
+  const height = rect.height || button.offsetHeight || 46;
+  const point = clampFloatingButtonPoint(
+    viewport.width * position.xRatio - width / 2,
+    viewport.height * position.yRatio - height / 2,
+    button,
+  );
+
+  button.dataset.position = 'custom';
+  button.style.left = `${point.left}px`;
+  button.style.top = `${point.top}px`;
+  button.style.right = 'auto';
+  button.style.bottom = 'auto';
 }
 
 function getCommunicationLogStore(settings = getGlobalSettings()) {
@@ -763,6 +853,67 @@ function closeFloatingPanel() {
   communicationLogOpen = false;
 }
 
+function saveFloatingButtonPosition(button) {
+  const settings = getGlobalSettings();
+  const positionStore = getFloatingButtonPositionStore(settings);
+  const rect = button.getBoundingClientRect();
+  const viewport = getViewportBox();
+  positionStore[getFloatingButtonMode()] = {
+    xRatio: clampNumber((rect.left + rect.width / 2) / viewport.width, 0, 1),
+    yRatio: clampNumber((rect.top + rect.height / 2) / viewport.height, 0, 1),
+  };
+  saveGlobalSettings();
+}
+
+function bindFloatingButtonDrag(button) {
+  let dragState = null;
+
+  button.addEventListener('pointerdown', event => {
+    if (event.button !== undefined && event.button !== 0) return;
+    const rect = button.getBoundingClientRect();
+    dragState = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+      moved: false,
+    };
+    button.setPointerCapture?.(event.pointerId);
+  });
+
+  button.addEventListener('pointermove', event => {
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+    const dx = event.clientX - dragState.startX;
+    const dy = event.clientY - dragState.startY;
+    if (!dragState.moved && Math.hypot(dx, dy) < FLOATING_BUTTON_DRAG_THRESHOLD) return;
+
+    dragState.moved = true;
+    event.preventDefault();
+    button.classList.add('shenling-assistant-fab-dragging');
+    const point = clampFloatingButtonPoint(dragState.startLeft + dx, dragState.startTop + dy, button);
+    button.dataset.position = 'custom';
+    button.style.left = `${point.left}px`;
+    button.style.top = `${point.top}px`;
+    button.style.right = 'auto';
+    button.style.bottom = 'auto';
+  });
+
+  const finishDrag = event => {
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+    button.releasePointerCapture?.(event.pointerId);
+    button.classList.remove('shenling-assistant-fab-dragging');
+    if (dragState.moved) {
+      floatingButtonIgnoreClick = true;
+      saveFloatingButtonPosition(button);
+    }
+    dragState = null;
+  };
+
+  button.addEventListener('pointerup', finishDrag);
+  button.addEventListener('pointercancel', finishDrag);
+}
+
 function syncFloatingButtonState() {
   const settings = getGlobalSettings();
   const button = document.querySelector('#shenling-assistant-fab');
@@ -770,6 +921,7 @@ function syncFloatingButtonState() {
 
   button.hidden = !(settings.enabled && settings.ui.showFloatingButton);
   button.dataset.theme = settings.theme === 'dark' ? 'dark' : 'light';
+  applyFloatingButtonCustomPosition(button, settings);
 }
 
 function syncSettingsPanelState() {
@@ -802,7 +954,15 @@ function renderFloatingButton() {
       <span></span>
     </span>
   `;
-  button.addEventListener('click', openFloatingPanel);
+  bindFloatingButtonDrag(button);
+  button.addEventListener('click', event => {
+    if (floatingButtonIgnoreClick) {
+      event.preventDefault();
+      floatingButtonIgnoreClick = false;
+      return;
+    }
+    openFloatingPanel();
+  });
   document.body.appendChild(button);
   syncFloatingButtonState();
 }
