@@ -183,6 +183,25 @@ export const defaultChatState = Object.freeze({
     lastParallelEventTime: '',
     lastParallelEventMessageId: null,
   },
+  emotionProfiles: {
+    profiles: {},
+    lastUpdatedAt: '',
+    lastInjectedAt: '',
+  },
+  schedule: {
+    activeScheduleId: '',
+    drafts: [],
+    entries: [],
+    lastGeneratedAt: '',
+    lastSavedAt: '',
+  },
+  diary: {
+    activeBookId: '',
+    books: [],
+    entries: [],
+    lastGeneratedAt: '',
+    lastSavedAt: '',
+  },
   diagnostics: {
     chatProbe: '',
     lastSavedAt: '',
