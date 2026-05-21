@@ -768,8 +768,14 @@ function syncSettingsPanelState() {
   const enabledInput = document.querySelector('#shenling-assistant-enabled');
   if (enabledInput) enabledInput.checked = Boolean(settings.enabled);
 
+  const enabledLabel = document.querySelector('#shenling-assistant-enabled-label');
+  if (enabledLabel) {
+    enabledLabel.textContent = settings.enabled ? '已启用' : '已暂停';
+    enabledLabel.dataset.state = settings.enabled ? 'on' : 'off';
+  }
+
   const themeLabel = document.querySelector('#shenling-assistant-theme-label');
-  if (themeLabel) themeLabel.textContent = settings.theme === 'dark' ? '深色' : '浅色';
+  if (themeLabel) themeLabel.textContent = settings.theme === 'dark' ? '深色主题' : '浅色主题';
 
   const savedLabel = document.querySelector('#shenling-assistant-saved-label');
   if (savedLabel) savedLabel.textContent = settings.diagnostics.lastSavedAt || '尚未保存';
@@ -792,20 +798,22 @@ function renderSettingsPanel() {
         <div class="shenling-assistant-card">
           <div class="shenling-assistant-topline">
             <span class="shenling-assistant-badge">${PLUGIN_VERSION}</span>
-            <span>第三方插件已加载</span>
+            <span id="shenling-assistant-enabled-label" class="shenling-assistant-pill" data-state="${settings.enabled ? 'on' : 'off'}">${settings.enabled ? '已启用' : '已暂停'}</span>
           </div>
           <div class="shenling-assistant-title">蜃灵助手</div>
-          <div class="shenling-assistant-desc">独立插件项目。当前已接入设置、通讯日志、副 API 配置与自动小总结外壳。</div>
+          <div class="shenling-assistant-desc">总结、归档、通讯日志、副 API 与词汇替换。</div>
           <button id="shenling-assistant-open" class="shenling-assistant-open-btn" type="button">
-            <span>打开蜃灵助手</span>
-            <span>›</span>
+            <span>进入面板</span>
+            <i class="fa-solid fa-chevron-right"></i>
           </button>
           <label class="checkbox_label shenling-assistant-row" for="shenling-assistant-enabled">
             <input id="shenling-assistant-enabled" type="checkbox" ${settings.enabled ? 'checked' : ''} />
-            <span>启用蜃灵助手</span>
+            <span>启用插件</span>
           </label>
-          <div class="shenling-assistant-status">当前主题：<b id="shenling-assistant-theme-label">${settings.theme === 'dark' ? '深色' : '浅色'}</b></div>
-          <div class="shenling-assistant-status">最近保存：<b id="shenling-assistant-saved-label">${escapeHtml(settings.diagnostics.lastSavedAt || '尚未保存')}</b></div>
+          <div class="shenling-assistant-meta">
+            <div class="shenling-assistant-status"><span>主题</span><b id="shenling-assistant-theme-label">${settings.theme === 'dark' ? '深色主题' : '浅色主题'}</b></div>
+            <div class="shenling-assistant-status"><span>最近保存</span><b id="shenling-assistant-saved-label">${escapeHtml(settings.diagnostics.lastSavedAt || '尚未保存')}</b></div>
+          </div>
         </div>
       </div>
     </div>
