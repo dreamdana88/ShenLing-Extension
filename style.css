@@ -5,7 +5,7 @@
 .shenling-assistant-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   padding: 14px;
   border: 1px solid rgba(186, 148, 133, 0.28);
   border-radius: 12px;
@@ -15,12 +15,11 @@
   box-shadow: 0 10px 26px rgba(140, 90, 70, 0.12);
 }
 
-.shenling-assistant-topline {
+.shenling-assistant-title-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  color: rgba(128, 95, 86, 0.78);
-  font-size: 12px;
 }
 
 .shenling-assistant-badge {
@@ -32,30 +31,10 @@
   line-height: 1.4;
 }
 
-.shenling-assistant-pill {
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: rgba(80, 52, 44, 0.08);
-  color: rgba(80, 52, 44, 0.62);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.shenling-assistant-pill[data-state='on'] {
-  background: rgba(100, 170, 130, 0.16);
-  color: rgba(53, 118, 78, 0.9);
-}
-
 .shenling-assistant-title {
   font-weight: 700;
   font-size: 18px;
   line-height: 1.2;
-}
-
-.shenling-assistant-desc {
-  font-size: 12px;
-  line-height: 1.5;
-  color: rgba(128, 95, 86, 0.78);
 }
 
 .shenling-assistant-row {
@@ -84,35 +63,6 @@
 .shenling-assistant-open-btn:hover {
   background: rgba(180, 134, 106, 0.3);
   transform: translateY(-1px);
-}
-
-.shenling-assistant-meta {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.shenling-assistant-status {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid rgba(186, 148, 133, 0.18);
-  border-radius: 9px;
-  background: rgba(255, 250, 246, 0.44);
-  color: rgba(128, 95, 86, 0.7);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.shenling-assistant-status b {
-  color: rgba(80, 52, 44, 0.94);
-  font-size: 12px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 :root {

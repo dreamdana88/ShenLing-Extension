@@ -767,18 +767,6 @@ function syncSettingsPanelState() {
   const settings = getGlobalSettings();
   const enabledInput = document.querySelector('#shenling-assistant-enabled');
   if (enabledInput) enabledInput.checked = Boolean(settings.enabled);
-
-  const enabledLabel = document.querySelector('#shenling-assistant-enabled-label');
-  if (enabledLabel) {
-    enabledLabel.textContent = settings.enabled ? '已启用' : '已暂停';
-    enabledLabel.dataset.state = settings.enabled ? 'on' : 'off';
-  }
-
-  const themeLabel = document.querySelector('#shenling-assistant-theme-label');
-  if (themeLabel) themeLabel.textContent = settings.theme === 'dark' ? '深色主题' : '浅色主题';
-
-  const savedLabel = document.querySelector('#shenling-assistant-saved-label');
-  if (savedLabel) savedLabel.textContent = settings.diagnostics.lastSavedAt || '尚未保存';
 }
 
 function renderSettingsPanel() {
@@ -796,12 +784,10 @@ function renderSettingsPanel() {
       </div>
       <div class="inline-drawer-content">
         <div class="shenling-assistant-card">
-          <div class="shenling-assistant-topline">
+          <div class="shenling-assistant-title-row">
+            <div class="shenling-assistant-title">蜃灵助手</div>
             <span class="shenling-assistant-badge">${PLUGIN_VERSION}</span>
-            <span id="shenling-assistant-enabled-label" class="shenling-assistant-pill" data-state="${settings.enabled ? 'on' : 'off'}">${settings.enabled ? '已启用' : '已暂停'}</span>
           </div>
-          <div class="shenling-assistant-title">蜃灵助手</div>
-          <div class="shenling-assistant-desc">总结、归档、通讯日志、副 API 与词汇替换。</div>
           <button id="shenling-assistant-open" class="shenling-assistant-open-btn" type="button">
             <span>进入面板</span>
             <i class="fa-solid fa-chevron-right"></i>
@@ -810,10 +796,6 @@ function renderSettingsPanel() {
             <input id="shenling-assistant-enabled" type="checkbox" ${settings.enabled ? 'checked' : ''} />
             <span>启用插件</span>
           </label>
-          <div class="shenling-assistant-meta">
-            <div class="shenling-assistant-status"><span>主题</span><b id="shenling-assistant-theme-label">${settings.theme === 'dark' ? '深色主题' : '浅色主题'}</b></div>
-            <div class="shenling-assistant-status"><span>最近保存</span><b id="shenling-assistant-saved-label">${escapeHtml(settings.diagnostics.lastSavedAt || '尚未保存')}</b></div>
-          </div>
         </div>
       </div>
     </div>
