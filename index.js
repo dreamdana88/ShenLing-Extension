@@ -796,8 +796,11 @@ function renderFloatingButton() {
   button.title = '打开蜃灵助手';
   button.setAttribute('aria-label', '打开蜃灵助手');
   button.innerHTML = `
-    <span class="shenling-assistant-fab-glow"></span>
-    <span class="shenling-assistant-fab-icon">🫧</span>
+    <span class="shenling-assistant-fab-mark" aria-hidden="true">
+      <span></span>
+      <span></span>
+      <span></span>
+    </span>
   `;
   button.addEventListener('click', openFloatingPanel);
   document.body.appendChild(button);
