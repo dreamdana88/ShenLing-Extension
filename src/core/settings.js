@@ -29,6 +29,7 @@ export const defaultGlobalSettings = Object.freeze({
   ui: {
     lastOpenedAt: '',
     sourceRulesCollapsed: true,
+    showFloatingButton: true,
   },
   modules: {
     summary: {

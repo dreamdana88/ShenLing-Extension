@@ -763,10 +763,45 @@ function closeFloatingPanel() {
   communicationLogOpen = false;
 }
 
+function syncFloatingButtonState() {
+  const settings = getGlobalSettings();
+  const button = document.querySelector('#shenling-assistant-fab');
+  if (!button) return;
+
+  button.hidden = !(settings.enabled && settings.ui.showFloatingButton);
+  button.dataset.theme = settings.theme === 'dark' ? 'dark' : 'light';
+}
+
 function syncSettingsPanelState() {
   const settings = getGlobalSettings();
   const enabledInput = document.querySelector('#shenling-assistant-enabled');
   if (enabledInput) enabledInput.checked = Boolean(settings.enabled);
+
+  const floatingInput = document.querySelector('#shenling-assistant-floating-enabled');
+  if (floatingInput) floatingInput.checked = Boolean(settings.ui.showFloatingButton);
+
+  syncFloatingButtonState();
+}
+
+function renderFloatingButton() {
+  if (document.querySelector('#shenling-assistant-fab')) {
+    syncFloatingButtonState();
+    return;
+  }
+
+  const button = document.createElement('button');
+  button.id = 'shenling-assistant-fab';
+  button.className = 'shenling-assistant-fab';
+  button.type = 'button';
+  button.title = '打开蜃灵助手';
+  button.setAttribute('aria-label', '打开蜃灵助手');
+  button.innerHTML = `
+    <span class="shenling-assistant-fab-glow"></span>
+    <span class="shenling-assistant-fab-icon">🫧</span>
+  `;
+  button.addEventListener('click', openFloatingPanel);
+  document.body.appendChild(button);
+  syncFloatingButtonState();
 }
 
 function renderSettingsPanel() {
@@ -792,10 +827,16 @@ function renderSettingsPanel() {
             <span>进入面板</span>
             <i class="fa-solid fa-chevron-right"></i>
           </button>
-          <label class="checkbox_label shenling-assistant-row" for="shenling-assistant-enabled">
-            <input id="shenling-assistant-enabled" type="checkbox" ${settings.enabled ? 'checked' : ''} />
-            <span>启用插件</span>
-          </label>
+          <div class="shenling-assistant-toggle-row">
+            <label class="checkbox_label shenling-assistant-row" for="shenling-assistant-enabled">
+              <input id="shenling-assistant-enabled" type="checkbox" ${settings.enabled ? 'checked' : ''} />
+              <span>启用插件</span>
+            </label>
+            <label class="checkbox_label shenling-assistant-row" for="shenling-assistant-floating-enabled">
+              <input id="shenling-assistant-floating-enabled" type="checkbox" ${settings.ui.showFloatingButton ? 'checked' : ''} />
+              <span>启用悬浮球</span>
+            </label>
+          </div>
         </div>
       </div>
     </div>
@@ -812,6 +853,11 @@ function renderSettingsPanel() {
   container.querySelector('#shenling-assistant-open')?.addEventListener('click', openFloatingPanel);
   container.querySelector('#shenling-assistant-enabled')?.addEventListener('change', event => {
     settings.enabled = Boolean(event.currentTarget.checked);
+    saveGlobalSettings();
+    syncSettingsPanelState();
+  });
+  container.querySelector('#shenling-assistant-floating-enabled')?.addEventListener('change', event => {
+    settings.ui.showFloatingButton = Boolean(event.currentTarget.checked);
     saveGlobalSettings();
     syncSettingsPanelState();
   });
@@ -849,6 +895,7 @@ function init() {
   scanExistingSummaryState();
   registerAutoSummaryEvents();
   renderSettingsPanel();
+  renderFloatingButton();
 }
 
 if (document.readyState === 'loading') {
