@@ -603,16 +603,14 @@ function renderModuleDetail(module, settings) {
   return `
     <div class="slx-detail-card">
       <div class="slx-detail-kicker">${module.icon} ${escapeHtml(module.title)}</div>
-      <div class="slx-detail-title">待施工</div>
+      <div class="slx-detail-title">待接入</div>
       <p>${escapeHtml(module.desc)}</p>
-      <p>这个模块入口已经预留，后续会按施工计划逐步接入真实功能。</p>
     </div>
     <div class="slx-detail-card slx-muted-card">
-      <div class="slx-detail-title">当前聊天状态占位</div>
+      <div class="slx-detail-title">当前聊天快照</div>
       ${renderDiagnosticLine('小总结计数', chatState.summary.smallSummaryCount)}
       ${renderDiagnosticLine('回忆录条目数', chatState.memoir.entryCount)}
       ${renderDiagnosticLine('平行事件时间', chatState.parallel.lastParallelEventTime || '尚未记录')}
-      <p>当前阶段只验证插件 UI、模块导航和设置保存，不读取聊天、不调用 API、不写入楼层。</p>
     </div>
   `;
 }
