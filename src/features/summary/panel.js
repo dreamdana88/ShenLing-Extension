@@ -284,7 +284,6 @@ export function renderSummarySettingsPanel(settings, chatState) {
     legacy_grand_memory: '旧聊天归档中',
   };
   const runningLabel = runningTaskLabels[chatState.summary.runningTask] || chatState.summary.runningTask || '空闲';
-  const presetMemoryLabel = summary.enabled ? '自动总结接管中' : '预设小总结接管中';
   const sourceTags = getSummarySourceTags(summary);
   const sourceRulesCollapsed = settings.ui?.sourceRulesCollapsed !== false;
   const archiveRecordViews = [...archiveRecords].reverse().map(createArchiveRecordView);
@@ -336,23 +335,21 @@ export function renderSummarySettingsPanel(settings, chatState) {
       <label class="slx-setting-toggle-row" for="slx-summary-enabled">
         <span>
           <b>自动小总结</b>
-          <small>开启后将由总结 API 接管每轮正文后的 memory。</small>
-          <small>预设小总结：${escapeHtml(presetMemoryLabel)}</small>
+          <small>AI 回复后自动写入 memory。</small>
         </span>
         <input id="slx-summary-enabled" type="checkbox" data-slx-summary-field="enabled" ${summary.enabled ? 'checked' : ''} />
       </label>
       <label class="slx-setting-toggle-row" for="slx-summary-include-user-input">
         <span>
           <b>纳入用户输入</b>
-          <small>关闭适合“用户输入-转述”：只总结 AI 正文。</small>
-          <small>开启适合“用户输入”：自动小总结带最近 user 输入，旧聊天归档扫全部楼层。</small>
+          <small>续写模式开启；转述模式关闭。</small>
         </span>
         <input id="slx-summary-include-user-input" type="checkbox" data-slx-summary-field="includeUserInput" ${summary.includeUserInput ? 'checked' : ''} />
       </label>
       <label class="slx-setting-toggle-row" for="slx-summary-grand-enabled">
         <span>
           <b>自动大总结</b>
-          <small>达到阈值后创建独立大总结楼，并自动隐藏本轮归档区间。</small>
+          <small>达到间隔后生成大总结并隐藏归档区间。</small>
         </span>
         <input id="slx-summary-grand-enabled" type="checkbox" data-slx-summary-field="autoGrandMemoryEnabled" ${summary.autoGrandMemoryEnabled ? 'checked' : ''} />
       </label>
@@ -400,7 +397,6 @@ export function renderSummarySettingsPanel(settings, chatState) {
       </div>
       ${renderDiagnosticLine('小总结取材', summarySourceModeLabel)}
       ${renderDiagnosticLine('小总结累计', `${memoryCount} / ${grandInterval}`)}
-      ${renderDiagnosticLine('预设小总结', presetMemoryLabel)}
       ${renderDiagnosticLine('当前启用模型', activeModel)}
       ${renderDiagnosticLine('上次归档', chatState.summary.lastArchivedMessageId ?? '无')}
       ${renderDiagnosticLine('上次小总结楼', chatState.summary.lastSummaryMessageId ?? '无')}
@@ -423,7 +419,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
       <div class="slx-summary-card-head">
         <div>
           <div class="slx-detail-title">归档管理器</div>
-          <p>查看大总结楼层与当前隐藏状态，可直接编辑大总结正文。</p>
+          <p>查看、编辑和刷新归档。</p>
         </div>
         <button class="slx-mini-action-btn" type="button" data-slx-refresh-archive-scan title="刷新归档状态"><i class="fa-solid fa-rotate-right"></i></button>
       </div>
@@ -433,7 +429,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
 
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">旧聊天归档</div>
-      <p>按酒馆显示楼层顺序分批；当前范围：${escapeHtml(legacyScopeLabel)}。适合没有 memory 的旧聊天。</p>
+      <p>把旧聊天分批整理为大总结。当前范围：${escapeHtml(legacyScopeLabel)}。</p>
       <label class="slx-field slx-field-wide">
         <span>每批楼层数</span>
         <input type="number" min="1" step="1" data-slx-legacy-archive-batch-size value="${escapeHtml(legacyBatchSize)}" placeholder="留空默认 30" />
@@ -453,7 +449,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
     </div>
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">小总结管理</div>
-      <p>指定楼层重写或手动编辑 memory，并覆盖回原楼层。</p>
+      <p>重写或编辑指定楼层 memory。</p>
       <label class="slx-field slx-field-wide">
         <span>重写指定楼层小总结</span>
         <div class="slx-model-row">
@@ -473,11 +469,6 @@ export function renderSummarySettingsPanel(settings, chatState) {
     </div>
 
     ${memoryEditorHtml}
-
-    <div class="slx-detail-card slx-muted-card">
-      <div class="slx-detail-title">Step 7 阶段边界</div>
-      <p>已接入 0 楼小总结、指定楼层重写、指定楼层编辑、自动大总结、旧聊天分批归档、归档楼创建、隐藏区间与上次大总结重生成。</p>
-    </div>
   `;
 }
 
