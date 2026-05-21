@@ -410,12 +410,12 @@ function renderApiSettingsPanel(settings) {
   return `
     <div class="slx-detail-card">
       <div class="slx-detail-title">总结 API 设置</div>
-      <p>${isMainApi ? '当前使用酒馆主 API，同步沿用你正在聊天的连接。' : '当前使用独立副 API，适合把总结任务分流到另一套模型。'} API Key 只保存在本地扩展设置中，不会写入通讯日志。</p>
+      <p>${isMainApi ? '沿用当前酒馆主 API。' : '使用独立副 API 处理总结任务。'} API Key 仅保存在本地。</p>
       <div class="slx-segment-row" role="group" aria-label="总结 API 模式">
         <button class="slx-segment-btn ${api.mode === 'secondary_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-api-mode="secondary_api">独立副 API</button>
         <button class="slx-segment-btn ${api.mode === 'main_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-api-mode="main_api">使用主 API</button>
       </div>
-      <div class="slx-field-hint">当前：${escapeHtml(getApiModeLabel(api))}。使用主 API 时无需填写下方独立接口配置。</div>
+      <div class="slx-field-hint">当前：${escapeHtml(getApiModeLabel(api))}</div>
       <div class="slx-api-config ${isMainApi ? 'slx-api-config-disabled' : ''}">
         <div class="slx-profile-bar">
           <label class="slx-field">
@@ -478,11 +478,11 @@ function renderModuleDetail(module, settings) {
 
       ${renderApiSettingsPanel(settings)}
       <div class="slx-detail-card">
-        <div class="slx-detail-title">存储测试</div>
-        <p>先验证插件自己的抽屉：全局设置进扩展设置，聊天状态进当前聊天 metadata。</p>
+        <div class="slx-detail-title">存储检查</div>
+        <p>确认全局设置与当前聊天状态可以正常保存。</p>
         <div class="slx-action-row">
-          <button class="slx-soft-btn" type="button" data-slx-write-global>写入全局测试值</button>
-          <button class="slx-soft-btn" type="button" data-slx-write-chat>写入当前聊天测试值</button>
+          <button class="slx-soft-btn" type="button" data-slx-write-global>写入全局</button>
+          <button class="slx-soft-btn" type="button" data-slx-write-chat>写入聊天</button>
         </div>
       </div>
       <div class="slx-detail-card slx-muted-card">
