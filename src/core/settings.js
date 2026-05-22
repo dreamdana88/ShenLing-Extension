@@ -112,6 +112,11 @@ export const defaultGlobalSettings = Object.freeze({
       appendToChat: true,
     },
     replace: getDefaultWordReplaceSettings(),
+    emotionProfile: {
+      enabled: false,
+      autoAnalyze: false,
+      injectEnabled: true,
+    },
   },
   communicationLog: {
     maxEntries: 10,
@@ -336,6 +341,17 @@ export function getSummarySettings(settings = getGlobalSettings()) {
   }
   getSummarySourceTags(summary);
   return summary;
+}
+
+export function getEmotionProfileSettings(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.modules)) {
+    settings.modules = {};
+  }
+  settings.modules.emotionProfile = mergeDefaults(
+    settings.modules.emotionProfile,
+    cloneData(defaultGlobalSettings.modules.emotionProfile),
+  );
+  return settings.modules.emotionProfile;
 }
 
 export function getWordReplaceSettings(settings = getGlobalSettings()) {

@@ -37,6 +37,8 @@ import {
 import {
   clearStaleSummaryRunningTask,
   configureSummaryWorkflow,
+  generateSummaryMemory,
+  notifySummary,
   registerAutoSummaryEvents,
   scanExistingSummaryState,
 } from './src/features/summary/workflow.js';
@@ -52,8 +54,15 @@ import {
   renderWordReplacePanel,
 } from './src/features/word-replace/panel.js';
 import {
+  bindEmotionProfilePanelEvents,
+  configureEmotionProfilePanel,
   renderEmotionProfilePanel,
 } from './src/features/emotion-profile/panel.js';
+import {
+  configureEmotionProfileWorkflow,
+  processEmotionProfileAfterMemory,
+  registerEmotionProfileEvents,
+} from './src/features/emotion-profile/workflow.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -567,7 +576,7 @@ function renderModuleDetail(module, settings) {
   }
 
   if (module.id === 'profile') {
-    return renderEmotionProfilePanel(chatState);
+    return renderEmotionProfilePanel(settings, chatState);
   }
 
   if (module.id === 'settings') {
@@ -802,6 +811,7 @@ function renderFloatingPanel(options = {}) {
 
   bindSummaryPanelEvents(panelRoot, settings);
   bindWordReplacePanelEvents(panelRoot, settings);
+  bindEmotionProfilePanelEvents(panelRoot, settings);
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
     button.addEventListener('click', () => {
@@ -847,6 +857,7 @@ function openFloatingPanel() {
   syncViewportSize();
   scanExistingSummaryState();
   registerAutoSummaryEvents();
+  registerEmotionProfileEvents();
   renderFloatingPanel();
   document.body.classList.add('slx-panel-open-lock');
   panelRoot?.classList.add('slx-panel-open');
@@ -1050,18 +1061,28 @@ function init() {
     getPanelRoot: () => panelRoot,
     refreshPanel: renderFloatingPanel,
   });
+  configureEmotionProfilePanel({
+    refreshPanel: renderFloatingPanel,
+  });
   configureSummaryWorkflow({
     addCommunicationLog,
+    afterMemoryWritten: processEmotionProfileAfterMemory,
     getActiveApiProfile,
     getApiSettings,
     getGenerateRawFunction,
     refreshSummaryPanel: refreshSummaryPanelAfterAction,
+  });
+  configureEmotionProfileWorkflow({
+    generateText: generateSummaryMemory,
+    notify: notifySummary,
+    refreshPanel: renderFloatingPanel,
   });
   getGlobalSettings();
   getChatState();
   clearStaleSummaryRunningTask('插件重新加载');
   scanExistingSummaryState();
   registerAutoSummaryEvents();
+  registerEmotionProfileEvents();
   renderSettingsPanel();
   renderFloatingButton();
 }

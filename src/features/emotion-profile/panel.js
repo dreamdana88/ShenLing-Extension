@@ -2,6 +2,32 @@ import {
   escapeHtml,
   isPlainObject,
 } from '../../utils/text.js';
+import {
+  getChatState,
+  getEmotionProfileSettings,
+  saveChatState,
+  saveGlobalSettings,
+} from '../../core/settings.js';
+import {
+  syncEmotionProfileInjection,
+} from './workflow.js';
+
+let panelOptions = {
+  refreshPanel: null,
+};
+
+export function configureEmotionProfilePanel(options = {}) {
+  panelOptions = {
+    ...panelOptions,
+    ...options,
+  };
+}
+
+function refreshPanel() {
+  if (typeof panelOptions.refreshPanel === 'function') {
+    panelOptions.refreshPanel();
+  }
+}
 
 function getEmotionProfileStore(chatState) {
   if (!isPlainObject(chatState.emotionProfiles)) {
@@ -107,13 +133,46 @@ function renderProfileCard(roleName, profile) {
   `;
 }
 
-export function renderEmotionProfilePanel(chatState) {
+function renderEmotionProfileControls(settings) {
+  const emotionSettings = getEmotionProfileSettings(settings);
+  return `
+    <div class="slx-detail-card slx-summary-settings-card">
+      <label class="slx-setting-toggle-row" for="slx-emotion-enabled">
+        <div>
+          <b>情感档案</b>
+          <p>开启后才会判断、保存和注入角色关系状态。</p>
+        </div>
+        <input id="slx-emotion-enabled" type="checkbox" data-slx-emotion-field="enabled" ${emotionSettings.enabled ? 'checked' : ''} />
+        <span class="slx-switch-ui"></span>
+      </label>
+      <label class="slx-setting-toggle-row" for="slx-emotion-auto-analyze">
+        <div>
+          <b>自动判断变化</b>
+          <p>小总结完成后，额外判断本轮是否有显著情感变化。</p>
+        </div>
+        <input id="slx-emotion-auto-analyze" type="checkbox" data-slx-emotion-field="autoAnalyze" ${emotionSettings.autoAnalyze ? 'checked' : ''} />
+        <span class="slx-switch-ui"></span>
+      </label>
+      <label class="slx-setting-toggle-row" for="slx-emotion-inject-enabled">
+        <div>
+          <b>生成前注入</b>
+          <p>主 API 回复前，注入每个角色的最新情感档案。</p>
+        </div>
+        <input id="slx-emotion-inject-enabled" type="checkbox" data-slx-emotion-field="injectEnabled" ${emotionSettings.injectEnabled ? 'checked' : ''} />
+        <span class="slx-switch-ui"></span>
+      </label>
+    </div>
+  `;
+}
+
+export function renderEmotionProfilePanel(settings, chatState) {
   const store = getEmotionProfileStore(chatState);
   const profiles = Object.entries(store.profiles)
     .filter(([, profile]) => isPlainObject(profile));
 
   if (!profiles.length) {
     return `
+      ${renderEmotionProfileControls(settings)}
       <div class="slx-detail-card slx-emotion-shell-card">
         <div class="slx-detail-kicker">🎭 角色档案</div>
         <div class="slx-detail-title">暂无情感档案</div>
@@ -128,6 +187,7 @@ export function renderEmotionProfilePanel(chatState) {
   }
 
   return `
+    ${renderEmotionProfileControls(settings)}
     <div class="slx-detail-card slx-emotion-shell-card">
       <div class="slx-detail-kicker">🎭 角色档案</div>
       <div class="slx-detail-title">情感档案</div>
@@ -135,11 +195,38 @@ export function renderEmotionProfilePanel(chatState) {
       <div class="slx-action-row slx-summary-action-row">
         <button class="slx-soft-btn" type="button" disabled>扫描旧小总结</button>
         <button class="slx-soft-btn" type="button" disabled>生成情感档案</button>
-        <button class="slx-soft-btn" type="button" disabled>清空档案</button>
+        <button class="slx-soft-btn" type="button" data-slx-clear-emotion-profiles>清空档案</button>
       </div>
     </div>
     <div class="slx-emotion-profile-list">
       ${profiles.map(([roleName, profile]) => renderProfileCard(roleName, profile)).join('')}
     </div>
   `;
+}
+
+export function bindEmotionProfilePanelEvents(panelRoot, settings) {
+  panelRoot.querySelectorAll('[data-slx-emotion-field]').forEach(input => {
+    input.addEventListener('change', () => {
+      const field = input.dataset.slxEmotionField;
+      const emotionSettings = getEmotionProfileSettings(settings);
+      if (!field || !Object.hasOwn(emotionSettings, field)) return;
+      emotionSettings[field] = Boolean(input.checked);
+      saveGlobalSettings();
+      void syncEmotionProfileInjection();
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-clear-emotion-profiles]')?.addEventListener('click', () => {
+    if (!globalThis.confirm?.('确定清空当前聊天的情感档案吗？')) return;
+    const chatState = getChatState();
+    chatState.emotionProfiles = {
+      profiles: {},
+      lastUpdatedAt: '',
+      lastInjectedAt: '',
+    };
+    saveChatState();
+    void syncEmotionProfileInjection();
+    refreshPanel();
+  });
 }

@@ -58,6 +58,7 @@ let workflowOptions = {
   getActiveApiProfile: null,
   getApiSettings: null,
   getGenerateRawFunction: null,
+  afterMemoryWritten: null,
   refreshSummaryPanel: null,
 };
 
@@ -1003,6 +1004,13 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
     }
     saveChatState();
     notifySummary('success', `已为第 ${Number(messageId)} 楼写入小总结。`);
+    if (typeof workflowOptions.afterMemoryWritten === 'function') {
+      await workflowOptions.afterMemoryWritten({
+        messageId: Number(messageId),
+        memory: memoryReplacementResult.text,
+        sourceContent: promptContent,
+      });
+    }
     await processAutoGrandMemory();
     refreshSummaryPanelAfterAction();
   } catch (error) {
