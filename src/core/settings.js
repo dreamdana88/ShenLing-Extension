@@ -142,6 +142,7 @@ export const defaultChatState = Object.freeze({
   },
   emotionProfiles: {
     profiles: {},
+    pendingByMessage: {},
     lastUpdatedAt: '',
     lastInjectedAt: '',
   },

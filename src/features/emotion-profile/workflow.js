@@ -1,4 +1,5 @@
 import {
+  extractSummarySourceContent,
   formatTimestamp,
   isPlainObject,
 } from '../../utils/text.js';
@@ -6,11 +7,16 @@ import {
   getChatState,
   getEmotionProfileSettings,
   getGlobalSettings,
+  getSummarySettings,
   saveChatState,
 } from '../../core/settings.js';
 import {
   getContextSafe,
+  getChatMessageById,
 } from '../../core/chat.js';
+import {
+  stripMemoryBlock,
+} from '../../core/summary.js';
 import {
   buildEmotionUpdatePromptSection as buildEmotionUpdatePromptSectionText,
 } from '../../prompts.js';
@@ -61,6 +67,9 @@ function getEmotionProfileStore(chatState = getChatState()) {
   if (!isPlainObject(chatState.emotionProfiles.profiles)) {
     chatState.emotionProfiles.profiles = {};
   }
+  if (!isPlainObject(chatState.emotionProfiles.pendingByMessage)) {
+    chatState.emotionProfiles.pendingByMessage = {};
+  }
   return chatState.emotionProfiles;
 }
 
@@ -81,6 +90,15 @@ function getRecordField(record, fields) {
     }
   }
   return '';
+}
+
+function createEmotionFingerprint(content) {
+  let hash = 0;
+  const text = String(content || '').replace(/\s+/g, ' ').trim();
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+  }
+  return `${text.length}:${Math.abs(hash)}`;
 }
 
 function extractJsonObject(text) {
@@ -150,9 +168,78 @@ function sanitizeMemoryForEmotionAnalysis(memory) {
     .trim();
 }
 
+export function getMessageEmotionFingerprint(messageId, settings = getGlobalSettings()) {
+  const message = getChatMessageById(Number(messageId));
+  if (!message || message.role !== 'assistant') return '';
+  const body = stripMemoryBlock(String(message.message || ''));
+  const aiContent = extractSummarySourceContent(body, getSummarySettings(settings)).trim();
+  return aiContent ? createEmotionFingerprint(aiContent) : '';
+}
+
+function normalizePendingBucket(store, messageId) {
+  const key = String(Number(messageId));
+  if (!isPlainObject(store.pendingByMessage[key])) {
+    store.pendingByMessage[key] = {
+      messageId: Number(messageId),
+      items: {},
+      updatedAt: '',
+    };
+  }
+  if (!isPlainObject(store.pendingByMessage[key].items)) {
+    store.pendingByMessage[key].items = {};
+  }
+  return store.pendingByMessage[key];
+}
+
+function storePendingEmotionUpdate({ messageId, fingerprint, changed, updates, raw }) {
+  const numericMessageId = Number(messageId);
+  const cleanFingerprint = String(fingerprint || '').trim();
+  if (!Number.isFinite(numericMessageId) || !cleanFingerprint) return null;
+
+  const chatState = getChatState();
+  const store = getEmotionProfileStore(chatState);
+  const bucket = normalizePendingBucket(store, numericMessageId);
+  const updatedAt = formatTimestamp();
+  const item = {
+    messageId: numericMessageId,
+    fingerprint: cleanFingerprint,
+    changed: Boolean(changed),
+    profiles: Array.isArray(updates) ? updates : [],
+    raw: isPlainObject(raw) ? raw : null,
+    updatedAt,
+  };
+  bucket.items[cleanFingerprint] = item;
+  bucket.updatedAt = updatedAt;
+  store.lastPendingAt = updatedAt;
+  saveChatState();
+  return item;
+}
+
+export function getCurrentPendingEmotionUpdates(settings = getGlobalSettings()) {
+  const chatState = getChatState();
+  const store = getEmotionProfileStore(chatState);
+  return Object.entries(store.pendingByMessage || {})
+    .map(([messageId, bucket]) => {
+      if (!isPlainObject(bucket) || !isPlainObject(bucket.items)) return null;
+      const fingerprint = getMessageEmotionFingerprint(messageId, settings);
+      if (!fingerprint) return null;
+      const item = bucket.items[fingerprint];
+      if (!isPlainObject(item) || item.changed !== true || !Array.isArray(item.profiles) || !item.profiles.length) {
+        return null;
+      }
+      return {
+        messageId: Number(messageId),
+        fingerprint,
+        updatedAt: item.updatedAt || bucket.updatedAt || '',
+        profiles: item.profiles,
+      };
+    })
+    .filter(Boolean);
+}
+
 export function shouldAnalyzeEmotionProfile(settings = getGlobalSettings()) {
   const emotionSettings = getEmotionProfileSettings(settings);
-  return Boolean(emotionSettings.enabled && emotionSettings.autoAnalyze);
+  return Boolean(emotionSettings.enabled);
 }
 
 export function buildEmotionUpdatePromptSection(settings = getGlobalSettings()) {
@@ -195,7 +282,7 @@ ${lines.join('\n\n')}
 </character_profile_state>`;
 }
 
-export function appendEmotionProfileRecords(updates, { messageId } = {}) {
+export function appendEmotionProfileRecords(updates, { messageId, fingerprint = '', save = true } = {}) {
   if (!Array.isArray(updates) || !updates.length) return [];
   const chatState = getChatState();
   const store = getEmotionProfileStore(chatState);
@@ -211,6 +298,7 @@ export function appendEmotionProfileRecords(updates, { messageId } = {}) {
     const records = Array.isArray(profile.records) ? profile.records : [];
     const record = {
       sourceMessageId: Number(messageId),
+      sourceFingerprint: String(fingerprint || ''),
       createdAt,
       updatedAt: createdAt,
       currentStatus: update.currentStatus,
@@ -228,9 +316,43 @@ export function appendEmotionProfileRecords(updates, { messageId } = {}) {
 
   if (changedRoleNames.length) {
     store.lastUpdatedAt = createdAt;
-    saveChatState();
+    if (save) saveChatState();
   }
   return changedRoleNames;
+}
+
+export function removeEmotionProfileRecordsForMessage(messageId, { save = true } = {}) {
+  const numericMessageId = Number(messageId);
+  if (!Number.isFinite(numericMessageId)) return false;
+
+  const chatState = getChatState();
+  const store = getEmotionProfileStore(chatState);
+  let changed = false;
+
+  for (const [roleName, profile] of Object.entries(store.profiles || {})) {
+    if (!isPlainObject(profile)) continue;
+    const records = Array.isArray(profile.records) ? profile.records : [];
+    const nextRecords = records.filter(record => Number(record?.sourceMessageId) !== numericMessageId);
+    if (nextRecords.length === records.length) continue;
+
+    changed = true;
+    if (!nextRecords.length) {
+      delete store.profiles[roleName];
+      continue;
+    }
+
+    const latestRecord = nextRecords.at(-1);
+    profile.records = nextRecords;
+    profile.currentStatus = latestRecord?.currentStatus || profile.currentStatus || '';
+    profile.lastUpdatedAt = latestRecord?.updatedAt || latestRecord?.createdAt || profile.lastUpdatedAt || '';
+    store.profiles[roleName] = profile;
+  }
+
+  if (changed) {
+    store.lastUpdatedAt = formatTimestamp();
+    if (save) saveChatState();
+  }
+  return changed;
 }
 
 export async function processEmotionUpdateFromSummaryResult(result, { messageId } = {}) {
@@ -243,18 +365,67 @@ export async function processEmotionUpdateFromSummaryResult(result, { messageId 
     }
     const parsed = extractJsonObject(sanitizeMemoryForEmotionAnalysis(match[1]));
     const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
-    if (!changed) return;
-
-    const updates = normalizeProfileItems(parsed);
-    const changedRoleNames = appendEmotionProfileRecords(updates, { messageId });
-    if (!changedRoleNames.length) return;
-
-    await syncEmotionProfileInjection();
-    notifyEmotion('success', `情感档案已更新：${changedRoleNames.join('、')}`);
+    const fingerprint = getMessageEmotionFingerprint(messageId);
+    if (!fingerprint) return;
+    const updates = changed ? normalizeProfileItems(parsed) : [];
+    const pending = storePendingEmotionUpdate({
+      messageId,
+      fingerprint,
+      changed: Boolean(changed && updates.length),
+      updates,
+      raw: parsed,
+    });
+    if (pending?.changed) {
+      notifyEmotion('info', `检测到待确认情感变化：${updates.map(item => item.roleName).join('、')}`);
+    }
     refreshPanel();
   } catch (error) {
     console.error('[蜃灵助手] 情感档案解析失败。', error);
     notifyEmotion('warning', error.message || String(error), '情感档案解析失败');
+  }
+}
+
+export async function commitSelectedPendingEmotionUpdates({ notify = false } = {}) {
+  const chatState = getChatState();
+  const store = getEmotionProfileStore(chatState);
+  const pendingEntries = Object.entries(store.pendingByMessage || {});
+  if (!pendingEntries.length) return;
+
+  let changed = false;
+  const committedRoleNames = [];
+
+  for (const [messageId, bucket] of pendingEntries) {
+    if (!isPlainObject(bucket) || !isPlainObject(bucket.items)) {
+      delete store.pendingByMessage[messageId];
+      changed = true;
+      continue;
+    }
+
+    const fingerprint = getMessageEmotionFingerprint(messageId);
+    if (!fingerprint) continue;
+    const item = bucket.items[fingerprint];
+    if (!isPlainObject(item)) continue;
+
+    removeEmotionProfileRecordsForMessage(messageId, { save: false });
+    if (item.changed === true && Array.isArray(item.profiles) && item.profiles.length) {
+      committedRoleNames.push(...appendEmotionProfileRecords(item.profiles, {
+        messageId: Number(messageId),
+        fingerprint,
+        save: false,
+      }));
+    }
+
+    delete store.pendingByMessage[messageId];
+    changed = true;
+  }
+
+  if (!changed) return;
+  store.lastUpdatedAt = formatTimestamp();
+  saveChatState();
+  await syncEmotionProfileInjection();
+  refreshPanel();
+  if (notify && committedRoleNames.length) {
+    notifyEmotion('success', `情感档案已确认：${[...new Set(committedRoleNames)].join('、')}`);
   }
 }
 
@@ -269,7 +440,7 @@ export async function syncEmotionProfileInjection() {
 
   const settings = getGlobalSettings();
   const emotionSettings = getEmotionProfileSettings(settings);
-  const content = emotionSettings.enabled && emotionSettings.injectEnabled
+  const content = emotionSettings.enabled
     ? buildEmotionProfileInjection()
     : '';
 
@@ -280,7 +451,7 @@ export async function syncEmotionProfileInjection() {
 
   await setExtensionPrompt(EMOTION_PROFILE_PROMPT_ID, content, 1, 0, false, 0, () => {
     const latestSettings = getEmotionProfileSettings(getGlobalSettings());
-    return Boolean(latestSettings.enabled && latestSettings.injectEnabled && buildEmotionProfileInjection());
+    return Boolean(latestSettings.enabled && buildEmotionProfileInjection());
   });
 }
 
@@ -311,18 +482,34 @@ function registerTavernEvent(eventName, handler) {
 export function registerEmotionProfileEvents() {
   if (emotionEventsRegistered) return;
   const tavernEvents = getTavernEventsSafe();
+  const commitHandler = () => {
+    void commitSelectedPendingEmotionUpdates().then(syncEmotionProfileInjection).catch(error => {
+      console.warn('[蜃灵助手] 情感档案注入刷新失败。', error);
+    });
+  };
   const syncHandler = () => {
     void syncEmotionProfileInjection().catch(error => {
       console.warn('[蜃灵助手] 情感档案注入刷新失败。', error);
     });
   };
+  const refreshHandler = () => refreshPanel();
 
   [
     tavernEvents.GENERATION_AFTER_COMMANDS,
     tavernEvents.GENERATE_BEFORE_COMBINE_PROMPTS,
-    tavernEvents.CHAT_CHANGED,
   ].filter(Boolean).forEach(eventName => {
-    const stop = registerTavernEvent(eventName, syncHandler);
+    const stop = registerTavernEvent(eventName, commitHandler);
+    if (stop) emotionEventStops.push(stop);
+  });
+
+  const chatChangedStop = registerTavernEvent(tavernEvents.CHAT_CHANGED, syncHandler);
+  if (chatChangedStop) emotionEventStops.push(chatChangedStop);
+
+  [
+    tavernEvents.MESSAGE_SWIPED,
+    tavernEvents.MESSAGE_UPDATED,
+  ].filter(Boolean).forEach(eventName => {
+    const stop = registerTavernEvent(eventName, refreshHandler);
     if (stop) emotionEventStops.push(stop);
   });
 

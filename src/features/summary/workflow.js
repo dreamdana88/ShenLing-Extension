@@ -603,7 +603,10 @@ export async function regenerateMemoryForMessage(messageId) {
 
   try {
     const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
-    const result = await generateSummaryMemory(buildMemorySummaryPrompt(material.promptContent, priorMemories, summary), {
+    const emotionPromptSection = buildEmotionUpdatePromptSection(getGlobalSettings());
+    const result = await generateSummaryMemory(buildMemorySummaryPrompt(material.promptContent, priorMemories, summary, {
+      extraInstructions: emotionPromptSection,
+    }), {
       type: '手动重写小总结',
     });
     const memoryReplacementResult = applyReplacementRulesByScope(normalizeMemoryBlock(result), getWordReplaceSettings());
@@ -615,6 +618,7 @@ export async function regenerateMemoryForMessage(messageId) {
     chatState.summary.lastError = '';
     saveChatState();
     notifySummary('success', `已重写第 ${Number(messageId)} 楼小总结。`, '重写小总结');
+    await processEmotionUpdateFromSummaryResult(result, { messageId: Number(messageId) });
     refreshSummaryPanelAfterAction();
   } catch (error) {
     clearSummaryWriteIgnored(Number(messageId));

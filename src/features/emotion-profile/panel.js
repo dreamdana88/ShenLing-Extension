@@ -9,6 +9,7 @@ import {
   saveGlobalSettings,
 } from '../../core/settings.js';
 import {
+  getCurrentPendingEmotionUpdates,
   syncEmotionProfileInjection,
 } from './workflow.js';
 
@@ -133,6 +134,45 @@ function renderProfileCard(roleName, profile) {
   `;
 }
 
+function renderPendingEmotionPanel(settings) {
+  const pendingItems = getCurrentPendingEmotionUpdates(settings);
+  if (!pendingItems.length) return '';
+
+  const cards = pendingItems.map(item => {
+    const profiles = item.profiles.map(profile => `
+      <article class="slx-emotion-profile-card slx-emotion-pending-card">
+        <div class="slx-summary-card-head">
+          <div>
+            <div class="slx-detail-title">${escapeHtml(profile.roleName || '未命名角色')}</div>
+            <p>第 ${escapeHtml(item.messageId)} 楼 · 待确认</p>
+          </div>
+        </div>
+        <div class="slx-emotion-profile-section">
+          <span>待确认状态</span>
+          <p>${escapeHtml(profile.currentStatus || '未整理')}</p>
+        </div>
+        <div class="slx-emotion-profile-section">
+          <span>本页变化</span>
+          <p>${escapeHtml(profile.changeSummary || '未记录')}</p>
+        </div>
+      </article>
+    `).join('');
+
+    return profiles;
+  }).join('');
+
+  return `
+    <div class="slx-detail-card slx-emotion-shell-card">
+      <div class="slx-detail-kicker">待确认</div>
+      <div class="slx-detail-title">当前 swipe 情感变化</div>
+      <p>继续下一轮后，当前选中页会写入正式档案。</p>
+    </div>
+    <div class="slx-emotion-profile-list">
+      ${cards}
+    </div>
+  `;
+}
+
 function renderEmotionProfileControls(settings) {
   const emotionSettings = getEmotionProfileSettings(settings);
   return `
@@ -140,25 +180,9 @@ function renderEmotionProfileControls(settings) {
       <label class="slx-setting-toggle-row" for="slx-emotion-enabled">
         <div>
           <b>情感档案</b>
-          <p>开启后才会判断、保存和注入角色关系状态。</p>
+          <p>开启后随小总结判断、保存并注入角色关系状态。</p>
         </div>
         <input id="slx-emotion-enabled" type="checkbox" data-slx-emotion-field="enabled" ${emotionSettings.enabled ? 'checked' : ''} />
-        <span class="slx-switch-ui"></span>
-      </label>
-      <label class="slx-setting-toggle-row" for="slx-emotion-auto-analyze">
-        <div>
-          <b>自动判断变化</b>
-          <p>小总结完成后，额外判断本轮是否有显著情感变化。</p>
-        </div>
-        <input id="slx-emotion-auto-analyze" type="checkbox" data-slx-emotion-field="autoAnalyze" ${emotionSettings.autoAnalyze ? 'checked' : ''} />
-        <span class="slx-switch-ui"></span>
-      </label>
-      <label class="slx-setting-toggle-row" for="slx-emotion-inject-enabled">
-        <div>
-          <b>生成前注入</b>
-          <p>主 API 回复前，注入每个角色的最新情感档案。</p>
-        </div>
-        <input id="slx-emotion-inject-enabled" type="checkbox" data-slx-emotion-field="injectEnabled" ${emotionSettings.injectEnabled ? 'checked' : ''} />
         <span class="slx-switch-ui"></span>
       </label>
     </div>
@@ -173,6 +197,7 @@ export function renderEmotionProfilePanel(settings, chatState) {
   if (!profiles.length) {
     return `
       ${renderEmotionProfileControls(settings)}
+      ${renderPendingEmotionPanel(settings)}
       <div class="slx-detail-card slx-emotion-shell-card">
         <div class="slx-detail-kicker">🎭 角色档案</div>
         <div class="slx-detail-title">暂无情感档案</div>
@@ -188,6 +213,7 @@ export function renderEmotionProfilePanel(settings, chatState) {
 
   return `
     ${renderEmotionProfileControls(settings)}
+    ${renderPendingEmotionPanel(settings)}
     <div class="slx-detail-card slx-emotion-shell-card">
       <div class="slx-detail-kicker">🎭 角色档案</div>
       <div class="slx-detail-title">情感档案</div>
@@ -211,6 +237,10 @@ export function bindEmotionProfilePanelEvents(panelRoot, settings) {
       const emotionSettings = getEmotionProfileSettings(settings);
       if (!field || !Object.hasOwn(emotionSettings, field)) return;
       emotionSettings[field] = Boolean(input.checked);
+      if (field === 'enabled') {
+        emotionSettings.autoAnalyze = Boolean(input.checked);
+        emotionSettings.injectEnabled = Boolean(input.checked);
+      }
       saveGlobalSettings();
       void syncEmotionProfileInjection();
       refreshPanel();
@@ -222,6 +252,7 @@ export function bindEmotionProfilePanelEvents(panelRoot, settings) {
     const chatState = getChatState();
     chatState.emotionProfiles = {
       profiles: {},
+      pendingByMessage: {},
       lastUpdatedAt: '',
       lastInjectedAt: '',
     };
