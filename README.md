@@ -1,23 +1,48 @@
-# ShenLing-Extension
+# 蜃灵助手
 
-蜃灵助手 SillyTavern 第三方插件。
+蜃灵助手是一个 SillyTavern 第三方插件，用于长篇剧情游玩中的总结、归档、通讯日志、副 API 管理、词汇替换与角色状态辅助。
 
-当前版本：`0.5.0`
+当前版本：`0.10.15`
 
-## 当前状态
+GitHub 仓库：
 
-这是第一版最小插件空壳，用于验证：
+```text
+https://github.com/dreamdana88/ShenLing-Extension
+```
 
-- GitHub 仓库发布
-- SillyTavern 通过 Git URL 安装第三方插件
-- 插件 JS/CSS 正常加载
-- 扩展设置面板正常显示
-- 基础设置可以保存
-- 全局设置与当前聊天专属状态分开存储
-- 设置页可以查看存储诊断并写入测试值
-- 主面板已预留插件级通讯日志入口与日志面板
-- 设置页已预留副 API 配置，支持多 Profile、拉取模型与 OpenAI-compatible 测试连接
-- 自动总结模块已预留设置面板与当前聊天状态展示
+## 当前已接入
+
+- 独立弹出式主面板
+- 浅色/深色插件主题
+- 手机端适配
+- 可拖动悬浮球入口
+- 全局设置与聊天专属 metadata 分离保存
+- 副 API Profile 管理
+- 支持 OpenAI-compatible 地址与 `/v1` 兼容
+- 支持拉取模型列表
+- 支持使用酒馆主 API 模式
+- 插件通讯日志
+- 自动小总结 `<memory>`
+- 0 楼小总结手动生成
+- 指定楼层小总结重写与编辑
+- 自动大总结 `<grand_memory>`
+- 大总结归档楼、隐藏区间、重新生成
+- 旧聊天分批归档第一版
+- 词汇替换
+- 情感档案第一版：随小总结同次判断、写入 metadata，并在主生成前注入最新版
+
+## 施工中模块
+
+以下模块已有入口或方向规划，但还没有完整接入真实功能：
+
+- 回忆录世界书
+- 七日程
+- 日记本
+- 平行事件
+- 剧情规划
+- 逆攻略
+- 灵感工具
+- 向量记忆预研
 
 ## 安装
 
@@ -33,20 +58,80 @@ Extensions -> Install Extension
 https://github.com/dreamdana88/ShenLing-Extension
 ```
 
-## 计划
+安装后可在扩展设置中看到“蜃灵助手”。
 
-后续模块将逐步加入：
+## 更新
 
-- 副 API 与通讯日志
-- 自动总结
-- 大总结与归档
-- 回忆录世界书
-- 逆攻略
-- 平行事件
-- 日程与日记
-- 灵感工具箱
-- 词汇替换
+如果是通过 GitHub 安装的第三方插件，可以在 SillyTavern 扩展管理中更新插件。
 
-## 注意
+开发时常用流程：
 
-不要把 API Key、反代密钥、私密聊天记录提交到本仓库。
+```text
+修改插件文件
+↓
+GitHub Desktop 查看 changed files
+↓
+填写 Summary
+↓
+Commit to main
+↓
+Push origin
+↓
+回 SillyTavern 更新插件并刷新页面
+```
+
+## 副 API 说明
+
+副 API 配置位于插件设置页。
+
+目前支持：
+
+- 多 Profile 保存与切换
+- API 地址
+- API Key
+- 模型名
+- 拉取模型
+- 使用主 API / 独立副 API 切换
+
+插件已移除“测试连接”功能，因为部分公益站不允许超轻量测试请求，可能导致账号被限制。
+
+## 情感档案说明
+
+情感档案位于“角色档案”模块。
+
+开启后，自动小总结会在同一次副 API 请求中额外要求输出：
+
+```text
+<emotion_update>...</emotion_update>
+```
+
+插件只在 `changed=true` 时写入当前聊天 metadata；`changed=false` 不新增档案。
+
+生成前注入开启时，插件会把每个角色最新一条情感档案注入给主 API。历史变化仍保存在面板中，方便查看角色关系演变。
+
+关闭“自动判断变化”时，小总结请求中不会发送情感判断相关提示词。
+
+## 提示词位置
+
+主要提示词已集中在：
+
+```text
+src/prompts.js
+```
+
+常用位置：
+
+- `DEFAULT_MEMORY_PROMPT_TEMPLATE`：小总结模板
+- `DEFAULT_GRAND_MEMORY_TEMPLATE`：大总结模板
+- `SUMMARY_SUPPORT_MESSAGES`：蜃灵前置 messages
+- `SUMMARY_GAZE_GUIDANCE`：总结视角约束
+- `buildEmotionUpdatePromptSection`：情感档案判断提示词
+
+只改中文文本通常比较安全。不要删除标签、变量名、引号、逗号、反引号，也不要改 `${archiveFrom}`、`${archiveTo}` 这类后台替换变量。
+
+## 注意事项
+
+- 不要把 API Key、反代密钥、私密聊天记录提交到仓库。
+- 当前插件仍在施工中，建议每次大改后先用测试聊天验证。
+- 旧的蜃灵切换脚本不由本插件自动禁用，需要用户自行决定是否继续使用。
+- 自动总结、情感档案、词汇替换等功能可能同时改写楼层，测试新功能时建议保留可回退的提交记录。
