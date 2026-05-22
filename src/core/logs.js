@@ -1,5 +1,37 @@
 ﻿import { formatTimestamp, isPlainObject } from '../utils/text.js';
 
+function formatMessageList(messages) {
+  if (!Array.isArray(messages)) return '';
+  return messages.map((message, index) => {
+    if (!isPlainObject(message)) {
+      return `--- message ${index + 1} ---\n${stringifyLogField(message)}`;
+    }
+    const { role, content, ...rest } = message;
+    const restText = Object.keys(rest).length ? `\n\n其他字段：\n${JSON.stringify(rest, null, 2)}` : '';
+    return `--- message ${index + 1}${role ? ` / ${role}` : ''} ---\n${String(content ?? '')}${restText}`;
+  }).join('\n\n');
+}
+
+function stringifyObjectLogField(value) {
+  if (Array.isArray(value.messages)) {
+    const { messages, ...rest } = value;
+    const restText = Object.keys(rest).length ? `${JSON.stringify(rest, null, 2)}\n\n` : '';
+    return `${restText}messages:\n${formatMessageList(messages)}`.trim();
+  }
+
+  if (Array.isArray(value.ordered_prompts) || typeof value.user_input === 'string') {
+    const { ordered_prompts: orderedPrompts, user_input: userInput, ...rest } = value;
+    const restText = Object.keys(rest).length ? `${JSON.stringify(rest, null, 2)}\n\n` : '';
+    const orderedText = Array.isArray(orderedPrompts)
+      ? `ordered_prompts:\n${formatMessageList(orderedPrompts)}\n\n`
+      : '';
+    const inputText = typeof userInput === 'string' ? `user_input:\n${userInput}` : '';
+    return `${restText}${orderedText}${inputText}`.trim();
+  }
+
+  return JSON.stringify(value, null, 2);
+}
+
 export function stringifyLogField(value) {
   if (value === null || value === undefined || value === '') {
     return '';
@@ -9,7 +41,15 @@ export function stringifyLogField(value) {
     return value;
   }
 
+  if (Array.isArray(value)) {
+    const messages = formatMessageList(value);
+    if (messages) return messages;
+  }
+
   try {
+    if (isPlainObject(value)) {
+      return stringifyObjectLogField(value);
+    }
     return JSON.stringify(value, null, 2);
   } catch {
     return String(value);

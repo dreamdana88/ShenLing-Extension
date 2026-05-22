@@ -80,11 +80,16 @@ export function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMate
   return `蜃灵处于梦境档案编制状态。\n\n${grandMemoryTemplate}\n\n${SUMMARY_GAZE_GUIDANCE}\n\n现在请根据以下梦境记忆${verb}本轮归档大总结。\n请只依据素材内容归纳，不要续写剧情。\n请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。\n\n【梦境记忆素材】\n${archiveMaterial}`;
 }
 
-export function buildMemorySummaryPrompt(content, priorMemories = [], summary = {}) {
+export function buildMemorySummaryPrompt(content, priorMemories = [], summary = {}, options = {}) {
   const priorSection = priorMemories.length > 0
     ? `\n\n【过往梦境档案（编号勿重复）】\n${priorMemories.join('\n\n')}`
     : '';
-  return `蜃灵处于梦境档案编制状态。\n\n${summary.promptTemplate || ''}\n\n${SUMMARY_GAZE_GUIDANCE}${priorSection}\n\n现在只处理以下本轮素材。请不要续写剧情，不要输出 <content>，严格按照格式要求输出完整的 <memory>...</memory>。\n\n【本轮素材】\n${content}`;
+  const extraInstructions = String(options.extraInstructions || '').trim();
+  const extraSection = extraInstructions ? `\n\n${extraInstructions}` : '';
+  const outputRule = extraInstructions
+    ? '严格按照格式要求输出完整的 <memory>...</memory>，并按附加要求输出其他独立块。'
+    : '严格按照格式要求输出完整的 <memory>...</memory>。';
+  return `蜃灵处于梦境档案编制状态。\n\n${summary.promptTemplate || ''}\n\n${SUMMARY_GAZE_GUIDANCE}${priorSection}${extraSection}\n\n现在只处理以下本轮素材。请不要续写剧情，不要输出 <content>，${outputRule}\n\n【本轮素材】\n${content}`;
 }
 
 export function buildMemorySummaryMessages(prompt) {

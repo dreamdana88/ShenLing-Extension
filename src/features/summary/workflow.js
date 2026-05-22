@@ -28,6 +28,10 @@ import {
 } from '../../core/settings.js';
 import { applyReplacementRulesByScope } from '../word-replace/core.js';
 import {
+  buildEmotionUpdatePromptSection,
+  processEmotionUpdateFromSummaryResult,
+} from '../emotion-profile/workflow.js';
+import {
   buildGrandMemoryMaterialPrompt,
   buildLegacyArchiveBatchMaterial,
   buildLegacyArchiveBatchPrompt,
@@ -58,7 +62,6 @@ let workflowOptions = {
   getActiveApiProfile: null,
   getApiSettings: null,
   getGenerateRawFunction: null,
-  afterMemoryWritten: null,
   refreshSummaryPanel: null,
 };
 
@@ -976,7 +979,10 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
     const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
     const userContent = summary.includeUserInput ? getPreviousUserSummarySource(Number(messageId), summary) : '';
     const promptContent = buildSummaryPromptContent(replacedAiContent, userContent);
-    const prompt = buildMemorySummaryPrompt(promptContent, priorMemories, summary);
+    const emotionPromptSection = buildEmotionUpdatePromptSection(settings);
+    const prompt = buildMemorySummaryPrompt(promptContent, priorMemories, summary, {
+      extraInstructions: emotionPromptSection,
+    });
     const result = await generateSummaryMemory(prompt, { type: '自动小总结' });
     const memory = normalizeMemoryBlock(result);
     const memoryReplacementResult = applyReplacementRulesByScope(memory, wordReplace);
@@ -1004,13 +1010,7 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
     }
     saveChatState();
     notifySummary('success', `已为第 ${Number(messageId)} 楼写入小总结。`);
-    if (typeof workflowOptions.afterMemoryWritten === 'function') {
-      await workflowOptions.afterMemoryWritten({
-        messageId: Number(messageId),
-        memory: memoryReplacementResult.text,
-        sourceContent: promptContent,
-      });
-    }
+    await processEmotionUpdateFromSummaryResult(result, { messageId: Number(messageId) });
     await processAutoGrandMemory();
     refreshSummaryPanelAfterAction();
   } catch (error) {

@@ -129,10 +129,10 @@ I, Shen Ling, accept these covenants. I shall dissolve entirely into the dreamsc
   },
 ]);
 
-export function buildEmotionAnalysisPrompt({ messageId, memory, sourceContent, knownProfilesText }) {
-  return `蜃灵处于角色关系档案整理状态。
+export function buildEmotionUpdatePromptSection({ knownProfilesText }) {
+  return `## 情感档案更新判断
 
-请判断本轮剧情是否出现“显著情感变化”。
+请在生成 <memory> 后，额外判断本轮剧情是否出现“显著情感变化”。
 
 显著变化包括：关系阶段改变、信任/戒备/依恋/敌意明显变化、长期目标或隐秘动机改变、角色对{{user}}的认知发生转向。
 
@@ -140,7 +140,7 @@ export function buildEmotionAnalysisPrompt({ messageId, memory, sourceContent, k
 
 判断依据优先级：
 1. 本轮正文事实。
-2. 本轮 <memory> 的 <plot> 与 <database>。
+2. 你本次生成的 <memory> 中的 <plot> 与 <database>。
 3. 已知最新档案。
 
 不要把旧模板里可能残留的 <psychology> 或 <list> 当作变化证据；只有正文/剧情事实确实支持时才 changed=true。
@@ -148,17 +148,11 @@ export function buildEmotionAnalysisPrompt({ messageId, memory, sourceContent, k
 已知最新档案：
 ${String(knownProfilesText || '暂无。').trim() || '暂无。'}
 
-本轮楼层：第 ${messageId} 楼
-
-【本轮小总结】
-${String(memory || '').trim()}
-
-【本轮正文参考】
-${String(sourceContent || '').trim()}
-
-请只输出 JSON，不要输出 Markdown，不要续写剧情。
+请在 <memory>...</memory> 后继续输出独立的 <emotion_update>...</emotion_update>。
+<emotion_update> 内只能放 JSON，不要放 Markdown，不要续写剧情。
 
 格式：
+<emotion_update>
 {
   "changed": true,
   "profiles": [
@@ -171,10 +165,13 @@ ${String(sourceContent || '').trim()}
     }
   ]
 }
+</emotion_update>
 
 如果没有显著变化，请输出：
+<emotion_update>
 {
   "changed": false,
   "profiles": []
-}`;
+}
+</emotion_update>`;
 }

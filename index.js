@@ -37,7 +37,6 @@ import {
 import {
   clearStaleSummaryRunningTask,
   configureSummaryWorkflow,
-  generateSummaryMemory,
   notifySummary,
   registerAutoSummaryEvents,
   scanExistingSummaryState,
@@ -60,7 +59,6 @@ import {
 } from './src/features/emotion-profile/panel.js';
 import {
   configureEmotionProfileWorkflow,
-  processEmotionProfileAfterMemory,
   registerEmotionProfileEvents,
 } from './src/features/emotion-profile/workflow.js';
 
@@ -1066,14 +1064,12 @@ function init() {
   });
   configureSummaryWorkflow({
     addCommunicationLog,
-    afterMemoryWritten: processEmotionProfileAfterMemory,
     getActiveApiProfile,
     getApiSettings,
     getGenerateRawFunction,
     refreshSummaryPanel: refreshSummaryPanelAfterAction,
   });
   configureEmotionProfileWorkflow({
-    generateText: generateSummaryMemory,
     notify: notifySummary,
     refreshPanel: renderFloatingPanel,
   });

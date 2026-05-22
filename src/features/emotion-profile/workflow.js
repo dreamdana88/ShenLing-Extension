@@ -12,17 +12,17 @@ import {
   getContextSafe,
 } from '../../core/chat.js';
 import {
-  buildEmotionAnalysisPrompt,
+  buildEmotionUpdatePromptSection as buildEmotionUpdatePromptSectionText,
 } from '../../prompts.js';
 
 const EMOTION_PROFILE_PROMPT_ID = 'shenling_assistant_emotion_profile_state';
 const PSYCHOLOGY_BLOCK_RE = /<psychology>[\s\S]*?<\/psychology>/gi;
 const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
+const EMOTION_UPDATE_BLOCK_RE = /<emotion_update>\s*([\s\S]*?)\s*<\/emotion_update>/i;
 const emotionEventStops = [];
 let emotionEventsRegistered = false;
 
 let workflowOptions = {
-  generateText: null,
   notify: null,
   refreshPanel: null,
 };
@@ -150,6 +150,19 @@ function sanitizeMemoryForEmotionAnalysis(memory) {
     .trim();
 }
 
+export function shouldAnalyzeEmotionProfile(settings = getGlobalSettings()) {
+  const emotionSettings = getEmotionProfileSettings(settings);
+  return Boolean(emotionSettings.enabled && emotionSettings.autoAnalyze);
+}
+
+export function buildEmotionUpdatePromptSection(settings = getGlobalSettings()) {
+  if (!shouldAnalyzeEmotionProfile(settings)) return '';
+  const store = getEmotionProfileStore();
+  return buildEmotionUpdatePromptSectionText({
+    knownProfilesText: buildKnownProfilesSection(store),
+  });
+}
+
 export function buildEmotionProfileInjection(chatState = getChatState()) {
   const store = getEmotionProfileStore(chatState);
   const lines = Object.entries(store.profiles || {})
@@ -220,26 +233,15 @@ export function appendEmotionProfileRecords(updates, { messageId } = {}) {
   return changedRoleNames;
 }
 
-export async function processEmotionProfileAfterMemory({ messageId, memory, sourceContent } = {}) {
-  const settings = getGlobalSettings();
-  const emotionSettings = getEmotionProfileSettings(settings);
-  if (!emotionSettings.enabled || !emotionSettings.autoAnalyze) return;
-  if (typeof workflowOptions.generateText !== 'function') {
-    console.warn('[蜃灵助手] 情感档案判断缺少 generateText 依赖。');
-    return;
-  }
-
-  const store = getEmotionProfileStore();
-  const prompt = buildEmotionAnalysisPrompt({
-    messageId,
-    memory: sanitizeMemoryForEmotionAnalysis(memory),
-    sourceContent,
-    knownProfilesText: buildKnownProfilesSection(store),
-  });
-
+export async function processEmotionUpdateFromSummaryResult(result, { messageId } = {}) {
+  if (!shouldAnalyzeEmotionProfile()) return;
   try {
-    const result = await workflowOptions.generateText(prompt, { type: '情感档案判断' });
-    const parsed = extractJsonObject(result);
+    const match = String(result || '').match(EMOTION_UPDATE_BLOCK_RE);
+    if (!match) {
+      console.warn('[蜃灵助手] 本轮小总结未返回 emotion_update，已跳过情感档案更新。');
+      return;
+    }
+    const parsed = extractJsonObject(sanitizeMemoryForEmotionAnalysis(match[1]));
     const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
     if (!changed) return;
 
@@ -251,8 +253,8 @@ export async function processEmotionProfileAfterMemory({ messageId, memory, sour
     notifyEmotion('success', `情感档案已更新：${changedRoleNames.join('、')}`);
     refreshPanel();
   } catch (error) {
-    console.error('[蜃灵助手] 情感档案判断失败。', error);
-    notifyEmotion('warning', error.message || String(error), '情感档案判断失败');
+    console.error('[蜃灵助手] 情感档案解析失败。', error);
+    notifyEmotion('warning', error.message || String(error), '情感档案解析失败');
   }
 }
 
