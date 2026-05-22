@@ -1,12 +1,15 @@
 import {
   CHAT_STATE_KEY,
-  DEFAULT_GRAND_MEMORY_TEMPLATE,
   DEFAULT_SUMMARY_EXCLUDE_TAGS,
   DEFAULT_SUMMARY_INCLUDE_TAGS,
   MODULE_NAME,
   STORAGE_VERSION,
   SUMMARY_PROMPT_VERSION,
 } from '../constants.js';
+import {
+  DEFAULT_GRAND_MEMORY_TEMPLATE,
+  DEFAULT_MEMORY_PROMPT_TEMPLATE,
+} from '../prompts.js';
 import {
   cloneData,
   formatTimestamp,
@@ -49,58 +52,7 @@ export const defaultGlobalSettings = Object.freeze({
       },
       promptTemplateVersion: SUMMARY_PROMPT_VERSION,
       grandPromptTemplate: DEFAULT_GRAND_MEMORY_TEMPLATE,
-      promptTemplate: [
-        '##浓缩梦境',
-        '',
-        '必须输出<memory>结构化总结，并严格使用以下格式进行封装：',
-        '',
-        '<memory>',
-        '<number>',
-        '自然顺序编号，如 `1`、`2`，承接上轮递增。',
-        '</number>',
-        '',
-        '<worldstate>',
-        '时间：${精确日期 + 当前时段}',
-        '地点：${所在地点}',
-        '人物：${列举在场角色}',
-        '</worldstate>',
-        '',
-        '<currentTask>',
-        '一句话简述当前主线目标',
-        '</currentTask>',
-        '',
-        '<plot>',
-        '以自然语言用第三人称客观梳理总结本轮演出剧情 (200 token)，必须包含：用户输入内容、关键事件/情节进展、重要互动、情绪变化、特殊世界规则发现或剧情推进。',
-        '{{user}}：${本次正文中1句最重要台词(可无)}',
-        '主要角色：${本次正文中1句最重要台词(可无)}',
-        '</plot>',
-        '',
-        '<psychology>',
-        '（非{{user}}主要角色情感变化）：',
-        '${角色名}',
-        '- 情感分层：{(日常/深入/高峰)简要描述+变化方向}',
-        '- 情感关系：{人物关系的变化倾向(30字)}',
-        '</psychology>',
-        '',
-        '<list>',
-        '根据非{{user}}角色的人设、职业背景、生活作息等，简要列出角色当天全部日程表与行动安排（至就寝），随时间推进进行check',
-        '',
-        '格式:',
-        '${日期}-${角色名}',
-        '${早/中/晚}:${序号}.${日程安排内容} ${预期完成时间（x时-y时）}',
-        '隐私:${想隐藏的秘密}',
-        '好奇:${想探究的好奇}',
-        '当前目标:${一句话简述近期要达成的目标}',
-        '</list>',
-        '',
-        '<database>',
-        '- 重要物品/概念解锁:',
-        '记录本轮中首次出现的、重要的物品或概念。',
-        '</database>',
-        '</memory>',
-        '',
-        '重要：<memory>内容应足够独立，即使没有正文，也能让人了解故事发展。总字数不超过400字。',
-      ].join('\n'),
+      promptTemplate: DEFAULT_MEMORY_PROMPT_TEMPLATE,
     },
     memoir: {
       mode: 'ask_after_archive',
@@ -311,7 +263,7 @@ export function getStorageDiagnostics() {
 }
 
 export function getDefaultSummaryPromptTemplate() {
-  return defaultGlobalSettings.modules.summary.promptTemplate;
+  return DEFAULT_MEMORY_PROMPT_TEMPLATE;
 }
 
 export function shouldResetSummaryPromptTemplate(summary) {
@@ -319,6 +271,8 @@ export function shouldResetSummaryPromptTemplate(summary) {
   return (
     summary.promptTemplateVersion !== SUMMARY_PROMPT_VERSION ||
     prompt.includes('请为以下最新剧情生成一段简洁的小总结') ||
+    prompt.includes('<psychology>') ||
+    prompt.includes('<list>') ||
     !prompt.includes('##浓缩梦境') ||
     !prompt.includes('<worldstate>')
   );

@@ -1,11 +1,13 @@
 import {
-  DEFAULT_GRAND_MEMORY_TEMPLATE,
   GRAND_MEMORY_BLOCK_RE,
   LIST_BLOCK_RE,
   MEMORY_BLOCK_RE,
+} from '../constants.js';
+import {
+  DEFAULT_GRAND_MEMORY_TEMPLATE,
   SUMMARY_GAZE_GUIDANCE,
   SUMMARY_SUPPORT_MESSAGES,
-} from '../constants.js';
+} from '../prompts.js';
 
 export function stripMemoryBlock(content) {
   return String(content || '').replace(MEMORY_BLOCK_RE, '').trim();

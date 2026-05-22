@@ -11,8 +11,13 @@ import {
 import {
   getContextSafe,
 } from '../../core/chat.js';
+import {
+  buildEmotionAnalysisPrompt,
+} from '../../prompts.js';
 
 const EMOTION_PROFILE_PROMPT_ID = 'shenling_assistant_emotion_profile_state';
+const PSYCHOLOGY_BLOCK_RE = /<psychology>[\s\S]*?<\/psychology>/gi;
+const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
 const emotionEventStops = [];
 let emotionEventsRegistered = false;
 
@@ -137,47 +142,12 @@ function buildKnownProfilesSection(store) {
   return profiles.length ? profiles.join('\n') : '暂无。';
 }
 
-function buildEmotionAnalysisPrompt({ messageId, memory, sourceContent, store }) {
-  return `蜃灵处于角色关系档案整理状态。
-
-请判断本轮剧情是否出现“显著情感变化”。
-
-显著变化包括：关系阶段改变、信任/戒备/依恋/敌意明显变化、长期目标或隐秘动机改变、角色对{{user}}的认知发生转向。
-
-不算显著变化：普通寒暄、单纯动作描写、临时情绪波动、重复上一轮已记录状态。
-
-已知最新档案：
-${buildKnownProfilesSection(store)}
-
-本轮楼层：第 ${messageId} 楼
-
-【本轮小总结】
-${String(memory || '').trim()}
-
-【本轮正文参考】
-${String(sourceContent || '').trim()}
-
-请只输出 JSON，不要输出 Markdown，不要续写剧情。
-
-格式：
-{
-  "changed": true,
-  "profiles": [
-    {
-      "roleName": "角色名",
-      "currentStatus": "该角色当前情感/关系状态，作为下一轮主 API 前注入的最新版状态",
-      "changeSummary": "本轮具体发生了什么变化",
-      "relationshipToUser": "该角色与{{user}}当前关系",
-      "evidence": "触发变化的剧情依据"
-    }
-  ]
-}
-
-如果没有显著变化，请输出：
-{
-  "changed": false,
-  "profiles": []
-}`;
+function sanitizeMemoryForEmotionAnalysis(memory) {
+  return String(memory || '')
+    .replace(PSYCHOLOGY_BLOCK_RE, '')
+    .replace(LIST_BLOCK_RE, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 export function buildEmotionProfileInjection(chatState = getChatState()) {
@@ -262,9 +232,9 @@ export async function processEmotionProfileAfterMemory({ messageId, memory, sour
   const store = getEmotionProfileStore();
   const prompt = buildEmotionAnalysisPrompt({
     messageId,
-    memory,
+    memory: sanitizeMemoryForEmotionAnalysis(memory),
     sourceContent,
-    store,
+    knownProfilesText: buildKnownProfilesSection(store),
   });
 
   try {
