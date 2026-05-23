@@ -3,9 +3,7 @@ import {
   isPlainObject,
 } from '../../utils/text.js';
 import {
-  getChatState,
   getEmotionProfileSettings,
-  saveChatState,
   saveGlobalSettings,
 } from '../../core/settings.js';
 import {
@@ -176,14 +174,9 @@ function renderPendingEmotionPanel(settings) {
 function renderEmotionProfileControls(settings) {
   const emotionSettings = getEmotionProfileSettings(settings);
   return `
-    <div class="slx-detail-card slx-summary-settings-card">
-      <label class="slx-setting-toggle-row" for="slx-emotion-enabled">
-        <div>
-          <b>情感档案</b>
-          <p>开启后随小总结判断、保存并注入角色关系状态。</p>
-        </div>
+    <div class="slx-emotion-toggle-strip">
+      <label class="slx-setting-toggle-row slx-emotion-toggle-only" for="slx-emotion-enabled" title="情感档案">
         <input id="slx-emotion-enabled" type="checkbox" data-slx-emotion-field="enabled" ${emotionSettings.enabled ? 'checked' : ''} />
-        <span class="slx-switch-ui"></span>
       </label>
     </div>
   `;
@@ -206,7 +199,6 @@ export function renderEmotionProfilePanel(settings, chatState) {
       ${renderEmotionProfileControls(settings)}
       ${renderPendingEmotionPanel(settings)}
       <div class="slx-detail-card slx-emotion-shell-card">
-        <div class="slx-detail-kicker">🎭 角色档案</div>
         <div class="slx-detail-title">暂无情感档案</div>
         <p>当角色关系出现显著变化后，会在这里整理成档案。</p>
       </div>
@@ -216,14 +208,6 @@ export function renderEmotionProfilePanel(settings, chatState) {
   return `
     ${renderEmotionProfileControls(settings)}
     ${renderPendingEmotionPanel(settings)}
-    <div class="slx-detail-card slx-emotion-shell-card">
-      <div class="slx-detail-kicker">🎭 角色档案</div>
-      <div class="slx-detail-title">情感档案</div>
-      <p>只显示显著变化，完整历史可展开查看。</p>
-      <div class="slx-action-row slx-summary-action-row">
-        <button class="slx-soft-btn" type="button" data-slx-clear-emotion-profiles>清空档案</button>
-      </div>
-    </div>
     <div class="slx-emotion-profile-list">
       ${profiles.map(([roleName, profile, records]) => renderProfileCard(roleName, profile, records)).join('')}
     </div>
@@ -247,17 +231,4 @@ export function bindEmotionProfilePanelEvents(panelRoot, settings) {
     });
   });
 
-  panelRoot.querySelector('[data-slx-clear-emotion-profiles]')?.addEventListener('click', () => {
-    if (!globalThis.confirm?.('确定清空当前聊天的情感档案吗？')) return;
-    const chatState = getChatState();
-    chatState.emotionProfiles = {
-      profiles: {},
-      pendingByMessage: {},
-      lastUpdatedAt: '',
-      lastInjectedAt: '',
-    };
-    saveChatState();
-    void syncEmotionProfileInjection();
-    refreshPanel();
-  });
 }

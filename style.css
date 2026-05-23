@@ -655,6 +655,18 @@ body.slx-panel-open-lock {
   gap: 12px;
 }
 
+.slx-emotion-toggle-strip {
+  display: flex;
+  justify-content: flex-end;
+  margin: -2px 0 8px;
+}
+
+.slx-emotion-toggle-only {
+  display: inline-flex;
+  min-height: 0;
+  gap: 0;
+}
+
 .slx-summary-card-head {
   display: flex;
   align-items: flex-start;
