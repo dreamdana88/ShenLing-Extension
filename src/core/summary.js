@@ -5,9 +5,37 @@ import {
 } from '../constants.js';
 import {
   DEFAULT_GRAND_MEMORY_TEMPLATE,
+  GRAND_SUMMARY_INTERNAL_CHECKLIST,
+  LEGACY_ARCHIVE_INTERNAL_CHECKLIST,
   SUMMARY_GAZE_GUIDANCE,
+  SUMMARY_INTERNAL_CHECKLIST,
   SUMMARY_SUPPORT_MESSAGES,
 } from '../prompts.js';
+
+const PROMPT_BUNDLE_MARKER = '__shenlingPromptBundle';
+
+function createPromptBundle(systemContent, userContent) {
+  const cleanSystem = String(systemContent || '').trim();
+  const cleanUser = String(userContent || '').trim();
+  return {
+    [PROMPT_BUNDLE_MARKER]: true,
+    systemContent: cleanSystem,
+    userContent: cleanUser,
+    flatContent: [cleanSystem, cleanUser].filter(Boolean).join('\n\n'),
+  };
+}
+
+function isPromptBundle(prompt) {
+  return Boolean(prompt && typeof prompt === 'object' && prompt[PROMPT_BUNDLE_MARKER]);
+}
+
+export function flattenSummaryPrompt(prompt) {
+  return isPromptBundle(prompt) ? prompt.flatContent : String(prompt || '');
+}
+
+export function getSummaryPromptUserInput(prompt) {
+  return isPromptBundle(prompt) ? prompt.userContent : String(prompt || '');
+}
 
 export function stripMemoryBlock(content) {
   return String(content || '').replace(MEMORY_BLOCK_RE, '').trim();
@@ -77,25 +105,56 @@ export function fillGrandMemoryTemplate(template, archiveFrom, archiveTo) {
 export function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMaterial, { regenerate = false, summary = {} } = {}) {
   const grandMemoryTemplate = fillGrandMemoryTemplate(getGrandMemoryPromptTemplate(summary), memoryFrom, memoryTo);
   const verb = regenerate ? '重新生成' : '生成';
-  return `蜃灵处于梦境档案编制状态。\n\n${grandMemoryTemplate}\n\n${SUMMARY_GAZE_GUIDANCE}\n\n现在请根据以下梦境记忆${verb}本轮归档大总结。\n请只依据素材内容归纳，不要续写剧情。\n请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。\n\n【梦境记忆素材】\n${archiveMaterial}`;
+  const systemContent = [
+    '蜃灵处于梦境档案编制状态。',
+    '你是蜃灵助手的梦境大归档模块，只负责把给定小总结素材压缩为可追溯的大总结，不续写剧情。',
+    grandMemoryTemplate,
+    SUMMARY_GAZE_GUIDANCE,
+    GRAND_SUMMARY_INTERNAL_CHECKLIST,
+    `现在请根据用户提供的梦境记忆${verb}本轮归档大总结。`,
+    '请只依据素材内容归纳，不要续写剧情。',
+    '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。',
+  ].filter(Boolean).join('\n\n');
+  const userContent = `【梦境记忆素材】\n${archiveMaterial}`;
+  return createPromptBundle(systemContent, userContent);
 }
 
 export function buildMemorySummaryPrompt(content, priorMemories = [], summary = {}, options = {}) {
   const priorSection = priorMemories.length > 0
-    ? `\n\n【过往梦境档案（编号勿重复）】\n${priorMemories.join('\n\n')}`
+    ? `【过往梦境档案（编号勿重复）】\n${priorMemories.join('\n\n')}`
     : '';
   const extraInstructions = String(options.extraInstructions || '').trim();
-  const extraSection = extraInstructions ? `\n\n${extraInstructions}` : '';
   const outputRule = extraInstructions
     ? '严格按照格式要求输出完整的 <memory>...</memory>，并按附加要求输出其他独立块。'
     : '严格按照格式要求输出完整的 <memory>...</memory>。';
-  return `蜃灵处于梦境档案编制状态。\n\n${summary.promptTemplate || ''}\n\n${SUMMARY_GAZE_GUIDANCE}${priorSection}${extraSection}\n\n现在只处理以下本轮素材。请不要续写剧情，不要输出 <content>，${outputRule}\n\n【本轮素材】\n${content}`;
+  const systemContent = [
+    '蜃灵处于梦境档案编制状态。',
+    '你是蜃灵助手的自动小总结模块，只负责把用户提供的本轮素材压缩为剧情档案，不续写剧情。',
+    summary.promptTemplate || '',
+    SUMMARY_GAZE_GUIDANCE,
+    SUMMARY_INTERNAL_CHECKLIST,
+    extraInstructions,
+    `现在只处理用户提供的本轮素材。请不要续写剧情，不要输出 <content>，${outputRule}`,
+  ].filter(Boolean).join('\n\n');
+  const userContent = [
+    priorSection,
+    `【本轮素材】\n${content}`,
+  ].filter(Boolean).join('\n\n');
+  return createPromptBundle(systemContent, userContent);
 }
 
 export function buildMemorySummaryMessages(prompt) {
+  if (isPromptBundle(prompt)) {
+    return [
+      ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+      { role: 'system', content: prompt.systemContent },
+      { role: 'user', content: prompt.userContent },
+    ];
+  }
+
   return [
     ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
-    { role: 'user', content: prompt },
+    { role: 'user', content: String(prompt || '') },
   ];
 }
 
@@ -152,7 +211,7 @@ export function buildLegacyArchiveBatchMaterial(batch) {
 export function buildLegacyArchiveBatchPrompt(batch, batchIndex, batchTotal) {
   const firstId = batch[0]?.messageId ?? '?';
   const lastId = batch.at(-1)?.messageId ?? '?';
-  return [
+  const systemContent = [
     '蜃灵处于梦境档案编制状态。',
     '',
     '请把以下旧聊天片段压缩为批次归档摘要。',
@@ -163,9 +222,13 @@ export function buildLegacyArchiveBatchPrompt(batch, batchIndex, batchTotal) {
     '3. 不要续写剧情，不要输出 <content>、<memory> 或 <grand_memory>。',
     '4. 输出独立可读的纯文本批次摘要。',
     '',
+    LEGACY_ARCHIVE_INTERNAL_CHECKLIST,
+  ].join('\n');
+  const userContent = [
     '【旧聊天片段】',
     buildLegacyArchiveBatchMaterial(batch),
   ].join('\n');
+  return createPromptBundle(systemContent, userContent);
 }
 
 export function buildLegacyArchiveFinalMaterial(batchSummaries) {
