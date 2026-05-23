@@ -161,6 +161,50 @@ function buildKnownProfilesSection(store) {
   return profiles.length ? profiles.join('\n') : '暂无。';
 }
 
+export function buildArchiveEmotionMaterialByMessageId(archiveFrom, archiveTo, chatState = getChatState()) {
+  const from = Number(archiveFrom);
+  const to = Number(archiveTo);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return new Map();
+  const min = Math.min(from, to);
+  const max = Math.max(from, to);
+  const store = getEmotionProfileStore(chatState);
+  const linesByMessageId = new Map();
+
+  for (const [roleName, profile] of Object.entries(store.profiles || {})) {
+    if (!isPlainObject(profile) || !Array.isArray(profile.records)) continue;
+    const records = profile.records
+      .filter(record => {
+        const sourceMessageId = Number(record?.sourceMessageId);
+        return Number.isFinite(sourceMessageId) && sourceMessageId >= min && sourceMessageId <= max;
+      })
+      .sort((a, b) => Number(a?.sourceMessageId || 0) - Number(b?.sourceMessageId || 0));
+    if (!records.length) continue;
+
+    records.forEach(record => {
+      const source = Number(record?.sourceMessageId);
+      const status = getRecordField(record, ['currentStatus', 'currentState', 'status', 'summary']);
+      const change = getRecordField(record, ['changeSummary', 'change', 'content', 'summary']);
+      const relationship = getRecordField(record, ['relationshipToUser', 'relationship']);
+      const evidence = getRecordField(record, ['evidence', 'basis', 'trigger']);
+      const key = String(source);
+      const lines = linesByMessageId.get(key) || [];
+      lines.push([
+        `- ${profile.name || roleName}`,
+        status ? `  当前状态：${status}` : '',
+        change ? `  本次变化：${change}` : '',
+        relationship ? `  与{{user}}关系：${relationship}` : '',
+        evidence ? `  依据：${evidence}` : '',
+      ].filter(Boolean).join('\n'));
+      linesByMessageId.set(key, lines);
+    });
+  }
+
+  return new Map(Array.from(linesByMessageId.entries()).map(([messageId, lines]) => [
+    messageId,
+    `【角色情感变化】\n${lines.join('\n')}`,
+  ]));
+}
+
 function sanitizeMemoryForEmotionAnalysis(memory) {
   return String(memory || '')
     .replace(PSYCHOLOGY_BLOCK_RE, '')

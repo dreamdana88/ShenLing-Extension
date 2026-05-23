@@ -29,6 +29,7 @@ import {
 } from '../../core/settings.js';
 import { applyReplacementRulesByScope } from '../word-replace/core.js';
 import {
+  buildArchiveEmotionMaterialByMessageId,
   buildEmotionUpdatePromptSection,
   buildLegacyArchiveEmotionUpdatePromptSection,
   processEmotionUpdateFromArchiveResult,
@@ -165,14 +166,27 @@ export function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
     if (message) entries[index].body = extractSummarySourceContent(stripMemoryBlock(message.message), getSummarySettings());
   }
 
-  const material = entries
+  const emotionMaterialByMessageId = buildArchiveEmotionMaterialByMessageId(archiveFrom, archiveTo);
+  const usedEmotionMessageIds = new Set();
+  const memoryMaterial = entries
     .map(entry => {
       const memory = stripListBlocks(entry.memory);
       const body = entry.body ? `【正文】\n${entry.body}\n\n` : '';
-      return `### 记忆编号 ${entry.memoryNumber}\n${body}【小总结】\n${memory}`;
+      const messageKey = String(entry.messageId);
+      const emotion = !usedEmotionMessageIds.has(messageKey)
+        ? emotionMaterialByMessageId.get(messageKey) || ''
+        : '';
+      if (emotion) usedEmotionMessageIds.add(messageKey);
+      return [
+        `### 记忆编号 ${entry.memoryNumber}`,
+        body ? body.trim() : '',
+        `【小总结】\n${memory}`,
+        emotion,
+      ].filter(Boolean).join('\n');
     })
     .join('\n\n')
     .trim();
+  const material = memoryMaterial;
 
   return {
     material,
