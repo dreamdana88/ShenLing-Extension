@@ -185,10 +185,9 @@ ${String(knownProfilesText || '暂无。').trim() || '暂无。'}
   "profiles": [
     {
       "roleName": "角色名",
-      "currentStatus": "该角色当前情感/关系状态，作为下一轮主 API 前注入的最新版状态",
+      "currentStatus": "该角色当前情感状态",
       "changeSummary": "本轮具体发生了什么变化",
-      "relationshipToUser": "该角色与{{user}}当前关系",
-      "evidence": "触发变化的剧情依据"
+      "relationshipToUser": "该角色与{{user}}当前关系（10字内）"
     }
   ]
 }
@@ -234,10 +233,9 @@ ${String(knownProfilesText || '暂无。').trim() || '暂无。'}
   "profiles": [
     {
       "roleName": "角色名",
-      "currentStatus": "该角色在旧聊天归档结束时的当前情感/关系状态，作为后续主 API 前注入的最新版状态",
+      "currentStatus": "该角色当前情感状态",
       "changeSummary": "旧聊天区间内形成的关键情感变化",
-      "relationshipToUser": "该角色与{{user}}当前关系",
-      "evidence": "触发变化的剧情依据"
+      "relationshipToUser": "该角色与{{user}}当前关系（10字内）"
     }
   ]
 }

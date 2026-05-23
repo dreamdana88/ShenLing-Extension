@@ -142,11 +142,10 @@ function normalizeProfileItems(parsed) {
         currentStatus: String(item.currentStatus || item.currentState || item.status || item.summary || '').trim(),
         changeSummary: String(item.changeSummary || item.change || item.reason || item.summary || '').trim(),
         relationshipToUser: String(item.relationshipToUser || item.relationship || '').trim(),
-        evidence: String(item.evidence || item.basis || item.trigger || '').trim(),
       };
     })
     .filter(Boolean)
-    .filter(item => item.currentStatus || item.changeSummary || item.relationshipToUser || item.evidence);
+    .filter(item => item.currentStatus || item.changeSummary || item.relationshipToUser);
 }
 
 function buildKnownProfilesSection(store) {
@@ -180,7 +179,6 @@ function buildReadableEmotionBlock(updates) {
       update.currentStatus ? `- 当前状态：${update.currentStatus}` : '',
       update.changeSummary ? `- 本次变化：${update.changeSummary}` : '',
       update.relationshipToUser ? `- 与{{user}}关系：${update.relationshipToUser}` : '',
-      update.evidence ? `- 依据：${update.evidence}` : '',
     ].filter(Boolean).join('\n');
   }).filter(Boolean);
   return lines.length ? `<emotion>\n${lines.join('\n\n')}\n</emotion>` : '';
@@ -321,7 +319,6 @@ export function buildEmotionProfileInjection(chatState = getChatState()) {
       const name = profile.name || roleName;
       const status = getRecordField(latest, ['currentStatus', 'currentState', 'status', 'summary']);
       const relationship = getRecordField(latest, ['relationshipToUser', 'relationship']);
-      const evidence = getRecordField(latest, ['evidence', 'basis', 'trigger']);
       const source = latest.sourceMessageId === undefined || latest.sourceMessageId === null
         ? ''
         : `- 来源：第 ${latest.sourceMessageId} 楼`;
@@ -329,7 +326,6 @@ export function buildEmotionProfileInjection(chatState = getChatState()) {
         `${name}：`,
         status ? `- 当前状态：${status}` : '',
         relationship ? `- 与{{user}}关系：${relationship}` : '',
-        evidence ? `- 依据：${evidence}` : '',
         source,
       ].filter(Boolean).join('\n');
     })
@@ -366,7 +362,6 @@ export function appendEmotionProfileRecords(updates, { messageId, fingerprint = 
       currentStatus: update.currentStatus,
       changeSummary: update.changeSummary,
       relationshipToUser: update.relationshipToUser,
-      evidence: update.evidence,
     };
     profile.name = profile.name || roleName;
     profile.currentStatus = update.currentStatus || profile.currentStatus || '';
