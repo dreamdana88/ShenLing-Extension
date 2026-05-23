@@ -39,6 +39,7 @@ import {
   buildMemorySummaryMessages,
   buildMemorySummaryPrompt,
   buildSummaryPromptContent,
+  buildTotalGrandMemoryMaterialPrompt,
   createLegacyArchiveBatches,
   extractMemoryBlocks,
   forceGrandMemoryRange,
@@ -390,6 +391,7 @@ export function createScannedSummaryState(baseSummary = getChatState().summary) 
       memoryFrom: baseRecord?.memoryFrom ?? memoryRange?.archiveFrom ?? null,
       memoryTo: baseRecord?.memoryTo ?? memoryRange?.archiveTo ?? null,
       rangeType: baseRecord?.rangeType || 'memory',
+      compressedBy: baseRecord?.compressedBy ?? null,
       createdAt: baseRecord?.createdAt || Date.now(),
     });
   }
@@ -761,6 +763,126 @@ export async function regenerateLatestGrandMemory() {
     chatState.summary.lastError = error.message || String(error);
     saveChatState();
     notifySummary('error', error.message || String(error), '重新生成大总结失败');
+    refreshSummaryPanelAfterAction();
+  }
+}
+
+function getArchiveRecordMemoryBoundary(record, side) {
+  const memoryKey = side === 'from' ? 'memoryFrom' : 'memoryTo';
+  const archiveKey = side === 'from' ? 'archiveFrom' : 'archiveTo';
+  const value = record?.[memoryKey] ?? record?.[archiveKey];
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+export function createTotalGrandMemoryPlan() {
+  const chatState = getChatState();
+  const records = (Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [])
+    .filter(record => !record.compressedBy)
+    .map(record => {
+      const message = getChatMessageById(Number(record.summaryMessageId));
+      const grandMemory = message?.message?.match(GRAND_MEMORY_BLOCK_RE)?.[0]?.trim() || '';
+      return { record, message, grandMemory };
+    })
+    .filter(item => item.message && item.grandMemory)
+    .sort((a, b) => Number(a.record.summaryMessageId) - Number(b.record.summaryMessageId));
+
+  const first = records[0]?.record || null;
+  const last = records.at(-1)?.record || null;
+  return {
+    records,
+    count: records.length,
+    archiveFrom: first ? Number(first.archiveFrom) : null,
+    archiveTo: last ? Number(last.summaryMessageId) : null,
+    memoryFrom: first ? getArchiveRecordMemoryBoundary(first, 'from') : null,
+    memoryTo: last ? getArchiveRecordMemoryBoundary(last, 'to') : null,
+  };
+}
+
+export function buildTotalGrandMemoryMaterial(records) {
+  return records.map((item, index) => {
+    const { record, grandMemory } = item;
+    const memoryFrom = getArchiveRecordMemoryBoundary(record, 'from');
+    const memoryTo = getArchiveRecordMemoryBoundary(record, 'to');
+    const memoryLabel = memoryFrom !== null && memoryTo !== null
+      ? `记忆 ${memoryFrom}-${memoryTo}`
+      : `楼层 ${record.archiveFrom}-${record.archiveTo}`;
+    return [
+      `### 大总结 ${index + 1}｜第 ${record.summaryMessageId} 楼｜${memoryLabel}`,
+      grandMemory,
+    ].join('\n');
+  }).join('\n\n');
+}
+
+export async function processTotalGrandMemory() {
+  const settings = getGlobalSettings();
+  const summary = getSummarySettings(settings);
+  const chatState = getChatState();
+  if (chatState.summary.runningTask !== 'none') return;
+
+  const plan = createTotalGrandMemoryPlan();
+  if (plan.count < 2) {
+    notifySummary('warning', '至少需要 2 条未合并的大总结。', '总档案压缩');
+    return;
+  }
+
+  chatState.summary.runningTask = 'total_grand_memory';
+  chatState.summary.lastError = '';
+  saveChatState();
+  notifySummary('info', `正在合并 ${plan.count} 条大总结。`, '总档案压缩');
+  refreshSummaryPanelAfterAction();
+
+  try {
+    const material = buildTotalGrandMemoryMaterial(plan.records);
+    const memoryFrom = plan.memoryFrom ?? plan.archiveFrom;
+    const memoryTo = plan.memoryTo ?? plan.archiveTo;
+    const prompt = buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, material, { summary });
+    const result = await generateSummaryMemory(prompt, { type: '合并大总结' });
+    const grandMemory = forceGrandMemoryRange(result, memoryFrom, memoryTo);
+    const summaryMessageId = await createAssistantChatMessage(grandMemory);
+
+    markSummaryWriteIgnored(Number(summaryMessageId));
+
+    const hideIds = createMessageIdRange(Number(plan.archiveFrom), Number(plan.archiveTo))
+      .filter(messageId => messageId !== Number(summaryMessageId));
+    if (hideIds.length > 0) {
+      await setChatMessagesPartial(
+        hideIds.map(message_id => ({ message_id, is_hidden: true })),
+        { refresh: 'all' },
+      );
+    }
+
+    const oldIds = new Set(plan.records.map(item => Number(item.record.summaryMessageId)));
+    chatState.summary.archiveRecords = (chatState.summary.archiveRecords || []).map(record => (
+      oldIds.has(Number(record.summaryMessageId))
+        ? { ...record, compressedBy: Number(summaryMessageId) }
+        : record
+    ));
+    chatState.summary.archiveRecords.push({
+      id: `${summaryMessageId}-${Date.now()}`,
+      summaryMessageId,
+      archiveFrom: plan.archiveFrom,
+      archiveTo: plan.archiveTo,
+      memoryFrom,
+      memoryTo,
+      rangeType: 'total_grand',
+      compressedRecordIds: [...oldIds],
+      createdAt: Date.now(),
+    });
+
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastArchivedMessageId = plan.archiveTo;
+    chatState.summary.lastGrandSummaryMessageId = Number(summaryMessageId);
+    chatState.summary.lastError = '';
+    saveChatState();
+    scanExistingSummaryState();
+    notifySummary('success', `已生成第 ${summaryMessageId} 楼总档案，并合并 ${plan.count} 条大总结。`, '总档案压缩');
+    refreshSummaryPanelAfterAction();
+  } catch (error) {
+    chatState.summary.runningTask = 'none';
+    chatState.summary.lastError = error.message || String(error);
+    saveChatState();
+    notifySummary('error', error.message || String(error), '总档案压缩失败');
     refreshSummaryPanelAfterAction();
   }
 }

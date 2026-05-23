@@ -28,12 +28,14 @@ import {
 import {
   clearStaleSummaryRunningTask,
   clearSummaryWriteIgnored,
+  createTotalGrandMemoryPlan,
   createLegacyArchivePlan,
   getEditableSummaryMessage,
   markSummaryWriteIgnored,
   notifySummary,
   parseManualSummaryFloor,
   processLegacyGrandArchive,
+  processTotalGrandMemory,
   regenerateLatestGrandMemory,
   regenerateMemoryForMessage,
   scanExistingSummaryState,
@@ -269,7 +271,9 @@ export function renderSummarySettingsPanel(settings, chatState) {
   const grandInterval = Math.max(1, Number(summary.grandMemoryInterval) || 6);
   const memoryCount = Number(chatState.summary.memoryCountSinceArchive ?? chatState.summary.smallSummaryCount ?? 0);
   const archiveRecords = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [];
-  const latestArchiveRecord = archiveRecords.at(-1) || null;
+  const activeArchiveRecords = archiveRecords.filter(record => !record.compressedBy);
+  const compressedArchiveCount = archiveRecords.length - activeArchiveRecords.length;
+  const latestArchiveRecord = activeArchiveRecords.at(-1) || archiveRecords.at(-1) || null;
   const latestArchiveLabel = latestArchiveRecord
     ? `第 ${latestArchiveRecord.summaryMessageId ?? '?'} 楼 | 隐藏 ${latestArchiveRecord.archiveFrom ?? '?'}-${latestArchiveRecord.archiveTo ?? '?'}`
     : '无';
@@ -281,12 +285,14 @@ export function renderSummarySettingsPanel(settings, chatState) {
     memory: '小总结中',
     manual_memory: '手动小总结中',
     grand_memory: '大总结中',
+    total_grand_memory: '总档案合并中',
     legacy_grand_memory: '旧聊天归档中',
   };
   const runningLabel = runningTaskLabels[chatState.summary.runningTask] || chatState.summary.runningTask || '空闲';
   const sourceTags = getSummarySourceTags(summary);
   const sourceRulesCollapsed = settings.ui?.sourceRulesCollapsed !== false;
-  const archiveRecordViews = [...archiveRecords].reverse().map(createArchiveRecordView);
+  const archiveRecordViews = [...activeArchiveRecords].reverse().map(createArchiveRecordView);
+  const totalGrandPlan = createTotalGrandMemoryPlan();
   const legacyBatchSize = summary.legacyArchiveBatchSize || '';
   const summarySourceModeLabel = summary.includeUserInput ? '续写模式：用户输入 + AI 正文' : '转述模式：仅 AI 正文';
   const legacyScopeLabel = summary.includeUserInput ? '用户楼 + AI 楼' : '仅 AI 楼';
@@ -401,7 +407,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
       ${renderDiagnosticLine('上次归档', chatState.summary.lastArchivedMessageId ?? '无')}
       ${renderDiagnosticLine('上次小总结楼', chatState.summary.lastSummaryMessageId ?? '无')}
       ${renderDiagnosticLine('上次大总结楼', chatState.summary.lastGrandSummaryMessageId ?? '无')}
-      ${renderDiagnosticLine('归档记录', `${archiveRecords.length} 条`)}
+      ${renderDiagnosticLine('归档记录', compressedArchiveCount ? `${activeArchiveRecords.length} 条（已合并 ${compressedArchiveCount} 条）` : `${activeArchiveRecords.length} 条`)}
       ${renderDiagnosticLine('最新归档', latestArchiveLabel)}
       ${renderDiagnosticLine('最近通讯日志', latestLogLabel)}
       ${renderDiagnosticLine('上次错误', chatState.summary.lastError || '无')}
@@ -411,6 +417,9 @@ export function renderSummarySettingsPanel(settings, chatState) {
         </button>
         <button class="slx-soft-btn" type="button" data-slx-regenerate-grand-memory ${archiveRecords.length && chatState.summary.runningTask === 'none' ? '' : 'disabled'}>
           <span>重新生成上次大总结</span>
+        </button>
+        <button class="slx-soft-btn" type="button" data-slx-compress-grand-memories ${totalGrandPlan.count >= 2 && chatState.summary.runningTask === 'none' ? '' : 'disabled'}>
+          <span>合并大总结</span>
         </button>
       </div>
     </div>
@@ -423,6 +432,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
         </div>
         <button class="slx-mini-action-btn" type="button" data-slx-refresh-archive-scan title="刷新归档状态"><i class="fa-solid fa-rotate-right"></i></button>
       </div>
+      ${activeArchiveRecords.length ? `<div class="slx-archive-detail">可合并大总结：${escapeHtml(totalGrandPlan.count)} 条${compressedArchiveCount ? `｜已合并旧记录 ${escapeHtml(compressedArchiveCount)} 条` : ''}</div>` : ''}
       ${archiveRecordViews.length ? archiveRecordViews.map(renderArchiveRecordView).join('') : '<p>暂无归档记录。</p>'}
     </div>
     ${grandMemoryEditorHtml}
@@ -595,6 +605,15 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
     button.disabled = true;
     void regenerateLatestGrandMemory().catch(error => {
       notifySummary('warning', error.message || String(error), '重新生成大总结失败');
+    }).finally(() => {
+      button.disabled = false;
+    });
+  });
+  panelRoot.querySelector('[data-slx-compress-grand-memories]')?.addEventListener('click', event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    void processTotalGrandMemory().catch(error => {
+      notifySummary('warning', error.message || String(error), '总档案压缩失败');
     }).finally(() => {
       button.disabled = false;
     });

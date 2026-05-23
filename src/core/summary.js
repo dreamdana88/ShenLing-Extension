@@ -119,6 +119,23 @@ export function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMate
   return createPromptBundle(systemContent, userContent);
 }
 
+export function buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMaterial, { summary = {} } = {}) {
+  const grandMemoryTemplate = fillGrandMemoryTemplate(getGrandMemoryPromptTemplate(summary), memoryFrom, memoryTo);
+  const systemContent = [
+    '蜃灵处于梦境档案编制状态。',
+    '你是蜃灵助手的总档案压缩模块，只负责把多个已有大总结合并为一个更高层梦境总档案，不续写剧情。',
+    grandMemoryTemplate,
+    SUMMARY_GAZE_GUIDANCE,
+    GRAND_SUMMARY_INTERNAL_CHECKLIST,
+    '现在请根据用户提供的多个已有大总结，生成一份覆盖完整范围的新大总结。',
+    '请按剧情发展重新整合，不要机械拼接旧大总结。',
+    '请只依据素材内容归纳，不要续写剧情。',
+    '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。',
+  ].filter(Boolean).join('\n\n');
+  const userContent = `【已有大总结素材】\n${archiveMaterial}`;
+  return createPromptBundle(systemContent, userContent);
+}
+
 export function buildMemorySummaryPrompt(content, priorMemories = [], summary = {}, options = {}) {
   const priorSection = priorMemories.length > 0
     ? `【过往梦境档案（编号勿重复）】\n${priorMemories.join('\n\n')}`
