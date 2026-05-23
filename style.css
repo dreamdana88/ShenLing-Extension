@@ -489,9 +489,23 @@ body.slx-panel-open-lock {
 .slx-detail-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--slx-border-dim);
+}
+
+.slx-detail-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.slx-detail-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .slx-detail-icon {
@@ -655,18 +669,6 @@ body.slx-panel-open-lock {
   gap: 12px;
 }
 
-.slx-emotion-toggle-strip {
-  display: flex;
-  justify-content: flex-end;
-  margin: -2px 0 8px;
-}
-
-.slx-emotion-toggle-only {
-  display: inline-flex;
-  min-height: 0;
-  gap: 0;
-}
-
 .slx-summary-card-head {
   display: flex;
   align-items: flex-start;
@@ -701,6 +703,12 @@ body.slx-panel-open-lock {
   gap: 10px;
 }
 
+.slx-module-head-toggle {
+  display: inline-flex;
+  min-height: 0;
+  gap: 0;
+}
+
 .slx-emotion-profile-section {
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
@@ -719,6 +727,15 @@ body.slx-panel-open-lock {
   color: var(--slx-text);
   font-size: 12px;
   line-height: 1.55;
+}
+
+.slx-emotion-editor-card {
+  width: min(560px, 100%);
+}
+
+.slx-emotion-editor-textarea {
+  min-height: 96px;
+  resize: vertical;
 }
 
 .slx-emotion-history {

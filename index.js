@@ -29,6 +29,7 @@ import {
   defaultGlobalSettings,
   getChatState,
   getContextInfo,
+  getEmotionProfileSettings,
   getGlobalSettings,
   getStorageDiagnostics,
   saveChatState,
@@ -412,6 +413,16 @@ function getActiveModule(settings = getGlobalSettings()) {
   return MODULES.find(item => item.id === settings.activeModule) ?? MODULES[0];
 }
 
+function renderModuleHeaderAction(activeModule, settings) {
+  if (activeModule.id !== 'profile') return '';
+  const emotionSettings = getEmotionProfileSettings(settings);
+  return `
+    <label class="slx-setting-toggle-row slx-module-head-toggle" for="slx-emotion-enabled" title="情感档案">
+      <input id="slx-emotion-enabled" type="checkbox" data-slx-emotion-field="enabled" ${emotionSettings.enabled ? 'checked' : ''} />
+    </label>
+  `;
+}
+
 function createModuleButton(module, settings) {
   const button = document.createElement('button');
   button.type = 'button';
@@ -666,11 +677,14 @@ function renderFloatingPanel(options = {}) {
         </nav>
         <section class="slx-detail">
           <div class="slx-detail-head">
-            <span class="slx-detail-icon">${activeModule.icon}</span>
-            <div>
-              <div class="slx-detail-name">${escapeHtml(activeModule.title)}</div>
-              <div class="slx-detail-desc">${escapeHtml(activeModule.desc)}</div>
+            <div class="slx-detail-main">
+              <span class="slx-detail-icon">${activeModule.icon}</span>
+              <div>
+                <div class="slx-detail-name">${escapeHtml(activeModule.title)}</div>
+                <div class="slx-detail-desc">${escapeHtml(activeModule.desc)}</div>
+              </div>
             </div>
+            <div class="slx-detail-actions">${renderModuleHeaderAction(activeModule, settings)}</div>
           </div>
           ${renderModuleDetail(activeModule, settings)}
         </section>

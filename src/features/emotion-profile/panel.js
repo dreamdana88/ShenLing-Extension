@@ -1,9 +1,12 @@
 import {
   escapeHtml,
+  formatTimestamp,
   isPlainObject,
 } from '../../utils/text.js';
 import {
+  getChatState,
   getEmotionProfileSettings,
+  saveChatState,
   saveGlobalSettings,
 } from '../../core/settings.js';
 import {
@@ -14,6 +17,11 @@ import {
 
 let panelOptions = {
   refreshPanel: null,
+};
+
+let emotionProfileEditorState = {
+  open: false,
+  roleName: '',
 };
 
 export function configureEmotionProfilePanel(options = {}) {
@@ -79,6 +87,89 @@ function getProfileUpdatedAt(profile, latestRecord) {
     || '未记录';
 }
 
+function closeEmotionProfileEditor() {
+  emotionProfileEditorState = {
+    open: false,
+    roleName: '',
+  };
+}
+
+function openEmotionProfileEditor(roleName) {
+  emotionProfileEditorState = {
+    open: true,
+    roleName: String(roleName || ''),
+  };
+}
+
+function renderEmotionProfileEditor(chatState) {
+  if (!emotionProfileEditorState.open) return '';
+  const roleName = emotionProfileEditorState.roleName;
+  const store = getEmotionProfileStore(chatState);
+  const profile = store.profiles[roleName];
+  if (!isPlainObject(profile)) return '';
+
+  const records = getProfileRecords(profile);
+  const latestRecord = records.at(-1) || null;
+  const currentStatus = getProfileCurrentStatus(profile, latestRecord);
+  const latestChange = getProfileLatestChange(latestRecord);
+
+  return `
+    <div class="slx-rule-modal" data-slx-close-emotion-editor>
+      <div class="slx-rule-modal-card slx-emotion-editor-card" data-slx-emotion-editor-card>
+        <div class="slx-summary-card-head">
+          <div>
+            <div class="slx-detail-title">编辑情感档案</div>
+            <p>${escapeHtml(profile.name || roleName)}</p>
+          </div>
+          <button class="slx-mini-action-btn" type="button" data-slx-close-emotion-editor title="关闭"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <label class="slx-field slx-field-wide">
+          <span>当前状态</span>
+          <textarea class="slx-emotion-editor-textarea" data-slx-emotion-edit-current>${escapeHtml(currentStatus)}</textarea>
+        </label>
+        <label class="slx-field slx-field-wide">
+          <span>最近变化</span>
+          <textarea class="slx-emotion-editor-textarea" data-slx-emotion-edit-change>${escapeHtml(latestChange)}</textarea>
+        </label>
+        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-save-emotion-profile>
+          <i class="fa-solid fa-floppy-disk"></i><span>保存修改</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function saveEmotionProfileEditor(panelRoot) {
+  const roleName = emotionProfileEditorState.roleName;
+  if (!roleName) return;
+  const chatState = getChatState();
+  const store = getEmotionProfileStore(chatState);
+  const profile = store.profiles[roleName];
+  if (!isPlainObject(profile)) return;
+
+  const records = getProfileRecords(profile);
+  const latestRecord = records.at(-1);
+  if (!latestRecord) return;
+
+  const currentStatus = String(panelRoot.querySelector('[data-slx-emotion-edit-current]')?.value || '').trim();
+  const latestChange = String(panelRoot.querySelector('[data-slx-emotion-edit-change]')?.value || '').trim();
+  const now = formatTimestamp();
+
+  latestRecord.currentStatus = currentStatus;
+  latestRecord.changeSummary = latestChange;
+  latestRecord.updatedAt = now;
+  profile.currentStatus = latestRecord.currentStatus || profile.currentStatus || '';
+  profile.lastUpdatedAt = now;
+  profile.records = records;
+  store.profiles[roleName] = profile;
+  store.lastUpdatedAt = now;
+
+  saveChatState();
+  closeEmotionProfileEditor();
+  void syncEmotionProfileInjection();
+  refreshPanel();
+}
+
 function renderHistory(records) {
   if (!records.length) {
     return '';
@@ -118,6 +209,7 @@ function renderProfileCard(roleName, profile, records = getProfileRecords(profil
           <div class="slx-detail-title">${escapeHtml(profile.name || roleName)}</div>
           <p>${escapeHtml(sourceLabel)} · ${escapeHtml(updatedAt)}</p>
         </div>
+        <button class="slx-mini-action-btn" type="button" data-slx-edit-emotion-profile="${escapeHtml(roleName)}" title="编辑情感档案"><i class="fa-solid fa-pen-to-square"></i></button>
       </div>
       <div class="slx-emotion-profile-section">
         <span>当前状态</span>
@@ -171,17 +263,6 @@ function renderPendingEmotionPanel(settings) {
   `;
 }
 
-function renderEmotionProfileControls(settings) {
-  const emotionSettings = getEmotionProfileSettings(settings);
-  return `
-    <div class="slx-emotion-toggle-strip">
-      <label class="slx-setting-toggle-row slx-emotion-toggle-only" for="slx-emotion-enabled" title="情感档案">
-        <input id="slx-emotion-enabled" type="checkbox" data-slx-emotion-field="enabled" ${emotionSettings.enabled ? 'checked' : ''} />
-      </label>
-    </div>
-  `;
-}
-
 export function renderEmotionProfilePanel(settings, chatState) {
   const store = getEmotionProfileStore(chatState);
   const pendingMessageIds = getCurrentPendingEmotionMessageIds(settings);
@@ -196,21 +277,21 @@ export function renderEmotionProfilePanel(settings, chatState) {
 
   if (!profiles.length) {
     return `
-      ${renderEmotionProfileControls(settings)}
       ${renderPendingEmotionPanel(settings)}
       <div class="slx-detail-card slx-emotion-shell-card">
         <div class="slx-detail-title">暂无情感档案</div>
         <p>当角色关系出现显著变化后，会在这里整理成档案。</p>
       </div>
+      ${renderEmotionProfileEditor(chatState)}
     `;
   }
 
   return `
-    ${renderEmotionProfileControls(settings)}
     ${renderPendingEmotionPanel(settings)}
     <div class="slx-emotion-profile-list">
       ${profiles.map(([roleName, profile, records]) => renderProfileCard(roleName, profile, records)).join('')}
     </div>
+    ${renderEmotionProfileEditor(chatState)}
   `;
 }
 
@@ -231,4 +312,22 @@ export function bindEmotionProfilePanelEvents(panelRoot, settings) {
     });
   });
 
+  panelRoot.querySelectorAll('[data-slx-edit-emotion-profile]').forEach(button => {
+    button.addEventListener('click', () => {
+      openEmotionProfileEditor(button.dataset.slxEditEmotionProfile || '');
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-close-emotion-editor]').forEach(node => {
+    node.addEventListener('click', event => {
+      if (node.classList.contains('slx-rule-modal') && event.target.closest?.('[data-slx-emotion-editor-card]')) return;
+      closeEmotionProfileEditor();
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-save-emotion-profile]')?.addEventListener('click', () => {
+    saveEmotionProfileEditor(panelRoot);
+  });
 }
