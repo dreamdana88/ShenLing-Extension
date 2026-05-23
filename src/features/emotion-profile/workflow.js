@@ -19,6 +19,7 @@ import {
 } from '../../core/summary.js';
 import {
   buildEmotionUpdatePromptSection as buildEmotionUpdatePromptSectionText,
+  buildLegacyArchiveEmotionUpdatePromptSection as buildLegacyArchiveEmotionUpdatePromptSectionText,
 } from '../../prompts.js';
 
 const EMOTION_PROFILE_PROMPT_ID = 'shenling_assistant_emotion_profile_state';
@@ -264,6 +265,14 @@ export function buildEmotionUpdatePromptSection(settings = getGlobalSettings()) 
   });
 }
 
+export function buildLegacyArchiveEmotionUpdatePromptSection(settings = getGlobalSettings()) {
+  if (!shouldAnalyzeEmotionProfile(settings)) return '';
+  const store = getEmotionProfileStore();
+  return buildLegacyArchiveEmotionUpdatePromptSectionText({
+    knownProfilesText: buildKnownProfilesSection(store),
+  });
+}
+
 export function buildEmotionProfileInjection(chatState = getChatState()) {
   const store = getEmotionProfileStore(chatState);
   const lines = Object.entries(store.profiles || {})
@@ -296,7 +305,7 @@ ${lines.join('\n\n')}
 </character_profile_state>`;
 }
 
-export function appendEmotionProfileRecords(updates, { messageId, fingerprint = '', save = true } = {}) {
+export function appendEmotionProfileRecords(updates, { messageId, fingerprint = '', sourceType = '', save = true } = {}) {
   if (!Array.isArray(updates) || !updates.length) return [];
   const chatState = getChatState();
   const store = getEmotionProfileStore(chatState);
@@ -313,6 +322,7 @@ export function appendEmotionProfileRecords(updates, { messageId, fingerprint = 
     const record = {
       sourceMessageId: Number(messageId),
       sourceFingerprint: String(fingerprint || ''),
+      sourceType,
       createdAt,
       updatedAt: createdAt,
       currentStatus: update.currentStatus,
@@ -397,6 +407,33 @@ export async function processEmotionUpdateFromSummaryResult(result, { messageId 
   } catch (error) {
     console.error('[蜃灵助手] 情感档案解析失败。', error);
     notifyEmotion('warning', error.message || String(error), '情感档案解析失败');
+  }
+}
+
+export async function processEmotionUpdateFromArchiveResult(result, { messageId, sourceType = 'legacy_archive' } = {}) {
+  if (!shouldAnalyzeEmotionProfile()) return;
+  try {
+    const match = String(result || '').match(EMOTION_UPDATE_BLOCK_RE);
+    if (!match) return;
+    const parsed = extractJsonObject(sanitizeMemoryForEmotionAnalysis(match[1]));
+    const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
+    const updates = changed ? normalizeProfileItems(parsed) : [];
+    if (!updates.length) return;
+
+    const fingerprint = createEmotionFingerprint(String(result || ''));
+    const roleNames = appendEmotionProfileRecords(updates, {
+      messageId: Number(messageId),
+      fingerprint,
+      sourceType,
+    });
+    if (roleNames.length) {
+      notifyEmotion('success', `旧聊天情感档案已生成：${[...new Set(roleNames)].join('、')}`);
+    }
+    await syncEmotionProfileInjection();
+    refreshPanel();
+  } catch (error) {
+    console.error('[蜃灵助手] 旧聊天情感档案解析失败。', error);
+    notifyEmotion('warning', error.message || String(error), '旧聊天情感档案失败');
   }
 }
 

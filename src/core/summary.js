@@ -102,18 +102,23 @@ export function fillGrandMemoryTemplate(template, archiveFrom, archiveTo) {
     .replaceAll('${archiveTo}', String(archiveTo));
 }
 
-export function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMaterial, { regenerate = false, summary = {} } = {}) {
+export function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMaterial, { regenerate = false, summary = {}, extraInstructions = '' } = {}) {
   const grandMemoryTemplate = fillGrandMemoryTemplate(getGrandMemoryPromptTemplate(summary), memoryFrom, memoryTo);
   const verb = regenerate ? '重新生成' : '生成';
+  const cleanExtraInstructions = String(extraInstructions || '').trim();
+  const outputRule = cleanExtraInstructions
+    ? '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>，并按附加要求输出其他独立块。'
+    : '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。';
   const systemContent = [
     '蜃灵处于梦境档案编制状态。',
     '你是蜃灵助手的梦境大归档模块，只负责把给定小总结素材压缩为可追溯的大总结，不续写剧情。',
     grandMemoryTemplate,
     SUMMARY_GAZE_GUIDANCE,
     GRAND_SUMMARY_INTERNAL_CHECKLIST,
+    cleanExtraInstructions,
     `现在请根据用户提供的梦境记忆${verb}本轮归档大总结。`,
     '请只依据素材内容归纳，不要续写剧情。',
-    '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。',
+    outputRule,
   ].filter(Boolean).join('\n\n');
   const userContent = `【梦境记忆素材】\n${archiveMaterial}`;
   return createPromptBundle(systemContent, userContent);

@@ -30,6 +30,8 @@ import {
 import { applyReplacementRulesByScope } from '../word-replace/core.js';
 import {
   buildEmotionUpdatePromptSection,
+  buildLegacyArchiveEmotionUpdatePromptSection,
+  processEmotionUpdateFromArchiveResult,
   processEmotionUpdateFromSummaryResult,
 } from '../emotion-profile/workflow.js';
 import {
@@ -1015,7 +1017,11 @@ export async function processLegacyGrandArchive() {
       lastResult: '正在合并最终大总结。',
     });
 
-    const prompt = buildGrandMemoryMaterialPrompt(plan.archiveFrom, plan.archiveTo, finalMaterial, { summary });
+    const emotionPromptSection = buildLegacyArchiveEmotionUpdatePromptSection(settings);
+    const prompt = buildGrandMemoryMaterialPrompt(plan.archiveFrom, plan.archiveTo, finalMaterial, {
+      summary,
+      extraInstructions: emotionPromptSection,
+    });
     const result = await generateSummaryMemory(prompt, { type: '旧聊天大总结' });
     const grandMemory = forceGrandMemoryRange(result, plan.archiveFrom, plan.archiveTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
@@ -1056,6 +1062,10 @@ export async function processLegacyGrandArchive() {
     saveChatState();
     scanExistingSummaryState();
     notifySummary('success', '已生成第 ' + summaryMessageId + ' 楼旧聊天大总结。', '旧聊天归档');
+    await processEmotionUpdateFromArchiveResult(result, {
+      messageId: Number(summaryMessageId),
+      sourceType: 'legacy_archive',
+    });
     await processAutoTotalGrandMemory();
     refreshSummaryPanelAfterAction();
   } catch (error) {

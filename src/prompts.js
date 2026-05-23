@@ -202,3 +202,52 @@ ${String(knownProfilesText || '暂无。').trim() || '暂无。'}
 }
 </emotion_update>`;
 }
+
+export function buildLegacyArchiveEmotionUpdatePromptSection({ knownProfilesText }) {
+  return `## 旧聊天情感档案补全
+
+请在生成 <grand_memory> 后，额外根据本次大总结中的【情感轨迹】整理当前角色情感档案。
+
+只记录确有持续意义的角色关系、态度、信任/戒备/依恋/敌意、长期目标或隐秘动机变化。
+
+不记录普通寒暄、临时情绪波动、一次性动作描写、没有后续影响的互动。
+
+判断依据优先级：
+1. 你本次生成的 <grand_memory> 中的【情感轨迹】。
+2. <grand_memory> 中的【剧情编年】与【当前状态】。
+3. 旧聊天归档素材中的剧情事实。
+4. 已知最新档案。
+
+请把【情感轨迹】中已经完成的连续变化，压缩为角色在归档结束时的最新版关系状态；不要把每个节点逐条拆成多条档案。
+如果 <grand_memory> 的【情感轨迹】为空或没有显著变化，请输出 changed=false。
+
+已知最新档案：
+${String(knownProfilesText || '暂无。').trim() || '暂无。'}
+
+请在 <grand_memory>...</grand_memory> 后继续输出独立的 <emotion_update>...</emotion_update>。
+<emotion_update> 内只能放 JSON，不要放 Markdown，不要续写剧情。
+
+格式：
+<emotion_update>
+{
+  "changed": true,
+  "profiles": [
+    {
+      "roleName": "角色名",
+      "currentStatus": "该角色在旧聊天归档结束时的当前情感/关系状态，作为后续主 API 前注入的最新版状态",
+      "changeSummary": "旧聊天区间内形成的关键情感变化",
+      "relationshipToUser": "该角色与{{user}}当前关系",
+      "evidence": "触发变化的剧情依据"
+    }
+  ]
+}
+</emotion_update>
+
+如果没有可整理的显著情感变化，请输出：
+<emotion_update>
+{
+  "changed": false,
+  "profiles": []
+}
+</emotion_update>`;
+}

@@ -69,9 +69,10 @@ function getProfileLatestChange(latestRecord) {
 
 function getProfileSourceLabel(latestRecord) {
   const sourceMessageId = latestRecord?.sourceMessageId ?? latestRecord?.messageId ?? latestRecord?.floor;
+  const prefix = latestRecord?.sourceType === 'legacy_archive' ? '旧聊天归档 · ' : '';
   return sourceMessageId === undefined || sourceMessageId === null || sourceMessageId === ''
     ? '未记录'
-    : `第 ${sourceMessageId} 楼`;
+    : `${prefix}第 ${sourceMessageId} 楼`;
 }
 
 function getProfileUpdatedAt(profile, latestRecord) {
@@ -208,11 +209,6 @@ export function renderEmotionProfilePanel(settings, chatState) {
         <div class="slx-detail-kicker">🎭 角色档案</div>
         <div class="slx-detail-title">暂无情感档案</div>
         <p>当角色关系出现显著变化后，会在这里整理成档案。</p>
-        <div class="slx-action-row slx-summary-action-row">
-          <button class="slx-soft-btn" type="button" disabled>扫描旧小总结</button>
-          <button class="slx-soft-btn" type="button" disabled>生成情感档案</button>
-          <button class="slx-soft-btn" type="button" disabled>清空档案</button>
-        </div>
       </div>
     `;
   }
@@ -225,8 +221,6 @@ export function renderEmotionProfilePanel(settings, chatState) {
       <div class="slx-detail-title">情感档案</div>
       <p>只显示显著变化，完整历史可展开查看。</p>
       <div class="slx-action-row slx-summary-action-row">
-        <button class="slx-soft-btn" type="button" disabled>扫描旧小总结</button>
-        <button class="slx-soft-btn" type="button" disabled>生成情感档案</button>
         <button class="slx-soft-btn" type="button" data-slx-clear-emotion-profiles>清空档案</button>
       </div>
     </div>
