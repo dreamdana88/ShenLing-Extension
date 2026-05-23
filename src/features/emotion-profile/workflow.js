@@ -535,7 +535,7 @@ export function registerEmotionProfileEvents() {
   if (emotionEventsRegistered) return;
   const tavernEvents = getTavernEventsSafe();
   const commitHandler = () => {
-    void commitSelectedPendingEmotionUpdates().then(syncEmotionProfileInjection).catch(error => {
+    void commitSelectedPendingEmotionUpdates().catch(error => {
       console.warn('[蜃灵助手] 情感档案注入刷新失败。', error);
     });
   };

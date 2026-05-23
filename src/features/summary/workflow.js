@@ -1115,6 +1115,7 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
     chatState.summary.lastError = message;
     saveChatState();
     notifySummary('error', message, '词汇替换失败');
+    refreshSummaryPanelAfterAction();
     return;
   }
 
