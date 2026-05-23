@@ -61,6 +61,9 @@ import {
   configureEmotionProfileWorkflow,
   registerEmotionProfileEvents,
 } from './src/features/emotion-profile/workflow.js';
+import {
+  registerChatBeautifyRenderer,
+} from './src/features/chat-beautify/renderer.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -1079,6 +1082,7 @@ function init() {
   scanExistingSummaryState();
   registerAutoSummaryEvents();
   registerEmotionProfileEvents();
+  registerChatBeautifyRenderer();
   renderSettingsPanel();
   renderFloatingButton();
 }

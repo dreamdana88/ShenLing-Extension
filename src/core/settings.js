@@ -69,6 +69,13 @@ export const defaultGlobalSettings = Object.freeze({
       autoAnalyze: false,
       injectEnabled: true,
     },
+    chatBeautify: {
+      enabled: false,
+      renderMemory: false,
+      renderGrandMemory: false,
+      hideRawBlocks: false,
+      rendererVersion: 1,
+    },
   },
   communicationLog: {
     maxEntries: 10,
@@ -326,4 +333,15 @@ export function getWordReplaceSettings(settings = getGlobalSettings()) {
   }
   replace.importCollapsed = replace.importCollapsed !== false;
   return replace;
+}
+
+export function getChatBeautifySettings(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.modules)) {
+    settings.modules = {};
+  }
+  settings.modules.chatBeautify = mergeDefaults(
+    settings.modules.chatBeautify,
+    cloneData(defaultGlobalSettings.modules.chatBeautify),
+  );
+  return settings.modules.chatBeautify;
 }
