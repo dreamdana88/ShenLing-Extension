@@ -10,6 +10,7 @@ import {
 } from '../../core/settings.js';
 import {
   getCurrentPendingEmotionUpdates,
+  getCurrentPendingEmotionMessageIds,
   syncEmotionProfileInjection,
 } from './workflow.js';
 
@@ -56,8 +57,8 @@ function getRecordText(record, fields) {
 }
 
 function getProfileCurrentStatus(profile, latestRecord) {
-  return getRecordText(profile, ['currentStatus', 'currentState', 'summary'])
-    || getRecordText(latestRecord, ['currentStatus', 'currentState', 'summary', 'status'])
+  return getRecordText(latestRecord, ['currentStatus', 'currentState', 'summary', 'status'])
+    || getRecordText(profile, ['currentStatus', 'currentState', 'summary'])
     || '尚未整理';
 }
 
@@ -79,8 +80,7 @@ function getProfileUpdatedAt(profile, latestRecord) {
     || '未记录';
 }
 
-function renderHistory(profile) {
-  const records = getProfileRecords(profile);
+function renderHistory(records) {
   if (!records.length) {
     return '';
   }
@@ -105,8 +105,7 @@ function renderHistory(profile) {
   `;
 }
 
-function renderProfileCard(roleName, profile) {
-  const records = getProfileRecords(profile);
+function renderProfileCard(roleName, profile, records = getProfileRecords(profile)) {
   const latestRecord = records.at(-1) || null;
   const currentStatus = getProfileCurrentStatus(profile, latestRecord);
   const latestChange = getProfileLatestChange(latestRecord);
@@ -129,7 +128,7 @@ function renderProfileCard(roleName, profile) {
         <span>最近变化</span>
         <p>${escapeHtml(latestChange)}</p>
       </div>
-      ${renderHistory(profile)}
+      ${renderHistory(records)}
     </article>
   `;
 }
@@ -191,8 +190,15 @@ function renderEmotionProfileControls(settings) {
 
 export function renderEmotionProfilePanel(settings, chatState) {
   const store = getEmotionProfileStore(chatState);
+  const pendingMessageIds = getCurrentPendingEmotionMessageIds(settings);
   const profiles = Object.entries(store.profiles)
-    .filter(([, profile]) => isPlainObject(profile));
+    .filter(([, profile]) => isPlainObject(profile))
+    .map(([roleName, profile]) => {
+      const records = getProfileRecords(profile)
+        .filter(record => !pendingMessageIds.has(Number(record?.sourceMessageId)));
+      return [roleName, profile, records];
+    })
+    .filter(([, , records]) => records.length);
 
   if (!profiles.length) {
     return `
@@ -225,7 +231,7 @@ export function renderEmotionProfilePanel(settings, chatState) {
       </div>
     </div>
     <div class="slx-emotion-profile-list">
-      ${profiles.map(([roleName, profile]) => renderProfileCard(roleName, profile)).join('')}
+      ${profiles.map(([roleName, profile, records]) => renderProfileCard(roleName, profile, records)).join('')}
     </div>
   `;
 }

@@ -216,6 +216,21 @@ function storePendingEmotionUpdate({ messageId, fingerprint, changed, updates, r
 }
 
 export function getCurrentPendingEmotionUpdates(settings = getGlobalSettings()) {
+  return getCurrentPendingEmotionItems(settings)
+    .filter(item => item.changed === true && Array.isArray(item.profiles) && item.profiles.length)
+    .map(item => ({
+      messageId: item.messageId,
+      fingerprint: item.fingerprint,
+      updatedAt: item.updatedAt,
+      profiles: item.profiles,
+    }));
+}
+
+export function getCurrentPendingEmotionMessageIds(settings = getGlobalSettings()) {
+  return new Set(getCurrentPendingEmotionItems(settings).map(item => Number(item.messageId)));
+}
+
+function getCurrentPendingEmotionItems(settings = getGlobalSettings()) {
   const chatState = getChatState();
   const store = getEmotionProfileStore(chatState);
   return Object.entries(store.pendingByMessage || {})
@@ -224,14 +239,13 @@ export function getCurrentPendingEmotionUpdates(settings = getGlobalSettings()) 
       const fingerprint = getMessageEmotionFingerprint(messageId, settings);
       if (!fingerprint) return null;
       const item = bucket.items[fingerprint];
-      if (!isPlainObject(item) || item.changed !== true || !Array.isArray(item.profiles) || !item.profiles.length) {
-        return null;
-      }
+      if (!isPlainObject(item)) return null;
       return {
         messageId: Number(messageId),
         fingerprint,
+        changed: item.changed === true,
         updatedAt: item.updatedAt || bucket.updatedAt || '',
-        profiles: item.profiles,
+        profiles: Array.isArray(item.profiles) ? item.profiles : [],
       };
     })
     .filter(Boolean);
@@ -368,6 +382,7 @@ export async function processEmotionUpdateFromSummaryResult(result, { messageId 
     const fingerprint = getMessageEmotionFingerprint(messageId);
     if (!fingerprint) return;
     const updates = changed ? normalizeProfileItems(parsed) : [];
+    removeEmotionProfileRecordsForMessage(messageId, { save: false });
     const pending = storePendingEmotionUpdate({
       messageId,
       fingerprint,
@@ -378,6 +393,7 @@ export async function processEmotionUpdateFromSummaryResult(result, { messageId 
     if (pending?.changed) {
       notifyEmotion('info', `检测到待确认情感变化：${updates.map(item => item.roleName).join('、')}`);
     }
+    await syncEmotionProfileInjection();
     refreshPanel();
   } catch (error) {
     console.error('[蜃灵助手] 情感档案解析失败。', error);
