@@ -29,7 +29,7 @@ import {
 } from '../../core/settings.js';
 import { applyReplacementRulesByScope } from '../word-replace/core.js';
 import {
-  buildArchiveEmotionMaterialByMessageId,
+  applyEmotionUpdateToMemory,
   buildEmotionUpdatePromptSection,
   buildLegacyArchiveEmotionUpdatePromptSection,
   processEmotionUpdateFromArchiveResult,
@@ -166,22 +166,14 @@ export function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
     if (message) entries[index].body = extractSummarySourceContent(stripMemoryBlock(message.message), getSummarySettings());
   }
 
-  const emotionMaterialByMessageId = buildArchiveEmotionMaterialByMessageId(archiveFrom, archiveTo);
-  const usedEmotionMessageIds = new Set();
   const memoryMaterial = entries
     .map(entry => {
       const memory = stripListBlocks(entry.memory);
       const body = entry.body ? `【正文】\n${entry.body}\n\n` : '';
-      const messageKey = String(entry.messageId);
-      const emotion = !usedEmotionMessageIds.has(messageKey)
-        ? emotionMaterialByMessageId.get(messageKey) || ''
-        : '';
-      if (emotion) usedEmotionMessageIds.add(messageKey);
       return [
         `### 记忆编号 ${entry.memoryNumber}`,
         body ? body.trim() : '',
         `【小总结】\n${memory}`,
-        emotion,
       ].filter(Boolean).join('\n');
     })
     .join('\n\n')
@@ -591,7 +583,7 @@ export async function summarizeOpeningMessage() {
         '如果角色基础信息与0楼正文冲突，以0楼正文为准。',
       ].join('\n'),
     }), { type: '0楼小总结' });
-    const memory = forceMemoryNumber(result, 0);
+    const memory = applyEmotionUpdateToMemory(forceMemoryNumber(result, 0), result);
     const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
     if (memoryReplacementResult.errors.length > 0) {
       throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
@@ -640,7 +632,8 @@ export async function regenerateMemoryForMessage(messageId) {
     }), {
       type: '手动重写小总结',
     });
-    const memoryReplacementResult = applyReplacementRulesByScope(normalizeMemoryBlock(result), getWordReplaceSettings());
+    const memory = applyEmotionUpdateToMemory(normalizeMemoryBlock(result), result);
+    const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
     if (memoryReplacementResult.errors.length > 0) {
       throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
     }
@@ -1165,7 +1158,7 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
       extraInstructions: emotionPromptSection,
     });
     const result = await generateSummaryMemory(prompt, { type: '自动小总结' });
-    const memory = normalizeMemoryBlock(result);
+    const memory = applyEmotionUpdateToMemory(normalizeMemoryBlock(result), result);
     const memoryReplacementResult = applyReplacementRulesByScope(memory, wordReplace);
     if (memoryReplacementResult.errors.length > 0) {
       throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);

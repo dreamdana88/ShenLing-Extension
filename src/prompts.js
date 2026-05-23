@@ -12,7 +12,7 @@ export const SUMMARY_INTERNAL_CHECKLIST = `## 内部档案工序
 4. 连续性：参考过往 memory / grand_memory，避免重复编号、重复总结和覆盖已归档事实。
 5. 去噪：忽略普通寒暄、无后续影响的小动作、模板噪声、思维链残留与格式标签杂讯。
 6. 女本位视角：保留剧情事实，但总结时净化男权、客体化、爹味或性别刻板表达，不强化“被征服/被占有/被拯救”的叙事框架。
-7. 格式校验：最终只输出完整的 <memory>...</memory>；如果情感档案开启，则在 <memory> 后追加一个完整的 <emotion_update> JSON。不要输出 Markdown、解释、工序、额外标签或正文续写。`;
+7. 格式校验：最终只输出完整的 <memory>...</memory>；如情感档案开启，则在 <memory> 后追加完整的 <emotion_update> JSON，不要输出 Markdown、解释、工序、额外标签或正文续写。`;
 
 export const GRAND_SUMMARY_INTERNAL_CHECKLIST = `## 内部归档工序
 在内部完成以下归档工序，不要输出工序内容：
@@ -92,7 +92,7 @@ export const DEFAULT_GRAND_MEMORY_TEMPLATE = `## 梦境大归档
 ---
 
 ## 【情感轨迹】
-追踪主要角色（非{{user}}）情感流动与变化。
+追踪主要角色（非{{user}}）情感分层的流动与变化。
 
 ### \${角色名}
 起点 [编号X]：\${情感分层} | \${与{{user}}关系现状}

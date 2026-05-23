@@ -25,6 +25,7 @@ import {
 const EMOTION_PROFILE_PROMPT_ID = 'shenling_assistant_emotion_profile_state';
 const PSYCHOLOGY_BLOCK_RE = /<psychology>[\s\S]*?<\/psychology>/gi;
 const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
+const EMOTION_BLOCK_RE = /<emotion>[\s\S]*?<\/emotion>/gi;
 const EMOTION_UPDATE_BLOCK_RE = /<emotion_update>\s*([\s\S]*?)\s*<\/emotion_update>/i;
 const emotionEventStops = [];
 let emotionEventsRegistered = false;
@@ -161,56 +162,49 @@ function buildKnownProfilesSection(store) {
   return profiles.length ? profiles.join('\n') : '暂无。';
 }
 
-export function buildArchiveEmotionMaterialByMessageId(archiveFrom, archiveTo, chatState = getChatState()) {
-  const from = Number(archiveFrom);
-  const to = Number(archiveTo);
-  if (!Number.isFinite(from) || !Number.isFinite(to)) return new Map();
-  const min = Math.min(from, to);
-  const max = Math.max(from, to);
-  const store = getEmotionProfileStore(chatState);
-  const linesByMessageId = new Map();
-
-  for (const [roleName, profile] of Object.entries(store.profiles || {})) {
-    if (!isPlainObject(profile) || !Array.isArray(profile.records)) continue;
-    const records = profile.records
-      .filter(record => {
-        const sourceMessageId = Number(record?.sourceMessageId);
-        return Number.isFinite(sourceMessageId) && sourceMessageId >= min && sourceMessageId <= max;
-      })
-      .sort((a, b) => Number(a?.sourceMessageId || 0) - Number(b?.sourceMessageId || 0));
-    if (!records.length) continue;
-
-    records.forEach(record => {
-      const source = Number(record?.sourceMessageId);
-      const status = getRecordField(record, ['currentStatus', 'currentState', 'status', 'summary']);
-      const change = getRecordField(record, ['changeSummary', 'change', 'content', 'summary']);
-      const relationship = getRecordField(record, ['relationshipToUser', 'relationship']);
-      const evidence = getRecordField(record, ['evidence', 'basis', 'trigger']);
-      const key = String(source);
-      const lines = linesByMessageId.get(key) || [];
-      lines.push([
-        `- ${profile.name || roleName}`,
-        status ? `  当前状态：${status}` : '',
-        change ? `  本次变化：${change}` : '',
-        relationship ? `  与{{user}}关系：${relationship}` : '',
-        evidence ? `  依据：${evidence}` : '',
-      ].filter(Boolean).join('\n'));
-      linesByMessageId.set(key, lines);
-    });
-  }
-
-  return new Map(Array.from(linesByMessageId.entries()).map(([messageId, lines]) => [
-    messageId,
-    `【角色情感变化】\n${lines.join('\n')}`,
-  ]));
-}
-
 function sanitizeMemoryForEmotionAnalysis(memory) {
   return String(memory || '')
     .replace(PSYCHOLOGY_BLOCK_RE, '')
     .replace(LIST_BLOCK_RE, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function buildReadableEmotionBlock(updates) {
+  if (!Array.isArray(updates) || !updates.length) return '';
+  const lines = updates.map(update => {
+    const roleName = normalizeRoleName(update.roleName);
+    if (!roleName) return '';
+    return [
+      `${roleName}：`,
+      update.currentStatus ? `- 当前状态：${update.currentStatus}` : '',
+      update.changeSummary ? `- 本次变化：${update.changeSummary}` : '',
+      update.relationshipToUser ? `- 与{{user}}关系：${update.relationshipToUser}` : '',
+      update.evidence ? `- 依据：${update.evidence}` : '',
+    ].filter(Boolean).join('\n');
+  }).filter(Boolean);
+  return lines.length ? `<emotion>\n${lines.join('\n\n')}\n</emotion>` : '';
+}
+
+export function applyEmotionUpdateToMemory(memory, result) {
+  let nextMemory = String(memory || '').replace(EMOTION_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n').trim();
+  const match = String(result || '').match(EMOTION_UPDATE_BLOCK_RE);
+  if (!match) return nextMemory;
+
+  try {
+    const parsed = extractJsonObject(sanitizeMemoryForEmotionAnalysis(match[1]));
+    const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
+    if (!changed) return nextMemory;
+    const emotionBlock = buildReadableEmotionBlock(normalizeProfileItems(parsed));
+    if (!emotionBlock) return nextMemory;
+    if (/<\/database>/i.test(nextMemory)) {
+      return nextMemory.replace(/<\/database>/i, `</database>\n${emotionBlock}`);
+    }
+    return nextMemory.replace(/<\/memory>\s*$/i, `${emotionBlock}\n</memory>`).trim();
+  } catch (error) {
+    console.warn('[蜃灵助手] emotion_update 转写 emotion 失败。', error);
+    return nextMemory;
+  }
 }
 
 export function getMessageEmotionFingerprint(messageId, settings = getGlobalSettings()) {
