@@ -141,6 +141,7 @@ export function buildMemorySummaryPrompt(content, priorMemories = [], summary = 
     ? `【过往梦境档案（编号勿重复）】\n${priorMemories.join('\n\n')}`
     : '';
   const extraInstructions = String(options.extraInstructions || '').trim();
+  const materialInstructions = String(options.materialInstructions || '').trim();
   const outputRule = extraInstructions
     ? '严格按照格式要求输出完整的 <memory>...</memory>，并按附加要求输出其他独立块。'
     : '严格按照格式要求输出完整的 <memory>...</memory>。';
@@ -150,6 +151,7 @@ export function buildMemorySummaryPrompt(content, priorMemories = [], summary = 
     summary.promptTemplate || '',
     SUMMARY_GAZE_GUIDANCE,
     SUMMARY_INTERNAL_CHECKLIST,
+    materialInstructions,
     extraInstructions,
     `现在只处理用户提供的本轮素材。请不要续写剧情，不要输出 <content>，${outputRule}`,
   ].filter(Boolean).join('\n\n');
@@ -158,6 +160,16 @@ export function buildMemorySummaryPrompt(content, priorMemories = [], summary = 
     `【本轮素材】\n${content}`,
   ].filter(Boolean).join('\n\n');
   return createPromptBundle(systemContent, userContent);
+}
+
+export function buildOpeningSummaryPromptContent(openingContent, characterFoundation = '') {
+  const cleanOpeningContent = String(openingContent || '').trim();
+  const cleanCharacterFoundation = String(characterFoundation || '').trim();
+  if (!cleanCharacterFoundation) {
+    return `【0楼正文】\n${cleanOpeningContent}`;
+  }
+
+  return `【角色基础信息】\n${cleanCharacterFoundation}\n\n【0楼正文】\n${cleanOpeningContent}`;
 }
 
 export function buildMemorySummaryMessages(prompt) {

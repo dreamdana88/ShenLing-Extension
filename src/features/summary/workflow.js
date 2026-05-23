@@ -7,6 +7,7 @@ import {
   formatTimestamp,
 } from '../../utils/text.js';
 import { buildApiUrl } from '../../core/api.js';
+import { buildCharacterFoundationBlock } from '../../core/character.js';
 import {
   createAssistantChatMessage,
   createMessageIdRange,
@@ -38,6 +39,7 @@ import {
   buildLegacyArchiveFinalMaterial,
   buildMemorySummaryMessages,
   buildMemorySummaryPrompt,
+  buildOpeningSummaryPromptContent,
   buildSummaryPromptContent,
   buildTotalGrandMemoryMaterialPrompt,
   createLegacyArchiveBatches,
@@ -563,7 +565,16 @@ export async function summarizeOpeningMessage() {
   refreshSummaryPanelAfterAction();
 
   try {
-    const result = await generateSummaryMemory(buildMemorySummaryPrompt(summaryBody, [], getSummarySettings()), { type: '0楼小总结' });
+    const characterFoundation = buildCharacterFoundationBlock();
+    const promptContent = buildOpeningSummaryPromptContent(summaryBody, characterFoundation);
+    const result = await generateSummaryMemory(buildMemorySummaryPrompt(promptContent, [], getSummarySettings(), {
+      materialInstructions: [
+        '0楼总结素材说明：',
+        '【角色基础信息】只用于识别角色、关系、地点与世界观背景，不能当作已经发生的剧情写进 <memory>。',
+        '【0楼正文】才是本次需要总结为剧情事实的内容。',
+        '如果角色基础信息与0楼正文冲突，以0楼正文为准。',
+      ].join('\n'),
+    }), { type: '0楼小总结' });
     const memory = forceMemoryNumber(result, 0);
     const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
     if (memoryReplacementResult.errors.length > 0) {
