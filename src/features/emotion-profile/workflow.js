@@ -382,7 +382,6 @@ export async function processEmotionUpdateFromSummaryResult(result, { messageId 
     const fingerprint = getMessageEmotionFingerprint(messageId);
     if (!fingerprint) return;
     const updates = changed ? normalizeProfileItems(parsed) : [];
-    removeEmotionProfileRecordsForMessage(messageId, { save: false });
     const pending = storePendingEmotionUpdate({
       messageId,
       fingerprint,
