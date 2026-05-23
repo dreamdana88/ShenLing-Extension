@@ -269,6 +269,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
   const api = getApiSettingsForPanel(settings);
   const activeModel = api.mode === 'main_api' ? '酒馆主 API' : (apiProfile.model || '尚未选择模型');
   const grandInterval = Math.max(1, Number(summary.grandMemoryInterval) || 6);
+  const totalGrandInterval = Math.max(2, Number(summary.totalGrandMemoryInterval) || 5);
   const memoryCount = Number(chatState.summary.memoryCountSinceArchive ?? chatState.summary.smallSummaryCount ?? 0);
   const archiveRecords = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [];
   const activeArchiveRecords = archiveRecords.filter(record => !record.compressedBy);
@@ -364,6 +365,18 @@ export function renderSummarySettingsPanel(settings, chatState) {
         <input type="number" min="1" step="1" data-slx-summary-field="grandMemoryInterval" value="${escapeHtml(grandInterval)}" />
         <small>每 N 次成功小总结后触发一次大总结。</small>
       </label>
+      <label class="slx-setting-toggle-row" for="slx-summary-total-grand-enabled">
+        <span>
+          <b>自动合并大总结</b>
+          <small>未合并的大总结达到阈值后生成总档案。</small>
+        </span>
+        <input id="slx-summary-total-grand-enabled" type="checkbox" data-slx-summary-field="autoTotalGrandMemoryEnabled" ${summary.autoTotalGrandMemoryEnabled ? 'checked' : ''} />
+      </label>
+      <label class="slx-field slx-field-wide">
+        <span>合并阈值</span>
+        <input type="number" min="2" step="1" data-slx-summary-field="totalGrandMemoryInterval" value="${escapeHtml(totalGrandInterval)}" />
+        <small>例如 5：累计 5 条未合并大总结后自动压缩。</small>
+      </label>
     </div>
 
     <div class="slx-detail-card slx-source-rules-card${sourceRulesCollapsed ? ' slx-source-rules-card-collapsed' : ''}">
@@ -408,6 +421,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
       ${renderDiagnosticLine('上次小总结楼', chatState.summary.lastSummaryMessageId ?? '无')}
       ${renderDiagnosticLine('上次大总结楼', chatState.summary.lastGrandSummaryMessageId ?? '无')}
       ${renderDiagnosticLine('归档记录', compressedArchiveCount ? `${activeArchiveRecords.length} 条（已合并 ${compressedArchiveCount} 条）` : `${activeArchiveRecords.length} 条`)}
+      ${renderDiagnosticLine('大总结合并', `${activeArchiveRecords.length} / ${totalGrandInterval}`)}
       ${renderDiagnosticLine('最新归档', latestArchiveLabel)}
       ${renderDiagnosticLine('最近通讯日志', latestLogLabel)}
       ${renderDiagnosticLine('上次错误', chatState.summary.lastError || '无')}

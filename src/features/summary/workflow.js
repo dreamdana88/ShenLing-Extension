@@ -709,6 +709,7 @@ export async function processAutoGrandMemory() {
     saveChatState();
     scanExistingSummaryState();
     notifySummary('success', `已生成第 ${summaryMessageId} 楼大总结，并隐藏 ${archiveFrom}-${archiveTo}。`);
+    await processAutoTotalGrandMemory();
     refreshSummaryPanelAfterAction();
   } catch (error) {
     chatState.summary.runningTask = 'none';
@@ -717,6 +718,14 @@ export async function processAutoGrandMemory() {
     notifySummary('error', error.message || String(error), '自动大总结失败');
     refreshSummaryPanelAfterAction();
   }
+}
+
+export function shouldTriggerAutoTotalGrandMemory(chatState = getChatState(), settings = getGlobalSettings()) {
+  const summary = getSummarySettings(settings);
+  if (!settings.enabled || !summary.autoTotalGrandMemoryEnabled) return false;
+  const threshold = Math.max(2, Number(summary.totalGrandMemoryInterval) || 5);
+  const plan = createTotalGrandMemoryPlan();
+  return Boolean(chatState.summary.runningTask === 'none' && plan.count >= threshold);
 }
 
 export async function regenerateLatestGrandMemory() {
@@ -887,6 +896,13 @@ export async function processTotalGrandMemory() {
   }
 }
 
+export async function processAutoTotalGrandMemory() {
+  const settings = getGlobalSettings();
+  const chatState = getChatState();
+  if (!shouldTriggerAutoTotalGrandMemory(chatState, settings)) return;
+  await processTotalGrandMemory();
+}
+
 export function cleanLegacyArchiveMessageContent(message, summary = getSummarySettings()) {
   return getMessageSummarySource(message, summary);
 }
@@ -1029,6 +1045,7 @@ export async function processLegacyGrandArchive() {
     saveChatState();
     scanExistingSummaryState();
     notifySummary('success', '已生成第 ' + summaryMessageId + ' 楼旧聊天大总结。', '旧聊天归档');
+    await processAutoTotalGrandMemory();
     refreshSummaryPanelAfterAction();
   } catch (error) {
     chatState.summary.runningTask = 'none';

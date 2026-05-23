@@ -43,6 +43,8 @@ export const defaultGlobalSettings = Object.freeze({
       enabled: false,
       autoGrandMemoryEnabled: false,
       grandMemoryInterval: 6,
+      autoTotalGrandMemoryEnabled: false,
+      totalGrandMemoryInterval: 5,
       legacyArchiveBatchSize: '',
       includeUserInput: false,
       intervalMessages: 1,
