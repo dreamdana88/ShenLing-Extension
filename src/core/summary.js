@@ -111,7 +111,7 @@ export function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMate
     : '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。';
   const systemContent = [
     '蜃灵处于梦境档案编制状态。',
-    '你是蜃灵助手的梦境大归档模块，只负责把给定小总结素材压缩为可追溯的大总结，不续写剧情。',
+    '现在是梦境大归档模块，只负责把给定小总结素材压缩为可追溯的大总结，不续写剧情。',
     grandMemoryTemplate,
     SUMMARY_GAZE_GUIDANCE,
     GRAND_SUMMARY_INTERNAL_CHECKLIST,
@@ -132,8 +132,8 @@ export function buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiv
     grandMemoryTemplate,
     SUMMARY_GAZE_GUIDANCE,
     GRAND_SUMMARY_INTERNAL_CHECKLIST,
-    '现在请根据用户提供的多个已有大总结，生成一份覆盖完整范围的新大总结。',
-    '请按剧情发展重新整合，不要机械拼接旧大总结。',
+    '现在请根据用户提供的多个已有大总结，生成一份覆盖完整范围的全新完整大总结。',
+    '请按剧情发展重新整合精炼，不要机械拼接旧大总结。',
     '请只依据素材内容归纳，不要续写剧情。',
     '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。',
   ].filter(Boolean).join('\n\n');
@@ -143,7 +143,7 @@ export function buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiv
 
 export function buildMemorySummaryPrompt(content, priorMemories = [], summary = {}, options = {}) {
   const priorSection = priorMemories.length > 0
-    ? `【过往梦境档案（编号勿重复）】\n${priorMemories.join('\n\n')}`
+    ? `【过往梦境档案】\n${priorMemories.join('\n\n')}`
     : '';
   const extraInstructions = String(options.extraInstructions || '').trim();
   const materialInstructions = String(options.materialInstructions || '').trim();
@@ -152,13 +152,13 @@ export function buildMemorySummaryPrompt(content, priorMemories = [], summary = 
     : '严格按照格式要求输出完整的 <memory>...</memory>。';
   const systemContent = [
     '蜃灵处于梦境档案编制状态。',
-    '你是蜃灵助手的自动小总结模块，只负责把用户提供的本轮素材压缩为剧情档案，不续写剧情。',
+    '现在是梦境小总结模块，只需把用户提供的本轮素材压缩为剧情档案。',
     summary.promptTemplate || '',
     SUMMARY_GAZE_GUIDANCE,
     SUMMARY_INTERNAL_CHECKLIST,
     materialInstructions,
     extraInstructions,
-    `现在只处理用户提供的本轮素材。请不要续写剧情，不要输出 <content>，${outputRule}`,
+    `请不要续写剧情，不要输出 <content>，${outputRule}`,
   ].filter(Boolean).join('\n\n');
   const userContent = [
     priorSection,

@@ -140,7 +140,7 @@ function normalizeProfileItems(parsed) {
       return {
         roleName,
         currentStatus: String(item.currentStatus || item.currentState || item.status || item.summary || '').trim(),
-        changeSummary: String(item.changeSummary || item.change || item.reason || item.summary || '').trim(),
+        changeSummary: String(item.changeSummary || item.change || item.summary || '').trim(),
         relationshipToUser: String(item.relationshipToUser || item.relationship || '').trim(),
       };
     })
@@ -323,10 +323,10 @@ export function buildEmotionProfileInjection(chatState = getChatState()) {
         ? ''
         : `- 来源：第 ${latest.sourceMessageId} 楼`;
       return [
-        `${name}：`,
+        `【${name}】`,
+        source,
         status ? `- 当前状态：${status}` : '',
         relationship ? `- 与{{user}}关系：${relationship}` : '',
-        source,
       ].filter(Boolean).join('\n');
     })
     .filter(Boolean);
@@ -334,6 +334,12 @@ export function buildEmotionProfileInjection(chatState = getChatState()) {
   if (!lines.length) return '';
   return `<character_profile_state>
 以下为蜃灵助手维护的角色情感档案当前最新版。它不是新剧情，只用于保持角色关系、态度与隐秘动机的连续性。
+
+角色条目格式：
+【角色名】
+- 来源：第 N 楼
+- 当前状态：角色当前情感状态
+- 与{{user}}关系：当前关系
 
 ${lines.join('\n\n')}
 </character_profile_state>`;
