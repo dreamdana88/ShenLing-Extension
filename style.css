@@ -1144,6 +1144,35 @@ body.slx-panel-open-lock {
   padding: 7px 9px;
 }
 
+.slx-worldinfo-test-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slx-worldinfo-test-row .slx-soft-btn {
+  width: auto;
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.slx-worldinfo-test-row span {
+  min-width: 0;
+  color: var(--slx-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slx-worldinfo-dryrun-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--slx-border-dim);
+  padding-top: 8px;
+}
+
 .slx-worldinfo-details summary {
   color: var(--slx-text);
   cursor: pointer;

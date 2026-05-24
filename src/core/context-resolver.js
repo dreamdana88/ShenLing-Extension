@@ -25,6 +25,17 @@ const DEFAULT_MEMORY_LIMIT = 4;
 const DEFAULT_GRAND_MEMORY_LIMIT = 1;
 const DEFAULT_WORLD_INFO_LIMIT = 12;
 const WORLD_INFO_CACHE_LIMIT = 2;
+const DEFAULT_DRY_RUN_MAX_CONTEXT = 8192;
+const WORLD_INFO_IMPORT_CANDIDATES = [
+  '../../../../../world-info.js',
+  '../../../../world-info.js',
+  '../../../world-info.js',
+];
+const SCRIPT_IMPORT_CANDIDATES = [
+  '../../../../../script.js',
+  '../../../../script.js',
+  '../../../script.js',
+];
 
 const WORLD_INFO_STRONG_EXCLUDE_PATTERNS = [
   /状态栏/i,
@@ -56,6 +67,8 @@ const WORLD_INFO_SOFT_EXCLUDE_PATTERNS = [
 let worldInfoEventsRegistered = false;
 const worldInfoEventStops = [];
 let activatedWorldInfoCache = [];
+let worldInfoModulePromise = null;
+let scriptModulePromise = null;
 
 function cleanText(value) {
   return String(value ?? '').trim();
@@ -99,6 +112,38 @@ function registerTavernEvent(eventName, handler) {
     };
   }
   return null;
+}
+
+async function importFirstAvailable(candidates) {
+  let lastError = null;
+  for (const path of candidates) {
+    try {
+      return await import(path);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('未找到可导入模块。');
+}
+
+async function getWorldInfoModule() {
+  if (!worldInfoModulePromise) {
+    worldInfoModulePromise = importFirstAvailable(WORLD_INFO_IMPORT_CANDIDATES).catch(error => {
+      worldInfoModulePromise = null;
+      throw error;
+    });
+  }
+  return worldInfoModulePromise;
+}
+
+async function getScriptModule() {
+  if (!scriptModulePromise) {
+    scriptModulePromise = importFirstAvailable(SCRIPT_IMPORT_CANDIDATES).catch(error => {
+      scriptModulePromise = null;
+      throw error;
+    });
+  }
+  return scriptModulePromise;
 }
 
 export function replaceContextMacros(value, {
@@ -286,8 +331,23 @@ function normalizeWorldInfoEntriesFromPayload(payload, source = 'event') {
   if (Array.isArray(payload)) {
     return payload.map((entry, index) => normalizeWorldInfoEntry(entry, index, source)).filter(Boolean);
   }
+  if (payload instanceof Set) {
+    return Array.from(payload.values())
+      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
+      .filter(Boolean);
+  }
   if (payload instanceof Map) {
     return Array.from(payload.values())
+      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
+      .filter(Boolean);
+  }
+  if (payload.allActivatedEntries instanceof Set || payload.allActivatedEntries instanceof Map) {
+    return Array.from(payload.allActivatedEntries.values())
+      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
+      .filter(Boolean);
+  }
+  if (Array.isArray(payload.allActivatedEntries)) {
+    return payload.allActivatedEntries
       .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
       .filter(Boolean);
   }
@@ -456,6 +516,169 @@ export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT
   };
 }
 
+function getCharacterCardFieldsForWorldInfo() {
+  const context = getContextSafe();
+  const fallback = getResolvedCharacterCard();
+  try {
+    const fields = typeof context?.getCharacterCardFields === 'function'
+      ? context.getCharacterCardFields()
+      : null;
+    if (fields && typeof fields === 'object') {
+      return {
+        personaDescription: fields.persona || getUserPersona(),
+        characterDescription: fields.description || fallback.description || '',
+        characterPersonality: fields.personality || fallback.personality || '',
+        characterDepthPrompt: fields.charDepthPrompt || '',
+        scenario: fields.scenario || fallback.scenario || '',
+        creatorNotes: fields.creatorNotes || '',
+        trigger: 'normal',
+      };
+    }
+  } catch (error) {
+    console.warn('[蜃灵助手] 读取角色卡扫描字段失败，使用基础字段兜底。', error);
+  }
+
+  return {
+    personaDescription: getUserPersona(),
+    characterDescription: fallback.description || '',
+    characterPersonality: fallback.personality || '',
+    characterDepthPrompt: '',
+    scenario: fallback.scenario || '',
+    creatorNotes: '',
+    trigger: 'normal',
+  };
+}
+
+async function getWorldInfoMaxContext() {
+  const context = getContextSafe();
+  if (typeof context?.getMaxContextSize === 'function') {
+    return Number(context.getMaxContextSize()) || DEFAULT_DRY_RUN_MAX_CONTEXT;
+  }
+  if (typeof globalThis.getMaxContextSize === 'function') {
+    return Number(globalThis.getMaxContextSize()) || DEFAULT_DRY_RUN_MAX_CONTEXT;
+  }
+  try {
+    const scriptModule = await getScriptModule();
+    if (typeof scriptModule?.getMaxContextSize === 'function') {
+      return Number(scriptModule.getMaxContextSize()) || DEFAULT_DRY_RUN_MAX_CONTEXT;
+    }
+  } catch {
+    // Optional import; fallback below.
+  }
+  return DEFAULT_DRY_RUN_MAX_CONTEXT;
+}
+
+function buildWorldInfoScanChat(messages = collectRecentChatMessages()) {
+  return messages
+    .filter(message => message.content)
+    .map(message => `${message.speaker}: ${message.content}`)
+    .reverse();
+}
+
+export async function collectDryRunWorldInfoContext({
+  limit = DEFAULT_WORLD_INFO_LIMIT,
+  recentMessages = null,
+} = {}) {
+  try {
+    const worldInfoModule = await getWorldInfoModule();
+    const checkWorldInfo = worldInfoModule?.checkWorldInfo || globalThis.checkWorldInfo;
+    if (typeof checkWorldInfo !== 'function') {
+      throw new Error('当前环境未发现 checkWorldInfo。');
+    }
+
+    const chatForScan = buildWorldInfoScanChat(Array.isArray(recentMessages) ? recentMessages : collectRecentChatMessages());
+    if (!chatForScan.length) {
+      return {
+        entries: [],
+        diagnostics: {
+          source: 'dry_run_empty_chat',
+          cacheCount: 0,
+          activatedCount: 0,
+          filteredCount: 0,
+          suspiciousCount: 0,
+          usedCount: 0,
+          notes: ['最近聊天为空，跳过世界书 dry run。'],
+        },
+      };
+    }
+
+    const maxContext = await getWorldInfoMaxContext();
+    const result = await checkWorldInfo(
+      chatForScan,
+      maxContext,
+      true,
+      getCharacterCardFieldsForWorldInfo(),
+    );
+    const entries = normalizeWorldInfoEntriesFromPayload(result, 'dry_run');
+    const filtered = filterActivatedWorldInfoEntries(entries, { limit });
+    return {
+      entries: filtered.used,
+      diagnostics: {
+        source: 'dry_run',
+        cacheCount: 0,
+        activatedCount: entries.length,
+        filteredCount: filtered.filtered.length,
+        suspiciousCount: filtered.suspicious.length,
+        usedCount: filtered.used.length,
+        filteredEntries: filtered.filtered.map(entry => ({
+          title: entry.title,
+          world: entry.world,
+          reason: entry.filterReason,
+        })),
+        suspiciousEntries: filtered.suspicious.map(entry => ({
+          title: entry.title,
+          world: entry.world,
+          reason: entry.filterReason,
+        })),
+        notes: [],
+      },
+    };
+  } catch (error) {
+    return {
+      entries: [],
+      diagnostics: {
+        source: 'dry_run_failed',
+        cacheCount: 0,
+        activatedCount: 0,
+        filteredCount: 0,
+        suspiciousCount: 0,
+        usedCount: 0,
+        notes: [`世界书 dry run 不可用：${error.message || String(error)}`],
+      },
+    };
+  }
+}
+
+export async function collectWorldInfoContext({
+  limit = DEFAULT_WORLD_INFO_LIMIT,
+  mode = 'cache_first',
+  recentMessages = null,
+} = {}) {
+  if (mode === 'dry_run') {
+    const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages });
+    if (dryRun.entries.length || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
+    return collectCachedWorldInfoContext({ limit });
+  }
+
+  const cached = collectCachedWorldInfoContext({ limit });
+  if (cached.entries.length || mode === 'cache_only') return cached;
+
+  const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages });
+  if (dryRun.entries.length || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
+
+  return {
+    entries: cached.entries,
+    diagnostics: {
+      ...cached.diagnostics,
+      source: 'event_cache_empty_dry_run_failed',
+      notes: [
+        ...(cached.diagnostics.notes || []),
+        ...(dryRun.diagnostics.notes || []),
+      ],
+    },
+  };
+}
+
 export function registerWorldInfoContextEvents() {
   if (worldInfoEventsRegistered) return;
   const tavernEvents = getTavernEventsSafe();
@@ -507,6 +730,7 @@ export async function resolveShenlingContext(options = {}) {
     includeEmotionProfile = true,
     includeWorldInfo = false,
     worldInfoLimit = DEFAULT_WORLD_INFO_LIMIT,
+    worldInfoMode = 'cache_first',
     includeAllEmotionProfiles = true,
   } = options;
 
@@ -526,7 +750,11 @@ export async function resolveShenlingContext(options = {}) {
     ? collectEmotionProfiles({ targetRoleName, includeAll: includeAllEmotionProfiles })
     : [];
   const worldInfo = includeWorldInfo
-    ? collectCachedWorldInfoContext({ limit: worldInfoLimit })
+    ? await collectWorldInfoContext({
+      limit: worldInfoLimit,
+      mode: worldInfoMode,
+      recentMessages,
+    })
     : {
       entries: [],
       diagnostics: {
@@ -557,5 +785,84 @@ export async function resolveShenlingContext(options = {}) {
       emotionProfileCount: emotionProfiles.length,
       worldInfo: worldInfo.diagnostics,
     },
+  };
+}
+
+function createSection(title, content) {
+  const text = cleanText(content);
+  return text ? `【${title}】\n${text}` : '';
+}
+
+function formatCharacterCardForDiary(characterCard) {
+  if (!characterCard) return '';
+  return [
+    characterCard.name ? `角色名：${characterCard.name}` : '',
+    characterCard.description ? `角色描述：\n${characterCard.description}` : '',
+    characterCard.personality ? `角色性格：\n${characterCard.personality}` : '',
+    characterCard.scenario ? `场景设定：\n${characterCard.scenario}` : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+function formatMemoryItemsForDiary(items = [], title = '近期梦境档案') {
+  if (!Array.isArray(items) || !items.length) return '';
+  return items.map(item => {
+    const source = Number.isFinite(Number(item.messageId)) ? `第 ${item.messageId} 楼` : '未记录楼层';
+    return `### ${source}\n${cleanText(item.content)}`;
+  }).join('\n\n');
+}
+
+function formatEmotionProfilesForDiary(items = []) {
+  if (!Array.isArray(items) || !items.length) return '';
+  return items.map(item => [
+    `### ${item.roleName || '未命名角色'}`,
+    item.sourceMessageId === null || item.sourceMessageId === undefined ? '' : `来源：第 ${item.sourceMessageId} 楼`,
+    item.currentStatus ? `当前状态：${item.currentStatus}` : '',
+    item.changeSummary ? `最近变化：${item.changeSummary}` : '',
+    item.relationshipToUser ? `与用户关系：${item.relationshipToUser}` : '',
+  ].filter(Boolean).join('\n')).join('\n\n');
+}
+
+function formatWorldInfoForDiary(entries = []) {
+  if (!Array.isArray(entries) || !entries.length) return '';
+  return entries.map(entry => [
+    `### ${entry.title || '未命名条目'}`,
+    entry.world ? `世界书：${entry.world}` : '',
+    entry.keys?.length ? `关键词：${entry.keys.join('、')}` : '',
+    cleanText(entry.content),
+  ].filter(Boolean).join('\n')).join('\n\n');
+}
+
+export function buildDiaryContextMaterial(context = {}) {
+  const targetRoleName = cleanText(context.targetRoleName);
+  const sections = [
+    createSection('日记目标视角', targetRoleName ? `这篇日记由「${targetRoleName}」书写。` : ''),
+    createSection('当前角色卡基础信息', formatCharacterCardForDiary(context.characterCard)),
+    createSection('用户 Persona', context.userPersona),
+    createSection('最近主线聊天', context.recentChat),
+    createSection('近期 memory', formatMemoryItemsForDiary(context.memories, '近期 memory')),
+    createSection('近期 grand_memory', formatMemoryItemsForDiary(context.grandMemories, '近期 grand_memory')),
+    createSection('情感档案', formatEmotionProfilesForDiary(context.emotionProfiles)),
+    createSection('当前激活世界书', formatWorldInfoForDiary(context.activatedWorldInfo)),
+  ].filter(Boolean);
+
+  return sections.join('\n\n---\n\n');
+}
+
+export async function resolveDiaryContext(options = {}) {
+  const context = await resolveShenlingContext({
+    purpose: 'diary',
+    recentMessageLimit: 8,
+    memoryLimit: 4,
+    grandMemoryLimit: 1,
+    includeWorldInfo: true,
+    includeEmotionProfile: true,
+    includeMemories: true,
+    includeGrandMemories: true,
+    ...options,
+  });
+
+  return {
+    ...context,
+    material: buildDiaryContextMaterial(context),
   };
 }

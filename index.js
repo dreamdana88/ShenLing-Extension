@@ -69,6 +69,8 @@ import {
   registerChatBeautifyRenderer,
 } from './src/features/chat-beautify/renderer.js';
 import {
+  bindContextDiagnosticsPanelEvents,
+  configureContextDiagnosticsPanel,
   renderContextDiagnostics,
 } from './src/features/context-diagnostics/panel.js';
 
@@ -834,6 +836,7 @@ function renderFloatingPanel(options = {}) {
   bindSummaryPanelEvents(panelRoot, settings);
   bindWordReplacePanelEvents(panelRoot, settings);
   bindEmotionProfilePanelEvents(panelRoot, settings);
+  bindContextDiagnosticsPanelEvents(panelRoot);
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
     button.addEventListener('click', () => {
@@ -1084,6 +1087,9 @@ function init() {
     refreshPanel: renderFloatingPanel,
   });
   configureEmotionProfilePanel({
+    refreshPanel: renderFloatingPanel,
+  });
+  configureContextDiagnosticsPanel({
     refreshPanel: renderFloatingPanel,
   });
   configureSummaryWorkflow({
