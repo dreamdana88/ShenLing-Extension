@@ -341,6 +341,11 @@ function normalizeWorldInfoEntriesFromPayload(payload, source = 'event') {
       .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
       .filter(Boolean);
   }
+  if (Array.isArray(payload.sortedEntries)) {
+    return payload.sortedEntries
+      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
+      .filter(Boolean);
+  }
   if (payload.allActivatedEntries instanceof Set || payload.allActivatedEntries instanceof Map) {
     return Array.from(payload.allActivatedEntries.values())
       .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
