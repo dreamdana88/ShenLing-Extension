@@ -19,7 +19,6 @@ import {
   getContextSafe,
 } from './src/core/chat.js';
 import {
-  collectCachedWorldInfoContext,
   registerWorldInfoContextEvents,
 } from './src/core/context-resolver.js';
 import {
@@ -69,6 +68,9 @@ import {
 import {
   registerChatBeautifyRenderer,
 } from './src/features/chat-beautify/renderer.js';
+import {
+  renderContextDiagnostics,
+} from './src/features/context-diagnostics/panel.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -447,18 +449,6 @@ function createModuleButton(module, settings) {
 
 function renderDiagnosticLine(label, value) {
   return `<div class="slx-info-line"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
-}
-
-function renderContextDiagnostics() {
-  const worldInfo = collectCachedWorldInfoContext();
-  const diag = worldInfo.diagnostics || {};
-  return `
-    ${renderDiagnosticLine('世界书缓存批次', diag.cacheCount ?? 0)}
-    ${renderDiagnosticLine('世界书激活条目', diag.activatedCount ?? 0)}
-    ${renderDiagnosticLine('世界书过滤条目', diag.filteredCount ?? 0)}
-    ${renderDiagnosticLine('世界书可疑条目', diag.suspiciousCount ?? 0)}
-    ${renderDiagnosticLine('世界书可用条目', diag.usedCount ?? 0)}
-  `;
 }
 
 function renderLogDetailBlock(title, value) {

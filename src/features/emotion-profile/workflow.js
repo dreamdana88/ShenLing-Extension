@@ -551,6 +551,12 @@ export async function commitSelectedPendingEmotionUpdates({ notify = false } = {
   }
 }
 
+function schedulePendingEmotionCommit() {
+  void commitSelectedPendingEmotionUpdates().catch(error => {
+    console.warn('[蜃灵助手] 情感档案确认失败。', error);
+  });
+}
+
 export async function syncEmotionProfileInjection() {
   const context = getContextSafe();
   const setExtensionPrompt = typeof context?.setExtensionPrompt === 'function'
@@ -604,11 +610,6 @@ function registerTavernEvent(eventName, handler) {
 export function registerEmotionProfileEvents() {
   if (emotionEventsRegistered) return;
   const tavernEvents = getTavernEventsSafe();
-  const commitHandler = () => {
-    void commitSelectedPendingEmotionUpdates().catch(error => {
-      console.warn('[蜃灵助手] 情感档案注入刷新失败。', error);
-    });
-  };
   const syncHandler = () => {
     void syncEmotionProfileInjection().catch(error => {
       console.warn('[蜃灵助手] 情感档案注入刷新失败。', error);
@@ -616,13 +617,11 @@ export function registerEmotionProfileEvents() {
   };
   const refreshHandler = () => refreshPanel();
 
-  [
-    tavernEvents.GENERATION_AFTER_COMMANDS,
-    tavernEvents.GENERATE_BEFORE_COMBINE_PROMPTS,
-  ].filter(Boolean).forEach(eventName => {
-    const stop = registerTavernEvent(eventName, commitHandler);
-    if (stop) emotionEventStops.push(stop);
-  });
+  const messageSentStop = registerTavernEvent(tavernEvents.MESSAGE_SENT, schedulePendingEmotionCommit);
+  if (messageSentStop) emotionEventStops.push(messageSentStop);
+
+  const beforeCombineStop = registerTavernEvent(tavernEvents.GENERATE_BEFORE_COMBINE_PROMPTS, syncHandler);
+  if (beforeCombineStop) emotionEventStops.push(beforeCombineStop);
 
   const chatChangedStop = registerTavernEvent(tavernEvents.CHAT_CHANGED, syncHandler);
   if (chatChangedStop) emotionEventStops.push(chatChangedStop);

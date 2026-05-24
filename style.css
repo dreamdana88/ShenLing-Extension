@@ -1129,6 +1129,68 @@ body.slx-panel-open-lock {
   white-space: nowrap;
 }
 
+.slx-worldinfo-diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--slx-border-dim);
+}
+
+.slx-worldinfo-details {
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 7px 9px;
+}
+
+.slx-worldinfo-details summary {
+  color: var(--slx-text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.slx-worldinfo-details ul {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.slx-worldinfo-details li {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid var(--slx-border-dim);
+  padding-top: 7px;
+}
+
+.slx-worldinfo-details li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.slx-worldinfo-details b {
+  color: var(--slx-text);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slx-worldinfo-details small,
+.slx-worldinfo-details p {
+  margin: 0;
+  color: var(--slx-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .slx-action-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
