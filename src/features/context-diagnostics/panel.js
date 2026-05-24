@@ -58,6 +58,24 @@ function renderWorldInfoEntryList(title, entries = [], { showReason = false } = 
   `;
 }
 
+function renderRawSourceCounts(title, counts = {}) {
+  const visibleCounts = Object.entries(counts)
+    .filter(([, value]) => Number(value) > 0)
+    .map(([key, value]) => `
+      <li>
+        <b>${escapeHtml(key)}</b>
+        <small>${escapeHtml(value)}</small>
+      </li>
+    `).join('');
+
+  return `
+    <details class="slx-worldinfo-details">
+      <summary>${escapeHtml(title)}</summary>
+      ${visibleCounts ? `<ul>${visibleCounts}</ul>` : '<p>暂无原始字段命中</p>'}
+    </details>
+  `;
+}
+
 export function renderContextDiagnostics() {
   const worldInfo = collectCachedWorldInfoContext();
   const diag = worldInfo.diagnostics || {};
@@ -82,6 +100,7 @@ export function renderContextDiagnostics() {
       ${renderWorldInfoEntryList('可用条目', usedEntries)}
       ${renderWorldInfoEntryList('可疑条目', diag.suspiciousEntries || [], { showReason: true })}
       ${renderWorldInfoEntryList('已过滤条目', diag.filteredEntries || [], { showReason: true })}
+      ${renderRawSourceCounts('缓存原始字段计数', diag.rawSourceCounts)}
       ${renderDryRunDiagnostics()}
     </div>
   `;
@@ -112,6 +131,7 @@ function renderDryRunDiagnostics() {
       ${renderDiagnosticLine('dry run 过滤条目', diag.filteredCount ?? 0)}
       ${renderDiagnosticLine('dry run 可疑条目', diag.suspiciousCount ?? 0)}
       ${renderDiagnosticLine('dry run 可用条目', diag.usedCount ?? 0)}
+      ${renderRawSourceCounts('dry run 原始字段计数', diag.rawSourceCounts)}
       ${renderWorldInfoEntryList('dry run 可用条目', usedEntries)}
       ${renderWorldInfoEntryList('dry run 可疑条目', diag.suspiciousEntries || [], { showReason: true })}
       ${renderWorldInfoEntryList('dry run 已过滤条目', diag.filteredEntries || [], { showReason: true })}

@@ -326,52 +326,77 @@ function normalizeWorldInfoEntry(entry, index = 0, source = 'event') {
   };
 }
 
+function getCollectionSize(collection) {
+  if (!collection) return 0;
+  if (Array.isArray(collection)) return collection.length;
+  if (collection instanceof Set || collection instanceof Map) return collection.size;
+  return 0;
+}
+
+function getCollectionValues(collection) {
+  if (!collection) return [];
+  if (Array.isArray(collection)) return collection;
+  if (collection instanceof Set || collection instanceof Map) return Array.from(collection.values());
+  return [];
+}
+
+function getWorldInfoPayloadSourceCounts(payload) {
+  if (!payload || typeof payload !== 'object') return {};
+  return {
+    payload: Array.isArray(payload) || payload instanceof Set || payload instanceof Map
+      ? getCollectionSize(payload)
+      : 0,
+    sortedEntries: getCollectionSize(payload.sortedEntries),
+    allActivatedEntries: getCollectionSize(payload.allActivatedEntries),
+    activatedEntries: getCollectionSize(payload.activated?.entries),
+    entries: getCollectionSize(payload.entries),
+    newAll: getCollectionSize(payload.new?.all),
+    newSuccessful: getCollectionSize(payload.new?.successful),
+    activatedTextLength: cleanText(payload.activated?.text).length,
+    worldInfoBeforeLength: cleanText(payload.worldInfoBefore).length,
+    worldInfoAfterLength: cleanText(payload.worldInfoAfter).length,
+  };
+}
+
+function dedupeWorldInfoEntries(entries = []) {
+  const seen = new Set();
+  return entries.filter(entry => {
+    if (!entry?.content) return false;
+    const dedupeKey = [
+      entry.world,
+      entry.comment,
+      entry.title,
+      entry.content,
+    ].map(cleanText).join('\n');
+    if (seen.has(dedupeKey)) return false;
+    seen.add(dedupeKey);
+    return true;
+  });
+}
+
 function normalizeWorldInfoEntriesFromPayload(payload, source = 'event') {
   if (!payload) return [];
-  if (Array.isArray(payload)) {
-    return payload.map((entry, index) => normalizeWorldInfoEntry(entry, index, source)).filter(Boolean);
-  }
-  if (payload instanceof Set) {
-    return Array.from(payload.values())
+  if (Array.isArray(payload) || payload instanceof Set || payload instanceof Map) {
+    return getCollectionValues(payload)
       .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
       .filter(Boolean);
   }
-  if (payload instanceof Map) {
-    return Array.from(payload.values())
-      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
-      .filter(Boolean);
-  }
-  if (Array.isArray(payload.sortedEntries)) {
-    return payload.sortedEntries
-      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
-      .filter(Boolean);
-  }
-  if (payload.allActivatedEntries instanceof Set || payload.allActivatedEntries instanceof Map) {
-    return Array.from(payload.allActivatedEntries.values())
-      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
-      .filter(Boolean);
-  }
-  if (Array.isArray(payload.allActivatedEntries)) {
-    return payload.allActivatedEntries
-      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
-      .filter(Boolean);
-  }
-  if (payload.activated?.entries instanceof Map) {
-    return Array.from(payload.activated.entries.values())
-      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
-      .filter(Boolean);
-  }
-  if (Array.isArray(payload.activated?.entries)) {
-    return payload.activated.entries
-      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
-      .filter(Boolean);
-  }
-  if (Array.isArray(payload.entries)) {
-    return payload.entries
-      .map((entry, index) => normalizeWorldInfoEntry(entry, index, source))
-      .filter(Boolean);
-  }
-  return [];
+
+  const sources = [
+    ['allActivatedEntries', payload.allActivatedEntries],
+    ['sortedEntries', payload.sortedEntries],
+    ['activated.entries', payload.activated?.entries],
+    ['entries', payload.entries],
+  ];
+
+  return dedupeWorldInfoEntries(sources.flatMap(([sourceField, collection]) => (
+    getCollectionValues(collection)
+      .map((entry, index) => ({
+        ...normalizeWorldInfoEntry(entry, index, source),
+        sourceField,
+      }))
+      .filter(entry => entry?.content)
+  )));
 }
 
 function getWorldInfoFilterText(entry) {
@@ -460,6 +485,7 @@ function getCurrentChatCacheKey() {
 }
 
 function rememberActivatedWorldInfo(entries, source) {
+  const rawSourceCounts = getWorldInfoPayloadSourceCounts(entries);
   const normalized = normalizeWorldInfoEntriesFromPayload(entries, source);
   const now = new Date().toISOString();
   const chatKey = getCurrentChatCacheKey();
@@ -469,6 +495,7 @@ function rememberActivatedWorldInfo(entries, source) {
     source,
     messageId: getLastMessageId(),
     capturedAt: now,
+    rawSourceCounts,
     entries: normalized,
   });
   activatedWorldInfoCache = activatedWorldInfoCache
@@ -502,6 +529,7 @@ export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT
     diagnostics: {
       source: cache.length ? 'event_cache' : 'event_cache_empty',
       cacheCount: cache.length,
+      rawSourceCounts: cache[0]?.rawSourceCounts || {},
       activatedCount: entries.length,
       filteredCount: filtered.filtered.length,
       suspiciousCount: filtered.suspicious.length,
@@ -614,6 +642,7 @@ export async function collectDryRunWorldInfoContext({
       true,
       getCharacterCardFieldsForWorldInfo(),
     );
+    const rawSourceCounts = getWorldInfoPayloadSourceCounts(result);
     const entries = normalizeWorldInfoEntriesFromPayload(result, 'dry_run');
     const filtered = filterActivatedWorldInfoEntries(entries, { limit });
     return {
@@ -621,6 +650,7 @@ export async function collectDryRunWorldInfoContext({
       diagnostics: {
         source: 'dry_run',
         cacheCount: 0,
+        rawSourceCounts,
         activatedCount: entries.length,
         filteredCount: filtered.filtered.length,
         suspiciousCount: filtered.suspicious.length,
