@@ -19,6 +19,10 @@ import {
   getContextSafe,
 } from './src/core/chat.js';
 import {
+  collectCachedWorldInfoContext,
+  registerWorldInfoContextEvents,
+} from './src/core/context-resolver.js';
+import {
   copyText,
   createCommunicationLog,
   formatCommunicationLogForCopy,
@@ -445,6 +449,18 @@ function renderDiagnosticLine(label, value) {
   return `<div class="slx-info-line"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
 }
 
+function renderContextDiagnostics() {
+  const worldInfo = collectCachedWorldInfoContext();
+  const diag = worldInfo.diagnostics || {};
+  return `
+    ${renderDiagnosticLine('世界书缓存批次', diag.cacheCount ?? 0)}
+    ${renderDiagnosticLine('世界书激活条目', diag.activatedCount ?? 0)}
+    ${renderDiagnosticLine('世界书过滤条目', diag.filteredCount ?? 0)}
+    ${renderDiagnosticLine('世界书可疑条目', diag.suspiciousCount ?? 0)}
+    ${renderDiagnosticLine('世界书可用条目', diag.usedCount ?? 0)}
+  `;
+}
+
 function renderLogDetailBlock(title, value) {
   const content = stringifyLogField(value);
   if (!content) {
@@ -622,6 +638,7 @@ function renderModuleDetail(module, settings) {
         ${renderDiagnosticLine('全局测试值', diagnostics.globalProbe)}
         ${renderDiagnosticLine('聊天测试值', diagnostics.chatProbe)}
         ${renderDiagnosticLine('通讯日志数', getCommunicationLogs(settings).length)}
+        ${renderContextDiagnostics()}
         ${renderDiagnosticLine('全局最近保存', diagnostics.globalLastSavedAt)}
         ${renderDiagnosticLine('聊天最近保存', diagnostics.chatLastSavedAt)}
       </div>
@@ -1096,6 +1113,7 @@ function init() {
   scanExistingSummaryState();
   registerAutoSummaryEvents();
   registerEmotionProfileEvents();
+  registerWorldInfoContextEvents();
   registerChatBeautifyRenderer();
   renderSettingsPanel();
   renderFloatingButton();
