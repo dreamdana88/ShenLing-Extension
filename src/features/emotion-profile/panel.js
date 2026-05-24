@@ -13,6 +13,7 @@ import {
   getCurrentPendingEmotionUpdates,
   getCurrentPendingEmotionMessageIds,
   syncEmotionProfileInjection,
+  updateCurrentPendingEmotionProfile,
 } from './workflow.js';
 
 let panelOptions = {
@@ -21,7 +22,9 @@ let panelOptions = {
 
 let emotionProfileEditorState = {
   open: false,
+  mode: 'profile',
   roleName: '',
+  messageId: null,
 };
 
 export function configureEmotionProfilePanel(options = {}) {
@@ -90,36 +93,54 @@ function getProfileUpdatedAt(profile, latestRecord) {
 function closeEmotionProfileEditor() {
   emotionProfileEditorState = {
     open: false,
+    mode: 'profile',
     roleName: '',
+    messageId: null,
   };
 }
 
-function openEmotionProfileEditor(roleName) {
+function openEmotionProfileEditor(roleName, { mode = 'profile', messageId = null } = {}) {
   emotionProfileEditorState = {
     open: true,
+    mode,
     roleName: String(roleName || ''),
+    messageId: messageId === null ? null : Number(messageId),
   };
+}
+
+function getPendingEditorProfile() {
+  const roleName = emotionProfileEditorState.roleName;
+  const messageId = Number(emotionProfileEditorState.messageId);
+  if (!roleName || !Number.isFinite(messageId)) return null;
+  const pendingItems = getCurrentPendingEmotionUpdates();
+  const item = pendingItems.find(candidate => Number(candidate.messageId) === messageId);
+  return item?.profiles?.find(profile => String(profile.roleName || '') === roleName) || null;
 }
 
 function renderEmotionProfileEditor(chatState) {
   if (!emotionProfileEditorState.open) return '';
   const roleName = emotionProfileEditorState.roleName;
+  const isPending = emotionProfileEditorState.mode === 'pending';
   const store = getEmotionProfileStore(chatState);
-  const profile = store.profiles[roleName];
+  const profile = isPending ? getPendingEditorProfile() : store.profiles[roleName];
   if (!isPlainObject(profile)) return '';
 
-  const records = getProfileRecords(profile);
+  const records = isPending ? [] : getProfileRecords(profile);
   const latestRecord = records.at(-1) || null;
-  const currentStatus = getProfileCurrentStatus(profile, latestRecord);
-  const latestChange = getProfileLatestChange(latestRecord);
+  const currentStatus = isPending
+    ? String(profile.currentStatus || '').trim() || '尚未整理'
+    : getProfileCurrentStatus(profile, latestRecord);
+  const latestChange = isPending
+    ? String(profile.changeSummary || '').trim() || '尚未记录显著变化'
+    : getProfileLatestChange(latestRecord);
 
   return `
     <div class="slx-rule-modal" data-slx-close-emotion-editor>
       <div class="slx-rule-modal-card slx-emotion-editor-card" data-slx-emotion-editor-card>
         <div class="slx-summary-card-head">
           <div>
-            <div class="slx-detail-title">编辑情感档案</div>
-            <p>${escapeHtml(profile.name || roleName)}</p>
+            <div class="slx-detail-title">${isPending ? '编辑待确认情感变化' : '编辑情感档案'}</div>
+            <p>${escapeHtml(profile.name || profile.roleName || roleName)}</p>
           </div>
           <button class="slx-mini-action-btn" type="button" data-slx-close-emotion-editor title="关闭"><i class="fa-solid fa-xmark"></i></button>
         </div>
@@ -142,6 +163,21 @@ function renderEmotionProfileEditor(chatState) {
 function saveEmotionProfileEditor(panelRoot) {
   const roleName = emotionProfileEditorState.roleName;
   if (!roleName) return;
+  const currentStatus = String(panelRoot.querySelector('[data-slx-emotion-edit-current]')?.value || '').trim();
+  const latestChange = String(panelRoot.querySelector('[data-slx-emotion-edit-change]')?.value || '').trim();
+
+  if (emotionProfileEditorState.mode === 'pending') {
+    updateCurrentPendingEmotionProfile({
+      messageId: emotionProfileEditorState.messageId,
+      roleName,
+      currentStatus,
+      changeSummary: latestChange,
+    });
+    closeEmotionProfileEditor();
+    refreshPanel();
+    return;
+  }
+
   const chatState = getChatState();
   const store = getEmotionProfileStore(chatState);
   const profile = store.profiles[roleName];
@@ -150,9 +186,6 @@ function saveEmotionProfileEditor(panelRoot) {
   const records = getProfileRecords(profile);
   const latestRecord = records.at(-1);
   if (!latestRecord) return;
-
-  const currentStatus = String(panelRoot.querySelector('[data-slx-emotion-edit-current]')?.value || '').trim();
-  const latestChange = String(panelRoot.querySelector('[data-slx-emotion-edit-change]')?.value || '').trim();
   const now = formatTimestamp();
 
   latestRecord.currentStatus = currentStatus;
@@ -236,6 +269,7 @@ function renderPendingEmotionPanel(settings) {
             <div class="slx-detail-title">${escapeHtml(profile.roleName || '未命名角色')}</div>
             <p>第 ${escapeHtml(item.messageId)} 楼 · 待确认</p>
           </div>
+          <button class="slx-mini-action-btn" type="button" data-slx-edit-pending-emotion-profile="${escapeHtml(profile.roleName || '')}" data-slx-pending-emotion-message-id="${escapeHtml(item.messageId)}" title="编辑待确认变化"><i class="fa-solid fa-pen-to-square"></i></button>
         </div>
         <div class="slx-emotion-profile-section">
           <span>待确认状态</span>
@@ -315,6 +349,16 @@ export function bindEmotionProfilePanelEvents(panelRoot, settings) {
   panelRoot.querySelectorAll('[data-slx-edit-emotion-profile]').forEach(button => {
     button.addEventListener('click', () => {
       openEmotionProfileEditor(button.dataset.slxEditEmotionProfile || '');
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-edit-pending-emotion-profile]').forEach(button => {
+    button.addEventListener('click', () => {
+      openEmotionProfileEditor(button.dataset.slxEditPendingEmotionProfile || '', {
+        mode: 'pending',
+        messageId: button.dataset.slxPendingEmotionMessageId,
+      });
       refreshPanel();
     });
   });

@@ -263,6 +263,37 @@ export function getCurrentPendingEmotionUpdates(settings = getGlobalSettings()) 
     }));
 }
 
+export function updateCurrentPendingEmotionProfile({ messageId, roleName, currentStatus, changeSummary, relationshipToUser = '' } = {}, settings = getGlobalSettings()) {
+  const numericMessageId = Number(messageId);
+  const cleanRoleName = normalizeRoleName(roleName);
+  if (!Number.isFinite(numericMessageId) || !cleanRoleName) return false;
+
+  const chatState = getChatState();
+  const store = getEmotionProfileStore(chatState);
+  const bucket = store.pendingByMessage?.[String(numericMessageId)];
+  if (!isPlainObject(bucket) || !isPlainObject(bucket.items)) return false;
+
+  const fingerprint = getMessageEmotionFingerprint(numericMessageId, settings);
+  if (!fingerprint) return false;
+
+  const item = bucket.items[fingerprint];
+  if (!isPlainObject(item) || !Array.isArray(item.profiles)) return false;
+
+  const profile = item.profiles.find(candidate => normalizeRoleName(candidate.roleName) === cleanRoleName);
+  if (!profile) return false;
+
+  profile.currentStatus = String(currentStatus || '').trim();
+  profile.changeSummary = String(changeSummary || '').trim();
+  if (relationshipToUser !== undefined) {
+    profile.relationshipToUser = String(relationshipToUser || '').trim();
+  }
+  item.updatedAt = formatTimestamp();
+  bucket.updatedAt = item.updatedAt;
+  store.lastPendingAt = item.updatedAt;
+  saveChatState();
+  return true;
+}
+
 export function getCurrentPendingEmotionMessageIds(settings = getGlobalSettings()) {
   return new Set(getCurrentPendingEmotionItems(settings).map(item => Number(item.messageId)));
 }
