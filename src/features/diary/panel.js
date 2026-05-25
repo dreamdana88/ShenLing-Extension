@@ -28,6 +28,8 @@ const DEFAULT_PAGES = [
   { id: 'lined', label: '横线手账' },
 ];
 
+const DIARY_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+
 let panelOptions = {
   refreshPanel: null,
 };
@@ -79,6 +81,25 @@ function normalizeDiarySettings(settings = {}) {
     customCover: String(settings.customCover || '').trim(),
     customPage: String(settings.customPage || '').trim(),
   };
+}
+
+function toCssString(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '');
+}
+
+function getSafeImageSource(value) {
+  const source = String(value || '').trim();
+  if (/^(data:image\/|https?:\/\/|blob:)/i.test(source)) return source;
+  return '';
+}
+
+function buildDiaryVisualStyle(settings = {}) {
+  const coverImage = getSafeImageSource(settings.customCover);
+  const pageImage = getSafeImageSource(settings.customPage);
+  const declarations = [];
+  if (coverImage) declarations.push(`--slx-diary-cover-image: url("${toCssString(coverImage)}")`);
+  if (pageImage) declarations.push(`--slx-diary-page-image: url("${toCssString(pageImage)}")`);
+  return declarations.length ? ` style="${escapeHtml(declarations.join('; '))}"` : '';
 }
 
 function getDiaryStore(chatState) {
@@ -338,6 +359,8 @@ function renderDiaryLibrary(chatState) {
 function renderDiarySettings(chatState) {
   const store = getDiaryStore(chatState);
   const settings = store.settings;
+  const hasCustomCover = Boolean(getSafeImageSource(settings.customCover));
+  const hasCustomPage = Boolean(getSafeImageSource(settings.customPage));
   return `
     <div class="slx-detail-card slx-diary-shell-card">
       <div class="slx-summary-card-head">
@@ -376,12 +399,28 @@ function renderDiarySettings(chatState) {
         </label>
         <label class="slx-field slx-field-wide">
           <span>封面图片地址</span>
-          <input type="text" data-slx-diary-custom-cover value="${escapeHtml(settings.customCover)}" placeholder="后续可接上传，这里先预留图片地址" />
+          <input type="text" data-slx-diary-custom-cover value="${escapeHtml(settings.customCover)}" placeholder="可粘贴图片地址，或使用下方上传" />
         </label>
         <label class="slx-field slx-field-wide">
           <span>内页图片地址</span>
-          <input type="text" data-slx-diary-custom-page value="${escapeHtml(settings.customPage)}" placeholder="后续可接上传，这里先预留图片地址" />
+          <input type="text" data-slx-diary-custom-page value="${escapeHtml(settings.customPage)}" placeholder="可粘贴图片地址，或使用下方上传" />
         </label>
+      </div>
+      <div class="slx-diary-upload-grid">
+        <label class="slx-diary-upload-box">
+          <span><i class="fa-solid fa-image"></i> 上传封面</span>
+          <input type="file" accept="image/*" data-slx-diary-upload-cover />
+          <small>${hasCustomCover ? '已设置自定义封面' : '建议竖版图片，最大 4 MB'}</small>
+        </label>
+        <label class="slx-diary-upload-box">
+          <span><i class="fa-solid fa-file-image"></i> 上传内页</span>
+          <input type="file" accept="image/*" data-slx-diary-upload-page />
+          <small>${hasCustomPage ? '已设置自定义内页' : '建议纸张纹理，最大 4 MB'}</small>
+        </label>
+      </div>
+      <div class="slx-action-row">
+        <button class="slx-soft-btn" type="button" data-slx-clear-diary-cover ${hasCustomCover ? '' : 'disabled'}>清除封面</button>
+        <button class="slx-soft-btn" type="button" data-slx-clear-diary-page ${hasCustomPage ? '' : 'disabled'}>清除内页</button>
       </div>
     </div>
   `;
@@ -601,9 +640,10 @@ function renderDiaryNotebookModal(chatState) {
   if (diaryPanelState.tab !== 'notebooks' || diaryPanelState.screen === 'library') return '';
   const roleName = diaryPanelState.roleName || diaryPanelState.composeRoleName || '未命名日记本';
   const stageClass = diaryPanelState.screen === 'cover' ? 'slx-diary-stage-cover' : 'slx-diary-stage-open';
+  const visualStyle = buildDiaryVisualStyle(getDiaryStore(chatState).settings);
   return `
     <div class="slx-diary-notebook-modal" data-slx-close-diary-notebook>
-      <div class="slx-diary-notebook-stage ${stageClass}" data-slx-diary-notebook-stage>
+      <div class="slx-diary-notebook-stage ${stageClass}" data-slx-diary-notebook-stage${visualStyle}>
         <div class="slx-diary-notebook-toolbar">
           <div>
             <b>${escapeHtml(roleName)}</b>
@@ -848,6 +888,52 @@ function saveDiarySettings(panelRoot) {
   saveChatState();
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => resolve(String(reader.result || '')));
+    reader.addEventListener('error', () => reject(reader.error || new Error('图片读取失败。')));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadDiaryImage(input, key) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    alert('请选择图片文件。');
+    input.value = '';
+    return;
+  }
+  if (file.size > DIARY_IMAGE_MAX_BYTES) {
+    alert('图片太大啦，建议压到 4 MB 以内再上传。');
+    input.value = '';
+    return;
+  }
+
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    const chatState = getChatState();
+    const store = getDiaryStore(chatState);
+    store.settings[key] = dataUrl;
+    store.lastSavedAt = formatTimestamp();
+    saveChatState();
+    input.value = '';
+    refreshPanel();
+  } catch (error) {
+    alert(error.message || '图片上传失败。');
+  }
+}
+
+function clearDiaryImage(key) {
+  const chatState = getChatState();
+  const store = getDiaryStore(chatState);
+  store.settings[key] = '';
+  store.lastSavedAt = formatTimestamp();
+  saveChatState();
+  refreshPanel();
+}
+
 export function bindDiaryPanelEvents(panelRoot) {
   panelRoot.addEventListener('click', event => {
     const openCover = event.target.closest?.('[data-slx-open-diary-toc]');
@@ -1001,5 +1087,21 @@ export function bindDiaryPanelEvents(panelRoot) {
     '[data-slx-diary-custom-page]',
   ].forEach(selector => {
     panelRoot.querySelector(selector)?.addEventListener('change', () => saveDiarySettings(panelRoot));
+  });
+
+  panelRoot.querySelector('[data-slx-diary-upload-cover]')?.addEventListener('change', event => {
+    void uploadDiaryImage(event.currentTarget, 'customCover');
+  });
+
+  panelRoot.querySelector('[data-slx-diary-upload-page]')?.addEventListener('change', event => {
+    void uploadDiaryImage(event.currentTarget, 'customPage');
+  });
+
+  panelRoot.querySelector('[data-slx-clear-diary-cover]')?.addEventListener('click', () => {
+    clearDiaryImage('customCover');
+  });
+
+  panelRoot.querySelector('[data-slx-clear-diary-page]')?.addEventListener('click', () => {
+    clearDiaryImage('customPage');
   });
 }

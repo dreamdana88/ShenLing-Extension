@@ -1003,9 +1003,20 @@ body.slx-panel-open-lock {
   border: 1px solid rgba(72, 42, 34, 0.34);
   border-radius: 8px;
   background:
+    var(--slx-diary-cover-image, linear-gradient(transparent, transparent)),
     linear-gradient(90deg, rgba(49, 28, 23, 0.38) 0 18px, transparent 18px),
     radial-gradient(circle at 75% 20%, rgba(232, 204, 133, 0.18), transparent 30%),
     linear-gradient(135deg, #6f3935, #2e4a3d 58%, #261f21);
+  background-size:
+    cover,
+    auto,
+    auto,
+    auto;
+  background-position:
+    center,
+    center,
+    center,
+    center;
   box-shadow:
     0 18px 40px rgba(0, 0, 0, 0.22),
     inset 0 0 0 1px rgba(255, 232, 171, 0.12);
@@ -1166,6 +1177,43 @@ body.slx-panel-open-lock {
 .slx-diary-pill-toggle button.is-active {
   background: var(--slx-accent);
   color: var(--slx-accent-ink);
+}
+
+.slx-diary-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.slx-diary-upload-box {
+  min-width: 0;
+  border: 1px dashed var(--slx-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--slx-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px;
+}
+
+.slx-diary-upload-box span {
+  color: var(--slx-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.slx-diary-upload-box input {
+  width: 100%;
+  max-width: 100%;
+  color: var(--slx-muted);
+  font-size: 11px;
+}
+
+.slx-diary-upload-box small {
+  color: var(--slx-muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .slx-diary-list-block {
@@ -1367,8 +1415,17 @@ body.slx-panel-open-lock {
   min-width: 0;
   padding: 38px 42px 42px;
   background:
+    var(--slx-diary-page-image, linear-gradient(transparent, transparent)),
     linear-gradient(135deg, rgba(255, 248, 219, 0.96), rgba(232, 214, 166, 0.94)),
     repeating-linear-gradient(0deg, transparent 0, transparent 31px, rgba(122, 84, 44, 0.08) 32px);
+  background-size:
+    cover,
+    auto,
+    auto;
+  background-position:
+    center,
+    center,
+    center;
   color: #4f3926;
   overflow-y: auto;
   scrollbar-width: thin;
