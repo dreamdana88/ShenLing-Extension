@@ -781,8 +781,22 @@ body.slx-panel-open-lock {
   gap: 11px;
 }
 
+.slx-diary-home-card {
+  gap: 10px;
+}
+
+.slx-diary-tabs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .slx-diary-new-textarea {
   min-height: 138px;
+}
+
+.slx-diary-list-block {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }
 
 .slx-diary-list {
@@ -812,6 +826,22 @@ body.slx-panel-open-lock {
   line-height: 1.6;
   padding: 9px 10px;
   white-space: pre-wrap;
+}
+
+.slx-diary-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.slx-diary-meta-row span {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--slx-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 5px 8px;
 }
 
 .slx-diary-empty {
@@ -885,6 +915,124 @@ body.slx-panel-open-lock {
 
 .slx-diary-editor-textarea {
   min-height: 220px;
+}
+
+.slx-diary-reader-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 8, 6, 0.72);
+  padding: 18px;
+}
+
+.slx-diary-reader-stage {
+  width: min(920px, 100%);
+  max-height: min(640px, calc(var(--slx-viewport-height) - 36px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slx-diary-reader-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(244, 224, 188, 0.95);
+}
+
+.slx-diary-reader-toolbar b,
+.slx-diary-reader-toolbar span {
+  display: block;
+}
+
+.slx-diary-reader-toolbar b {
+  font-size: 15px;
+}
+
+.slx-diary-reader-toolbar span {
+  color: rgba(244, 224, 188, 0.64);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.slx-diary-book-spread {
+  position: relative;
+  min-height: 440px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(88, 58, 35, 0.16), transparent 8%, transparent 92%, rgba(88, 58, 35, 0.18)),
+    #e8d8aa;
+  box-shadow:
+    0 22px 70px rgba(0, 0, 0, 0.48),
+    inset 0 0 0 1px rgba(98, 70, 36, 0.16);
+  overflow: hidden;
+}
+
+.slx-diary-book-spread::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 18px;
+  transform: translateX(-50%);
+  background:
+    linear-gradient(90deg, rgba(88, 58, 35, 0.18), rgba(255, 246, 211, 0.16), rgba(88, 58, 35, 0.16));
+  pointer-events: none;
+}
+
+.slx-diary-book-page {
+  position: relative;
+  min-width: 0;
+  padding: 38px 42px 42px;
+  background:
+    linear-gradient(135deg, rgba(255, 248, 219, 0.96), rgba(232, 214, 166, 0.94)),
+    repeating-linear-gradient(0deg, transparent 0, transparent 31px, rgba(122, 84, 44, 0.08) 32px);
+  color: #4f3926;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(122, 84, 44, 0.24) transparent;
+}
+
+.slx-diary-book-page-right {
+  box-shadow: inset 18px 0 28px rgba(96, 68, 39, 0.08);
+}
+
+.slx-diary-book-page-title {
+  color: #8b4b43;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 18px;
+  letter-spacing: 0.12em;
+}
+
+.slx-diary-book-rule {
+  height: 1px;
+  margin: 14px 0 24px;
+  background: rgba(139, 75, 67, 0.42);
+}
+
+.slx-diary-book-page p {
+  margin: 0;
+  color: #4f3926;
+  font-family: 'Noto Serif SC', Georgia, serif;
+  font-size: 16px;
+  line-height: 2;
+  white-space: pre-wrap;
+}
+
+.slx-diary-book-page-num {
+  position: absolute;
+  right: 38px;
+  bottom: 20px;
+  color: #8b4b43;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 13px;
 }
 
 @media (max-width: 768px) {
@@ -1920,8 +2068,45 @@ body.slx-panel-open-lock {
     grid-template-columns: 1fr;
   }
 
+  .slx-diary-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .slx-diary-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .slx-diary-reader-modal {
+    padding: 10px;
+  }
+
+  .slx-diary-reader-stage {
+    max-height: calc(var(--slx-viewport-height) - 20px);
+  }
+
+  .slx-diary-book-spread {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    max-height: calc(var(--slx-viewport-height) - 78px);
+    overflow-y: auto;
+  }
+
+  .slx-diary-book-spread::after {
+    display: none;
+  }
+
+  .slx-diary-book-page {
+    min-height: 420px;
+    padding: 30px 26px 40px;
+  }
+
+  .slx-diary-book-page-right {
+    box-shadow: inset 0 12px 24px rgba(96, 68, 39, 0.08);
+  }
+
+  .slx-diary-book-page p {
+    font-size: 14px;
+    line-height: 1.9;
   }
 }
 
