@@ -904,7 +904,10 @@ export function bindDiaryPanelEvents(panelRoot) {
 
   panelRoot.querySelectorAll('[data-slx-close-diary-notebook]').forEach(node => {
     node.addEventListener('click', event => {
-      if (event.target.closest?.('[data-slx-diary-notebook-stage]') && !event.target.closest?.('[data-slx-close-diary-notebook]')) {
+      const clickedBackdrop = event.target === node && node.classList?.contains('slx-diary-notebook-modal');
+      const closeControl = event.target.closest?.('[data-slx-close-diary-notebook]');
+      const clickedCloseButton = Boolean(closeControl && closeControl !== node);
+      if (!clickedBackdrop && !clickedCloseButton) {
         return;
       }
       setDiaryScreen('library', { roleName: '', entryId: '' });
