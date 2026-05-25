@@ -600,9 +600,10 @@ function renderDiaryNotebookBody(chatState) {
 function renderDiaryNotebookModal(chatState) {
   if (diaryPanelState.tab !== 'notebooks' || diaryPanelState.screen === 'library') return '';
   const roleName = diaryPanelState.roleName || diaryPanelState.composeRoleName || '未命名日记本';
+  const stageClass = diaryPanelState.screen === 'cover' ? 'slx-diary-stage-cover' : 'slx-diary-stage-open';
   return `
     <div class="slx-diary-notebook-modal" data-slx-close-diary-notebook>
-      <div class="slx-diary-notebook-stage" data-slx-diary-notebook-stage>
+      <div class="slx-diary-notebook-stage ${stageClass}" data-slx-diary-notebook-stage>
         <div class="slx-diary-notebook-toolbar">
           <div>
             <b>${escapeHtml(roleName)}</b>
@@ -848,6 +849,14 @@ function saveDiarySettings(panelRoot) {
 }
 
 export function bindDiaryPanelEvents(panelRoot) {
+  panelRoot.addEventListener('click', event => {
+    const openCover = event.target.closest?.('[data-slx-open-diary-toc]');
+    if (openCover) {
+      event.preventDefault();
+      setDiaryScreen('toc', { entryId: '' });
+    }
+  });
+
   panelRoot.querySelectorAll('[data-slx-diary-tab]').forEach(button => {
     button.addEventListener('click', () => {
       diaryPanelState.tab = button.dataset.slxDiaryTab || 'notebooks';
@@ -907,10 +916,6 @@ export function bindDiaryPanelEvents(panelRoot) {
   });
 
   panelRoot.querySelector('[data-slx-diary-back-toc]')?.addEventListener('click', () => {
-    setDiaryScreen('toc', { entryId: '' });
-  });
-
-  panelRoot.querySelector('[data-slx-open-diary-toc]')?.addEventListener('click', () => {
     setDiaryScreen('toc', { entryId: '' });
   });
 
