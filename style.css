@@ -777,6 +777,116 @@ body.slx-panel-open-lock {
   line-height: 1.5;
 }
 
+.slx-diary-shell-card {
+  gap: 11px;
+}
+
+.slx-diary-new-textarea {
+  min-height: 138px;
+}
+
+.slx-diary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slx-diary-entry {
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 12px;
+  background: var(--slx-bg-card);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.slx-diary-preview {
+  max-height: 148px;
+  overflow: hidden;
+  margin: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--slx-text);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 9px 10px;
+  white-space: pre-wrap;
+}
+
+.slx-diary-empty {
+  border: 1px dashed var(--slx-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--slx-muted);
+  padding: 18px 14px;
+  text-align: center;
+}
+
+.slx-diary-empty b {
+  display: block;
+  color: var(--slx-text);
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+
+.slx-diary-empty p {
+  margin: 0;
+  color: var(--slx-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.slx-diary-context-result {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border-top: 1px solid var(--slx-border-dim);
+  padding-top: 9px;
+}
+
+.slx-diary-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.slx-diary-stat-grid span {
+  min-width: 0;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 8px;
+}
+
+.slx-diary-stat-grid b,
+.slx-diary-stat-grid small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slx-diary-stat-grid b {
+  color: var(--slx-text);
+  font-size: 14px;
+}
+
+.slx-diary-stat-grid small {
+  color: var(--slx-muted);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.slx-diary-editor-card {
+  width: min(600px, 100%);
+}
+
+.slx-diary-editor-textarea {
+  min-height: 220px;
+}
+
 @media (max-width: 768px) {
   .shenling-assistant-fab {
     top: clamp(
@@ -1808,6 +1918,10 @@ body.slx-panel-open-lock {
 
   .slx-action-row {
     grid-template-columns: 1fr;
+  }
+
+  .slx-diary-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

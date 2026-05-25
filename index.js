@@ -62,6 +62,11 @@ import {
   renderEmotionProfilePanel,
 } from './src/features/emotion-profile/panel.js';
 import {
+  bindDiaryPanelEvents,
+  configureDiaryPanel,
+  renderDiaryPanel,
+} from './src/features/diary/panel.js';
+import {
   configureEmotionProfileWorkflow,
   registerEmotionProfileEvents,
 } from './src/features/emotion-profile/workflow.js';
@@ -599,6 +604,10 @@ function renderModuleDetail(module, settings) {
     return renderEmotionProfilePanel(settings, chatState);
   }
 
+  if (module.id === 'diary') {
+    return renderDiaryPanel(settings, chatState);
+  }
+
   if (module.id === 'settings') {
     return `
 
@@ -836,6 +845,7 @@ function renderFloatingPanel(options = {}) {
   bindSummaryPanelEvents(panelRoot, settings);
   bindWordReplacePanelEvents(panelRoot, settings);
   bindEmotionProfilePanelEvents(panelRoot, settings);
+  bindDiaryPanelEvents(panelRoot);
   bindContextDiagnosticsPanelEvents(panelRoot);
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
@@ -1087,6 +1097,9 @@ function init() {
     refreshPanel: renderFloatingPanel,
   });
   configureEmotionProfilePanel({
+    refreshPanel: renderFloatingPanel,
+  });
+  configureDiaryPanel({
     refreshPanel: renderFloatingPanel,
   });
   configureContextDiagnosticsPanel({
