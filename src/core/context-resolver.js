@@ -206,7 +206,7 @@ function normalizeChatRecord(message) {
 export function collectRecentChatMessages({
   limit = DEFAULT_RECENT_MESSAGE_LIMIT,
   includeHidden = false,
-  maxContentLength = 1200,
+  maxContentLength = 0,
 } = {}) {
   const safeLimit = Math.max(0, Number(limit) || DEFAULT_RECENT_MESSAGE_LIMIT);
   const messages = getChatMessagesSafe(undefined, { hide_state: 'all' })
@@ -358,6 +358,28 @@ function getWorldInfoPayloadSourceCounts(payload) {
   };
 }
 
+function getWorldInfoInjectionFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return {
+      worldInfoBefore: '',
+      worldInfoAfter: '',
+      injectionText: '',
+    };
+  }
+
+  const worldInfoBefore = cleanText(payload.worldInfoBefore);
+  const worldInfoAfter = cleanText(payload.worldInfoAfter);
+  const activatedText = cleanText(payload.activated?.text);
+  const injectionText = [worldInfoBefore, worldInfoAfter].filter(Boolean).join('\n\n')
+    || activatedText;
+
+  return {
+    worldInfoBefore,
+    worldInfoAfter,
+    injectionText,
+  };
+}
+
 function dedupeWorldInfoEntries(entries = []) {
   const seen = new Set();
   return entries.filter(entry => {
@@ -486,6 +508,7 @@ function getCurrentChatCacheKey() {
 
 function rememberActivatedWorldInfo(entries, source) {
   const rawSourceCounts = getWorldInfoPayloadSourceCounts(entries);
+  const injection = getWorldInfoInjectionFromPayload(entries);
   const normalized = normalizeWorldInfoEntriesFromPayload(entries, source);
   const now = new Date().toISOString();
   const chatKey = getCurrentChatCacheKey();
@@ -496,6 +519,7 @@ function rememberActivatedWorldInfo(entries, source) {
     messageId: getLastMessageId(),
     capturedAt: now,
     rawSourceCounts,
+    ...injection,
     entries: normalized,
   });
   activatedWorldInfoCache = activatedWorldInfoCache
@@ -517,6 +541,7 @@ export function clearActivatedWorldInfoCache() {
 
 export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT } = {}) {
   const cache = getActivatedWorldInfoCache();
+  const latestInjection = cache.find(record => record.injectionText) || null;
   const entries = cache.flatMap(record => record.entries.map(entry => ({
     ...entry,
     capturedAt: record.capturedAt,
@@ -526,10 +551,16 @@ export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT
   const filtered = filterActivatedWorldInfoEntries(entries, { limit });
   return {
     entries: filtered.used,
+    worldInfoBefore: latestInjection?.worldInfoBefore || '',
+    worldInfoAfter: latestInjection?.worldInfoAfter || '',
+    injectionText: latestInjection?.injectionText || '',
     diagnostics: {
       source: cache.length ? 'event_cache' : 'event_cache_empty',
       cacheCount: cache.length,
       rawSourceCounts: cache[0]?.rawSourceCounts || {},
+      worldInfoBeforeLength: cleanText(latestInjection?.worldInfoBefore).length,
+      worldInfoAfterLength: cleanText(latestInjection?.worldInfoAfter).length,
+      injectionTextLength: cleanText(latestInjection?.injectionText).length,
       activatedCount: entries.length,
       filteredCount: filtered.filtered.length,
       suspiciousCount: filtered.suspicious.length,
@@ -601,10 +632,22 @@ async function getWorldInfoMaxContext() {
   return DEFAULT_DRY_RUN_MAX_CONTEXT;
 }
 
-function buildWorldInfoScanChat(messages = collectRecentChatMessages()) {
+function shouldIncludeNamesForWorldInfo(worldInfoModule = null) {
+  if (typeof worldInfoModule?.world_info_include_names === 'boolean') {
+    return worldInfoModule.world_info_include_names;
+  }
+  if (typeof globalThis.world_info_include_names === 'boolean') {
+    return globalThis.world_info_include_names;
+  }
+  return true;
+}
+
+function buildWorldInfoScanChat(messages = collectRecentChatMessages(), {
+  includeNames = true,
+} = {}) {
   return messages
     .filter(message => message.content)
-    .map(message => `${message.speaker}: ${message.content}`)
+    .map(message => (includeNames ? `${message.speaker}: ${message.content}` : message.content))
     .reverse();
 }
 
@@ -619,10 +662,16 @@ export async function collectDryRunWorldInfoContext({
       throw new Error('当前环境未发现 checkWorldInfo。');
     }
 
-    const chatForScan = buildWorldInfoScanChat(Array.isArray(recentMessages) ? recentMessages : collectRecentChatMessages());
+    const chatForScan = buildWorldInfoScanChat(
+      Array.isArray(recentMessages) ? recentMessages : collectRecentChatMessages(),
+      { includeNames: shouldIncludeNamesForWorldInfo(worldInfoModule) },
+    );
     if (!chatForScan.length) {
       return {
         entries: [],
+        worldInfoBefore: '',
+        worldInfoAfter: '',
+        injectionText: '',
         diagnostics: {
           source: 'dry_run_empty_chat',
           cacheCount: 0,
@@ -643,14 +692,21 @@ export async function collectDryRunWorldInfoContext({
       getCharacterCardFieldsForWorldInfo(),
     );
     const rawSourceCounts = getWorldInfoPayloadSourceCounts(result);
+    const injection = getWorldInfoInjectionFromPayload(result);
     const entries = normalizeWorldInfoEntriesFromPayload(result, 'dry_run');
     const filtered = filterActivatedWorldInfoEntries(entries, { limit });
     return {
       entries: filtered.used,
+      worldInfoBefore: injection.worldInfoBefore,
+      worldInfoAfter: injection.worldInfoAfter,
+      injectionText: injection.injectionText,
       diagnostics: {
         source: 'dry_run',
         cacheCount: 0,
         rawSourceCounts,
+        worldInfoBeforeLength: injection.worldInfoBefore.length,
+        worldInfoAfterLength: injection.worldInfoAfter.length,
+        injectionTextLength: injection.injectionText.length,
         activatedCount: entries.length,
         filteredCount: filtered.filtered.length,
         suspiciousCount: filtered.suspicious.length,
@@ -671,6 +727,9 @@ export async function collectDryRunWorldInfoContext({
   } catch (error) {
     return {
       entries: [],
+      worldInfoBefore: '',
+      worldInfoAfter: '',
+      injectionText: '',
       diagnostics: {
         source: 'dry_run_failed',
         cacheCount: 0,
@@ -696,13 +755,39 @@ export async function collectWorldInfoContext({
   }
 
   const cached = collectCachedWorldInfoContext({ limit });
-  if (cached.entries.length || mode === 'cache_only') return cached;
+  if (mode === 'cache_only') return cached;
+  if (cached.entries.length && cached.injectionText) return cached;
 
   const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages });
+  if (cached.entries.length) {
+    const hasDryRunInjection = Boolean(dryRun.injectionText);
+    return {
+      entries: cached.entries,
+      worldInfoBefore: cached.worldInfoBefore || dryRun.worldInfoBefore || '',
+      worldInfoAfter: cached.worldInfoAfter || dryRun.worldInfoAfter || '',
+      injectionText: cached.injectionText || dryRun.injectionText || '',
+      diagnostics: {
+        ...cached.diagnostics,
+        source: hasDryRunInjection ? 'event_cache_with_dry_run_injection' : cached.diagnostics.source,
+        worldInfoBeforeLength: cleanText(cached.worldInfoBefore || dryRun.worldInfoBefore).length,
+        worldInfoAfterLength: cleanText(cached.worldInfoAfter || dryRun.worldInfoAfter).length,
+        injectionTextLength: cleanText(cached.injectionText || dryRun.injectionText).length,
+        notes: [
+          ...(cached.diagnostics.notes || []),
+          ...(hasDryRunInjection ? ['实际触发缓存缺少注入文本，已用 dry run 补齐世界书文本兜底。'] : []),
+          ...(!hasDryRunInjection ? (dryRun.diagnostics.notes || []) : []),
+        ],
+      },
+    };
+  }
+
   if (dryRun.entries.length || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
 
   return {
     entries: cached.entries,
+    worldInfoBefore: cached.worldInfoBefore || '',
+    worldInfoAfter: cached.worldInfoAfter || '',
+    injectionText: cached.injectionText || '',
     diagnostics: {
       ...cached.diagnostics,
       source: 'event_cache_empty_dry_run_failed',
@@ -792,6 +877,9 @@ export async function resolveShenlingContext(options = {}) {
     })
     : {
       entries: [],
+      worldInfoBefore: '',
+      worldInfoAfter: '',
+      injectionText: '',
       diagnostics: {
         source: 'disabled',
         activatedCount: 0,
@@ -813,6 +901,9 @@ export async function resolveShenlingContext(options = {}) {
     grandMemories,
     emotionProfiles,
     activatedWorldInfo: worldInfo.entries,
+    worldInfoBefore: worldInfo.worldInfoBefore || '',
+    worldInfoAfter: worldInfo.worldInfoAfter || '',
+    worldInfoInjectionText: worldInfo.injectionText || '',
     diagnostics: {
       recentMessageCount: recentMessages.length,
       memoryCount: memories.length,
@@ -867,6 +958,21 @@ function formatWorldInfoForDiary(entries = []) {
   ].filter(Boolean).join('\n')).join('\n\n');
 }
 
+function formatWorldInfoInjectionForDiary(context = {}) {
+  const before = cleanText(context.worldInfoBefore);
+  const after = cleanText(context.worldInfoAfter);
+  const injectionText = cleanText(context.worldInfoInjectionText);
+
+  if (before || after) {
+    return [
+      before ? `### worldInfoBefore\n${before}` : '',
+      after ? `### worldInfoAfter\n${after}` : '',
+    ].filter(Boolean).join('\n\n');
+  }
+
+  return injectionText;
+}
+
 export function buildDiaryContextMaterial(context = {}) {
   const targetRoleName = cleanText(context.targetRoleName);
   const sections = [
@@ -878,6 +984,7 @@ export function buildDiaryContextMaterial(context = {}) {
     createSection('近期 grand_memory', formatMemoryItemsForDiary(context.grandMemories, '近期 grand_memory')),
     createSection('情感档案', formatEmotionProfilesForDiary(context.emotionProfiles)),
     createSection('当前激活世界书', formatWorldInfoForDiary(context.activatedWorldInfo)),
+    createSection('当前世界书注入文本兜底', formatWorldInfoInjectionForDiary(context)),
   ].filter(Boolean);
 
   return sections.join('\n\n---\n\n');

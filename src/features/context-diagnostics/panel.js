@@ -90,6 +90,7 @@ export function renderContextDiagnostics() {
     ${renderDiagnosticLine('世界书过滤条目', diag.filteredCount ?? 0)}
     ${renderDiagnosticLine('世界书可疑条目', diag.suspiciousCount ?? 0)}
     ${renderDiagnosticLine('世界书可用条目', diag.usedCount ?? 0)}
+    ${renderDiagnosticLine('世界书注入文本', diag.injectionTextLength ?? 0)}
     <div class="slx-worldinfo-diagnostics">
       <div class="slx-worldinfo-test-row">
         <button class="slx-soft-btn" type="button" data-slx-test-worldinfo-dry-run ${dryRunState.status === 'running' ? 'disabled' : ''}>
@@ -131,6 +132,7 @@ function renderDryRunDiagnostics() {
       ${renderDiagnosticLine('dry run 过滤条目', diag.filteredCount ?? 0)}
       ${renderDiagnosticLine('dry run 可疑条目', diag.suspiciousCount ?? 0)}
       ${renderDiagnosticLine('dry run 可用条目', diag.usedCount ?? 0)}
+      ${renderDiagnosticLine('dry run 注入文本', diag.injectionTextLength ?? 0)}
       ${renderRawSourceCounts('dry run 原始字段计数', diag.rawSourceCounts)}
       ${renderWorldInfoEntryList('dry run 可用条目', usedEntries)}
       ${renderWorldInfoEntryList('dry run 可疑条目', diag.suspiciousEntries || [], { showReason: true })}
