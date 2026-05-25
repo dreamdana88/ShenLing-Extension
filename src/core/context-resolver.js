@@ -644,16 +644,23 @@ function shouldIncludeNamesForWorldInfo(worldInfoModule = null) {
 
 function buildWorldInfoScanChat(messages = collectRecentChatMessages(), {
   includeNames = true,
+  targetRoleName = '',
 } = {}) {
-  return messages
+  const chatForScan = messages
     .filter(message => message.content)
     .map(message => (includeNames ? `${message.speaker}: ${message.content}` : message.content))
     .reverse();
+  const cleanRoleName = cleanText(targetRoleName);
+  if (cleanRoleName) {
+    chatForScan.push(`日记目标角色：${cleanRoleName}`);
+  }
+  return chatForScan;
 }
 
 export async function collectDryRunWorldInfoContext({
   limit = DEFAULT_WORLD_INFO_LIMIT,
   recentMessages = null,
+  targetRoleName = '',
 } = {}) {
   try {
     const worldInfoModule = await getWorldInfoModule();
@@ -664,7 +671,10 @@ export async function collectDryRunWorldInfoContext({
 
     const chatForScan = buildWorldInfoScanChat(
       Array.isArray(recentMessages) ? recentMessages : collectRecentChatMessages(),
-      { includeNames: shouldIncludeNamesForWorldInfo(worldInfoModule) },
+      {
+        includeNames: shouldIncludeNamesForWorldInfo(worldInfoModule),
+        targetRoleName,
+      },
     );
     if (!chatForScan.length) {
       return {
@@ -721,7 +731,7 @@ export async function collectDryRunWorldInfoContext({
           world: entry.world,
           reason: entry.filterReason,
         })),
-        notes: [],
+        notes: cleanText(targetRoleName) ? [`dry run 扫描已加入日记目标角色关键词：${cleanText(targetRoleName)}`] : [],
       },
     };
   } catch (error) {
@@ -747,9 +757,10 @@ export async function collectWorldInfoContext({
   limit = DEFAULT_WORLD_INFO_LIMIT,
   mode = 'cache_first',
   recentMessages = null,
+  targetRoleName = '',
 } = {}) {
   if (mode === 'dry_run') {
-    const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages });
+    const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages, targetRoleName });
     if (dryRun.entries.length || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
     return collectCachedWorldInfoContext({ limit });
   }
@@ -758,7 +769,7 @@ export async function collectWorldInfoContext({
   if (mode === 'cache_only') return cached;
   if (cached.entries.length && cached.injectionText) return cached;
 
-  const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages });
+  const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages, targetRoleName });
   if (cached.entries.length) {
     const hasDryRunInjection = Boolean(dryRun.injectionText);
     return {
@@ -874,6 +885,7 @@ export async function resolveShenlingContext(options = {}) {
       limit: worldInfoLimit,
       mode: worldInfoMode,
       recentMessages,
+      targetRoleName,
     })
     : {
       entries: [],
