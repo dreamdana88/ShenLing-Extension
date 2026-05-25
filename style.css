@@ -956,11 +956,11 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-stage-cover {
-  width: min(520px, calc(100vw - 36px));
+  width: min(438px, calc((var(--slx-viewport-height) - 106px) * 0.707), calc(100vw - 36px));
 }
 
 .slx-diary-stage-open {
-  width: min(980px, calc(100vw - 36px));
+  width: min(980px, calc((var(--slx-viewport-height) - 116px) * 1.414), calc(100vw - 36px));
 }
 
 .slx-diary-notebook-toolbar {
@@ -1000,7 +1000,6 @@ body.slx-panel-open-lock {
   width: 100%;
   aspect-ratio: 1 / 1.414;
   min-height: 0;
-  max-height: min(620px, calc(var(--slx-viewport-height) - 96px));
   border: 1px solid rgba(72, 42, 34, 0.34);
   border-radius: 8px;
   background:
@@ -1045,7 +1044,8 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-inline-book {
-  min-height: 420px;
+  aspect-ratio: 1.414 / 1;
+  min-height: 0;
 }
 
 .slx-diary-toc-list {
@@ -1336,7 +1336,7 @@ body.slx-panel-open-lock {
 
 .slx-diary-book-spread {
   position: relative;
-  min-height: 440px;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   border-radius: 8px;
@@ -2464,8 +2464,12 @@ body.slx-panel-open-lock {
     width: min(100%, calc(100vw - 20px));
   }
 
+  .slx-diary-stage-cover {
+    width: min(calc((var(--slx-viewport-height) - 82px) * 0.707), calc(100vw - 20px));
+  }
+
   .slx-diary-cover {
-    max-height: calc(var(--slx-viewport-height) - 82px);
+    max-height: none;
   }
 
   .slx-diary-reader-modal {
@@ -2479,6 +2483,7 @@ body.slx-panel-open-lock {
   .slx-diary-book-spread {
     min-height: 0;
     grid-template-columns: 1fr;
+    aspect-ratio: auto;
     max-height: calc(var(--slx-viewport-height) - 78px);
     overflow-y: auto;
   }
