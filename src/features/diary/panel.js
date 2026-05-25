@@ -12,8 +12,8 @@ import {
 } from '../../core/context-resolver.js';
 
 const DIARY_TABS = [
-  { id: 'notebooks', label: '日记本' },
-  { id: 'settings', label: '日记设置' },
+  { id: 'notebooks', label: '日记本', icon: 'fa-book-open' },
+  { id: 'settings', label: '日记设置', icon: 'fa-sliders' },
 ];
 
 const DEFAULT_COVERS = [
@@ -252,7 +252,7 @@ function renderDiaryTabs() {
     <div class="slx-segment-row slx-diary-tabs" role="group" aria-label="日记模块视图">
       ${DIARY_TABS.map(tab => `
         <button class="slx-segment-btn ${diaryPanelState.tab === tab.id ? 'slx-segment-btn-active' : ''}" type="button" data-slx-diary-tab="${escapeHtml(tab.id)}">
-          ${escapeHtml(tab.label)}
+          <i class="fa-solid ${escapeHtml(tab.icon)}"></i><span>${escapeHtml(tab.label)}</span>
         </button>
       `).join('')}
     </div>
@@ -316,7 +316,7 @@ function renderDiaryLibrary(chatState) {
           <input type="text" data-slx-diary-new-book-role value="${escapeHtml(diaryPanelState.composeRoleName)}" placeholder="输入角色名称" />
         </label>
         <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-create-diary-book>
-          <i class="fa-solid fa-book-medical"></i><span>创建</span>
+          <i class="fa-solid fa-book-medical"></i><span>创建并打开</span>
         </button>
       </div>
     </div>
@@ -328,7 +328,7 @@ function renderDiaryLibrary(chatState) {
             <b>${escapeHtml(book.roleName)}</b>
             <small>${escapeHtml(book.entryCount)} 篇日记${book.latestEntry ? ` · 最新：${escapeHtml(getEntryTitle(book.latestEntry))}` : ''}</small>
           </span>
-          <i class="fa-solid fa-chevron-right"></i>
+          <span class="slx-diary-open-label">打开</span>
         </button>
       `).join('') : renderDiaryEmpty('角色日记本')}
     </div>
@@ -847,6 +847,12 @@ export function bindDiaryPanelEvents(panelRoot) {
       screen: 'cover',
     };
     refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-diary-new-book-role]')?.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    panelRoot.querySelector('[data-slx-create-diary-book]')?.click();
   });
 
   panelRoot.querySelectorAll('[data-slx-open-diary-book]').forEach(button => {
