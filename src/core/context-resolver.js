@@ -652,7 +652,7 @@ function buildWorldInfoScanChat(messages = collectRecentChatMessages(), {
     .reverse();
   const cleanRoleName = cleanText(targetRoleName);
   if (cleanRoleName) {
-    chatForScan.push(`日记目标角色：${cleanRoleName}`);
+    chatForScan.push(cleanRoleName);
   }
   return chatForScan;
 }
@@ -731,7 +731,7 @@ export async function collectDryRunWorldInfoContext({
           world: entry.world,
           reason: entry.filterReason,
         })),
-        notes: cleanText(targetRoleName) ? [`dry run 扫描已加入日记目标角色关键词：${cleanText(targetRoleName)}`] : [],
+        notes: cleanText(targetRoleName) ? [`dry run 扫描已加入日记角色名关键词：${cleanText(targetRoleName)}`] : [],
       },
     };
   } catch (error) {
