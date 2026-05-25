@@ -597,6 +597,25 @@ function renderDiaryNotebookBody(chatState) {
   return renderDiaryLibrary(chatState);
 }
 
+function renderDiaryNotebookModal(chatState) {
+  if (diaryPanelState.tab !== 'notebooks' || diaryPanelState.screen === 'library') return '';
+  const roleName = diaryPanelState.roleName || diaryPanelState.composeRoleName || '未命名日记本';
+  return `
+    <div class="slx-diary-notebook-modal" data-slx-close-diary-notebook>
+      <div class="slx-diary-notebook-stage" data-slx-diary-notebook-stage>
+        <div class="slx-diary-notebook-toolbar">
+          <div>
+            <b>${escapeHtml(roleName)}</b>
+            <span>${diaryPanelState.screen === 'cover' ? '封面' : diaryPanelState.screen === 'toc' ? '目录' : diaryPanelState.screen === 'compose' ? '撰写日记' : '日记页'}</span>
+          </div>
+          <button class="slx-icon-btn" type="button" data-slx-close-diary-notebook title="关闭">×</button>
+        </div>
+        ${renderDiaryNotebookBody(chatState)}
+      </div>
+    </div>
+  `;
+}
+
 export function renderDiaryPanel(settings, chatState) {
   getDiaryStore(chatState);
   const entries = getDiaryEntries(chatState);
@@ -613,7 +632,8 @@ export function renderDiaryPanel(settings, chatState) {
       </div>
       ${renderDiaryTabs()}
     </div>
-    ${diaryPanelState.tab === 'settings' ? renderDiarySettings(chatState) : renderDiaryNotebookBody(chatState)}
+    ${diaryPanelState.tab === 'settings' ? renderDiarySettings(chatState) : renderDiaryLibrary(chatState)}
+    ${renderDiaryNotebookModal(chatState)}
     ${renderDiaryEditor(chatState)}
   `;
 }
@@ -871,6 +891,15 @@ export function bindDiaryPanelEvents(panelRoot) {
 
   panelRoot.querySelector('[data-slx-diary-back-library]')?.addEventListener('click', () => {
     setDiaryScreen('library', { roleName: '', entryId: '' });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-close-diary-notebook]').forEach(node => {
+    node.addEventListener('click', event => {
+      if (event.target.closest?.('[data-slx-diary-notebook-stage]') && !event.target.closest?.('[data-slx-close-diary-notebook]')) {
+        return;
+      }
+      setDiaryScreen('library', { roleName: '', entryId: '' });
+    });
   });
 
   panelRoot.querySelector('[data-slx-diary-back-cover]')?.addEventListener('click', () => {

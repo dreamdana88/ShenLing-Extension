@@ -934,6 +934,61 @@ body.slx-panel-open-lock {
   margin-bottom: 10px;
 }
 
+.slx-diary-notebook-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 36;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(220, 194, 132, 0.14), transparent 34%),
+    rgba(10, 8, 6, 0.76);
+  padding: 18px;
+}
+
+.slx-diary-notebook-stage {
+  width: min(980px, 100%);
+  max-height: min(700px, calc(var(--slx-viewport-height) - 36px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slx-diary-notebook-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(244, 224, 188, 0.95);
+}
+
+.slx-diary-notebook-toolbar b,
+.slx-diary-notebook-toolbar span {
+  display: block;
+}
+
+.slx-diary-notebook-toolbar b {
+  font-family: 'Noto Serif SC', Georgia, serif;
+  font-size: 17px;
+}
+
+.slx-diary-notebook-toolbar span {
+  color: rgba(244, 224, 188, 0.64);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.slx-diary-notebook-stage > .slx-diary-cover,
+.slx-diary-notebook-stage > .slx-diary-book-spread {
+  flex: 1;
+}
+
+.slx-diary-notebook-stage .slx-diary-nav-row,
+.slx-diary-notebook-stage .slx-diary-page-turns {
+  flex-shrink: 0;
+}
+
 .slx-diary-cover {
   width: 100%;
   min-height: 320px;
@@ -2385,6 +2440,14 @@ body.slx-panel-open-lock {
 
   .slx-diary-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .slx-diary-notebook-modal {
+    padding: 10px;
+  }
+
+  .slx-diary-notebook-stage {
+    max-height: calc(var(--slx-viewport-height) - 20px);
   }
 
   .slx-diary-reader-modal {
