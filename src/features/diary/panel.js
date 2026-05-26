@@ -4,12 +4,22 @@ import {
   isPlainObject,
 } from '../../utils/text.js';
 import {
+  buildApiUrl,
+} from '../../core/api.js';
+import {
   getChatState,
+  getGlobalSettings,
   saveChatState,
 } from '../../core/settings.js';
 import {
   resolveDiaryContext,
 } from '../../core/context-resolver.js';
+import {
+  replacePromptMacros,
+} from '../../core/macros.js';
+import {
+  getOpenAiResponseContent,
+} from '../../core/summary.js';
 
 const DIARY_TABS = [
   { id: 'notebooks', label: '日记本', icon: 'fa-book-open' },
@@ -29,8 +39,33 @@ const DEFAULT_PAGES = [
 ];
 
 const DIARY_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+const ROLE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
+
+请根据下方梦境上下文素材，以【\${targetRoleName}】的第一人称视角与口吻，写一则日期为【\${diaryDate}】的角色日记。
+
+以下是本次日记可参考的梦境上下文素材：
+\${diaryContextMaterial}
+
+日记要求：
+- 日记正文不得少于 500 字。
+- 语气、用词、关注重点必须符合【\${targetRoleName}】的角色设定。
+- 是角色的私密日记，应展示其真实内心且富有生活气息，像真正的私人手帐/日记一样自然。
+- 只写【\${targetRoleName}】本人能知道、能感受到、会在意的事情，避免全知视角。
+- 不要写未来剧情，只内化已发生的事。
+- 如果角色设定语言不是中文，content 字段内先写角色设定语言版本，再写中文翻译版。
+- 必须只输出合法 JSON，不要输出 Markdown 代码块，不要输出解释文字。
+
+输出格式：
+{
+  "title": "标题",
+  "time": "\${diaryDate}",
+  "content": "正文"
+}`;
 
 let panelOptions = {
+  addCommunicationLog: null,
+  getActiveApiProfile: null,
+  getGenerateRawFunction: null,
   refreshPanel: null,
 };
 
@@ -41,6 +76,8 @@ let diaryPanelState = {
   entryId: '',
   composeRoleName: '',
   composeDate: '',
+  generationStatus: 'idle',
+  generationError: '',
 };
 
 let diaryEditorState = {
@@ -67,8 +104,57 @@ function refreshPanel() {
   }
 }
 
+function getPanelOption(name) {
+  const value = panelOptions[name];
+  return typeof value === 'function' ? value : null;
+}
+
 function createDiaryId() {
   return `diary-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function fillTemplate(template, values = {}) {
+  return String(template || '').replace(/\$\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
+}
+
+function buildRoleDiaryPrompt({ targetRoleName, diaryDate, diaryContextMaterial }) {
+  return replacePromptMacros(fillTemplate(ROLE_DIARY_PROMPT_TEMPLATE, {
+    targetRoleName,
+    diaryDate,
+    diaryContextMaterial,
+  }));
+}
+
+function cleanJsonResponse(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+}
+
+function parseDiaryGenerationResult(raw, fallbackDate) {
+  const cleaned = cleanJsonResponse(raw);
+  try {
+    const parsed = JSON.parse(cleaned);
+    const title = String(parsed?.title || '').trim();
+    const time = String(parsed?.time || fallbackDate || '').trim();
+    const content = String(parsed?.content || '').trim();
+    if (!title || !content) {
+      throw new Error('日记 JSON 缺少 title 或 content。');
+    }
+    return { title, time, content };
+  } catch (error) {
+    const matched = cleaned.match(/\{[\s\S]*\}/);
+    if (matched?.[0] && matched[0] !== cleaned) {
+      try {
+        return parseDiaryGenerationResult(matched[0], fallbackDate);
+      } catch {
+        // Keep the original, clearer parsing error below.
+      }
+    }
+    throw new Error(`日记生成结果不是可解析 JSON：${error.message || error}`);
+  }
 }
 
 function normalizeDiarySettings(settings = {}) {
@@ -528,6 +614,12 @@ function renderDiaryEntryPage(chatState) {
 function renderDiaryCompose(chatState) {
   const roleName = diaryPanelState.composeRoleName || diaryPanelState.roleName;
   const dateValue = diaryPanelState.composeDate || getDefaultDiaryDate(chatState);
+  const isGenerating = diaryPanelState.generationStatus === 'running';
+  const generationHint = isGenerating
+    ? `【${roleName || '角色'}】正在书写日记……`
+    : diaryPanelState.generationStatus === 'failed'
+      ? diaryPanelState.generationError || '日记生成失败。'
+      : '用户内容为空时会生成角色独白；写下内容时先创建交换日记草稿。';
   return `
     <div class="slx-diary-nav-row">
       <button class="slx-soft-btn" type="button" data-slx-diary-back-toc><i class="fa-solid fa-arrow-left"></i><span>返回目录</span></button>
@@ -552,15 +644,16 @@ function renderDiaryCompose(chatState) {
       <section class="slx-diary-book-page slx-diary-book-page-right">
         <div class="slx-diary-book-page-title">落笔前</div>
         <div class="slx-diary-book-rule"></div>
-        <p>标题由 AI 生成。这里先建立待生成草稿，下一步会把正式生成流程接入这张纸页里的等待态。</p>
+        <p>标题由 AI 生成。生成完成后会先作为草稿收入这本日记。</p>
         <div class="slx-action-row slx-diary-compose-actions">
-          <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-create-unified-diary-draft>
-            <i class="fa-solid fa-feather"></i><span>创建待生成草稿</span>
+          <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-create-unified-diary-draft ${isGenerating ? 'disabled' : ''}>
+            <i class="fa-solid fa-feather"></i><span>${isGenerating ? '日记生成中' : '生成日记草稿'}</span>
           </button>
           <button class="slx-soft-btn" type="button" data-slx-test-diary-context ${diaryContextTestState.status === 'running' ? 'disabled' : ''}>
             <i class="fa-solid fa-magnifying-glass"></i><span>测试上下文</span>
           </button>
         </div>
+        <div class="slx-field-hint">${escapeHtml(generationHint)}</div>
         <div class="slx-field-hint">${escapeHtml(getContextTestStatusText())}</div>
         ${renderContextTestResult()}
       </section>
@@ -691,7 +784,139 @@ function saveEntry(entryInput) {
   return entry;
 }
 
-function createUnifiedDiaryDraft(panelRoot) {
+async function generateRoleDiary({ roleName, date }) {
+  const chatState = getChatState();
+  const store = getDiaryStore(chatState);
+  const addCommunicationLog = getPanelOption('addCommunicationLog');
+  const startedAt = performance.now();
+  const context = await resolveDiaryContext({ targetRoleName: roleName });
+  const prompt = buildRoleDiaryPrompt({
+    targetRoleName: roleName,
+    diaryDate: date,
+    diaryContextMaterial: context.material,
+  });
+  const messages = [{ role: 'user', content: prompt }];
+
+  if (store.settings.apiMode === 'main') {
+    const requestBody = {
+      user_input: prompt,
+      ordered_prompts: [],
+      should_silence: true,
+      max_chat_history: 0,
+    };
+    try {
+      const generateRaw = getPanelOption('getGenerateRawFunction')?.();
+      if (typeof generateRaw !== 'function') {
+        throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
+      }
+      const responseText = await generateRaw(requestBody);
+      const parsedResult = parseDiaryGenerationResult(responseText, date);
+      addCommunicationLog?.({
+        moduleName: '日程日记 / 主 API',
+        taskType: '角色日记生成',
+        status: 'success',
+        startedAt: formatTimestamp(),
+        durationMs: Math.round(performance.now() - startedAt),
+        profileName: '酒馆当前连接',
+        model: '酒馆主 API',
+        url: '酒馆当前连接',
+        messages,
+        requestBody,
+        responseText,
+        parsedResult,
+      });
+      return parsedResult;
+    } catch (error) {
+      addCommunicationLog?.({
+        moduleName: '日程日记 / 主 API',
+        taskType: '角色日记生成',
+        status: 'failure',
+        startedAt: formatTimestamp(),
+        durationMs: Math.round(performance.now() - startedAt),
+        profileName: '酒馆当前连接',
+        model: '酒馆主 API',
+        url: '酒馆当前连接',
+        messages,
+        requestBody,
+        errorStack: error.stack || error.message || error,
+      });
+      throw error;
+    }
+  }
+
+  const profile = getPanelOption('getActiveApiProfile')?.(getGlobalSettings());
+  let url = '';
+  let requestBody = null;
+  try {
+    if (!profile) throw new Error('当前环境未提供副 API 配置。');
+    url = buildApiUrl(profile);
+    if (!String(profile.model || '').trim()) {
+      throw new Error('请先在设置页选择日记生成模型。');
+    }
+    requestBody = {
+      model: String(profile.model).trim(),
+      messages,
+      stream: false,
+    };
+    const headers = { 'Content-Type': 'application/json' };
+    if (String(profile.apiKey || '').trim()) {
+      headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
+    }
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestBody),
+    });
+    const responseText = await response.text();
+    let responseJson = null;
+    try {
+      responseJson = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      responseJson = null;
+    }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} ${response.statusText}: ${responseText}`);
+    }
+    const content = getOpenAiResponseContent(responseJson).trim();
+    if (!content) {
+      throw new Error(`接口返回成功，但没有读取到回复正文：${responseText}`);
+    }
+    const parsedResult = parseDiaryGenerationResult(content, date);
+    addCommunicationLog?.({
+      moduleName: '日程日记 / 副 API',
+      taskType: '角色日记生成',
+      status: 'success',
+      startedAt: formatTimestamp(),
+      durationMs: Math.round(performance.now() - startedAt),
+      profileName: profile.name,
+      model: profile.model,
+      url,
+      httpStatus: response.status,
+      messages,
+      requestBody,
+      responseText,
+      parsedResult,
+    });
+    return parsedResult;
+  } catch (error) {
+    addCommunicationLog?.({
+      moduleName: '日程日记 / 副 API',
+      taskType: '角色日记生成',
+      status: 'failure',
+      startedAt: formatTimestamp(),
+      durationMs: Math.round(performance.now() - startedAt),
+      profileName: profile?.name,
+      model: profile?.model,
+      url,
+      messages,
+      requestBody,
+      errorStack: error.stack || error.message || error,
+    });
+    throw error;
+  }
+}
+
+async function createUnifiedDiaryDraft(panelRoot) {
   const roleName = normalizeRoleName(panelRoot.querySelector('[data-slx-diary-compose-role]')?.value);
   const date = String(panelRoot.querySelector('[data-slx-diary-compose-date]')?.value || '').trim() || formatTimestamp();
   const userContent = String(panelRoot.querySelector('[data-slx-diary-compose-user-content]')?.value || '').trim();
@@ -699,19 +924,37 @@ function createUnifiedDiaryDraft(panelRoot) {
 
   diaryPanelState.composeRoleName = roleName;
   diaryPanelState.composeDate = date;
+  diaryPanelState.generationStatus = userContent ? 'idle' : 'running';
+  diaryPanelState.generationError = '';
+  refreshPanel();
   const now = formatTimestamp();
+  let generated = null;
+  if (!userContent) {
+    try {
+      generated = await generateRoleDiary({ roleName, date });
+    } catch (error) {
+      diaryPanelState.generationStatus = 'failed';
+      diaryPanelState.generationError = error.message || String(error);
+      refreshPanel();
+      return;
+    }
+  }
+
   const entry = saveEntry({
     type: userContent ? 'exchange_diary' : 'role_diary',
     status: 'draft',
     roleName,
     authorName: roleName,
     targetRoleName: roleName,
-    time: date,
+    title: generated?.title || '',
+    time: generated?.time || date,
+    content: generated?.content || '',
     userContent,
     characterReply: userContent ? { title: '', time: date, content: '' } : null,
-    source: 'manual',
+    source: generated ? 'ai' : 'manual',
     createdAt: now,
-    updatedAt: now,
+    updatedAt: formatTimestamp(),
+    contextDigest: generated ? { generatedAt: formatTimestamp() } : null,
   });
 
   diaryPanelState = {
@@ -719,6 +962,8 @@ function createUnifiedDiaryDraft(panelRoot) {
     roleName,
     entryId: entry.id,
     screen: 'entry',
+    generationStatus: 'idle',
+    generationError: '',
   };
   refreshPanel();
 }
@@ -1027,7 +1272,7 @@ export function bindDiaryPanelEvents(panelRoot) {
   });
 
   panelRoot.querySelector('[data-slx-create-unified-diary-draft]')?.addEventListener('click', () => {
-    createUnifiedDiaryDraft(panelRoot);
+    void createUnifiedDiaryDraft(panelRoot);
   });
 
   panelRoot.querySelector('[data-slx-test-diary-context]')?.addEventListener('click', () => {

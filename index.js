@@ -1100,6 +1100,9 @@ function init() {
     refreshPanel: renderFloatingPanel,
   });
   configureDiaryPanel({
+    addCommunicationLog,
+    getActiveApiProfile,
+    getGenerateRawFunction,
     refreshPanel: renderFloatingPanel,
   });
   configureContextDiagnosticsPanel({
