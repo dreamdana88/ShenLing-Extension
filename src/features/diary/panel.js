@@ -44,6 +44,22 @@ const DEFAULT_PAGES = [
   { id: 'lined', label: '横线手账' },
 ];
 
+// ── 手账（Tcho）主题：仅用于 UI 渲染，不涉及业务逻辑 ──
+
+const TCHO_SPINE_COLORS = ['#d4a5a5', '#a5b4d4', '#a5c4b4', '#d4c4a5', '#c4a5c4', '#b4c4d4', '#d4b8a5'];
+
+function getTchoSpineColor(roleName) {
+  let h = 0;
+  for (let i = 0; i < roleName.length; i++) h = (h * 31 + roleName.charCodeAt(i)) >>> 0;
+  return TCHO_SPINE_COLORS[h % TCHO_SPINE_COLORS.length];
+}
+
+const TCHO_WAVE_SVG = `<svg class="slx-diary-tcho-wave" viewBox="0 0 140 10" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M2 7 Q20 2 38 7 Q56 12 74 7 Q92 2 110 7 Q125 11 138 6" stroke="#e8a09a" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+
+const TCHO_LEAF_L = `<svg class="slx-diary-tcho-leaf" viewBox="0 0 56 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M52 12 Q38 6 24 11" stroke="#8ab49a" stroke-width="1.2" stroke-linecap="round"/><path d="M32 11 Q26 5 16 8 Q24 9 32 11Z" fill="#a8c8b4" opacity="0.85"/><path d="M32 11 Q26 17 16 14 Q24 13 32 11Z" fill="#c0d8c6" opacity="0.7"/><path d="M20 10 Q14 5 6 8 Q13 9 20 10Z" fill="#a8c8b4" opacity="0.8"/><path d="M20 10 Q14 15 6 12 Q13 11 20 10Z" fill="#c0d8c6" opacity="0.65"/></svg>`;
+
+const TCHO_LEAF_R = `<svg class="slx-diary-tcho-leaf slx-diary-tcho-leaf-r" viewBox="0 0 56 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 12 Q18 6 32 11" stroke="#8ab49a" stroke-width="1.2" stroke-linecap="round"/><path d="M24 11 Q30 5 40 8 Q32 9 24 11Z" fill="#a8c8b4" opacity="0.85"/><path d="M24 11 Q30 17 40 14 Q32 13 24 11Z" fill="#c0d8c6" opacity="0.7"/><path d="M36 10 Q42 5 50 8 Q43 9 36 10Z" fill="#a8c8b4" opacity="0.8"/><path d="M36 10 Q42 15 50 12 Q43 11 36 10Z" fill="#c0d8c6" opacity="0.65"/></svg>`;
+
 const DIARY_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
 const ROLE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
 
@@ -426,35 +442,67 @@ function renderDiaryLibrary(chatState) {
   const notebooks = getNotebooks(chatState);
   const totalEntries = getDiaryEntries(chatState).length;
   return `
-    <div class="slx-detail-card slx-diary-shell-card">
-      <div class="slx-summary-card-head">
-        <div>
-          <div class="slx-detail-title">角色日记本</div>
-          <p>${escapeHtml(notebooks.length)} 本日记，${escapeHtml(totalEntries)} 篇记录。</p>
+    <div class="slx-diary-tcho-library">
+      <div class="slx-diary-tcho-stars" aria-hidden="true">
+        <svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg"><path d="M5 0 L5.7 3.8 L9.5 5 L5.7 6.2 L5 10 L4.3 6.2 L0.5 5 L4.3 3.8 Z" fill="#e8c46a"/></svg>
+        <svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg"><path d="M5 0 L5.7 3.8 L9.5 5 L5.7 6.2 L5 10 L4.3 6.2 L0.5 5 L4.3 3.8 Z" fill="#e8c46a"/></svg>
+        <svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg"><path d="M5 0 L5.7 3.8 L9.5 5 L5.7 6.2 L5 10 L4.3 6.2 L0.5 5 L4.3 3.8 Z" fill="#e8c46a"/></svg>
+      </div>
+
+      <div class="slx-diary-tcho-header">
+        <div class="slx-diary-tcho-title-block">
+          <div class="slx-diary-tcho-icon-slot" aria-hidden="true">
+            <!-- 素材图占位：日记本插画，填入 src 路径后即可显示 -->
+            <img class="slx-diary-tcho-book-illus" src="" alt="" />
+          </div>
+          <div class="slx-diary-tcho-title-text">
+            <div class="slx-diary-tcho-title">角色日记本</div>
+            ${TCHO_WAVE_SVG}
+          </div>
         </div>
-        <button class="slx-soft-btn" type="button" data-slx-export-diary ${totalEntries ? '' : 'disabled'}>导出</button>
-      </div>
-      <div class="slx-diary-create-row">
-        <label class="slx-field">
-          <span>创建角色日记</span>
-          <input type="text" data-slx-diary-new-book-role value="${escapeHtml(diaryPanelState.composeRoleName)}" placeholder="输入角色名称" />
-        </label>
-        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-create-diary-book>
-          <i class="fa-solid fa-book-medical"></i><span>创建并打开</span>
+        <button class="slx-diary-tcho-export-tag" type="button" data-slx-export-diary ${totalEntries ? '' : 'disabled'}>
+          <i class="fa-solid fa-file-export"></i> 导出
         </button>
       </div>
-    </div>
-    <div class="slx-diary-book-list">
-      ${notebooks.length ? notebooks.map(book => `
-        <button class="slx-diary-notebook-card" type="button" data-slx-open-diary-book="${escapeHtml(book.roleName)}">
-          <span class="slx-diary-book-cover-mark"></span>
-          <span>
-            <b>${escapeHtml(book.roleName)}</b>
-            <small>${escapeHtml(book.entryCount)} 篇日记${book.latestEntry ? ` · 最新：${escapeHtml(getEntryTitle(book.latestEntry))}` : ''}</small>
-          </span>
-          <span class="slx-diary-open-label">打开</span>
+
+      <div class="slx-diary-tcho-create-section">
+        <div class="slx-diary-tcho-create-label">
+          <svg viewBox="0 0 14 12" fill="#e8807a" xmlns="http://www.w3.org/2000/svg" width="11" height="11" aria-hidden="true"><path d="M7 11 Q4 8 2 6 Q0 4 2 2 Q4 0 7 3 Q10 0 12 2 Q14 4 12 6 Q10 8 7 11Z"/></svg>
+          新建一本角色日记
+          <svg viewBox="0 0 14 12" fill="#e8807a" xmlns="http://www.w3.org/2000/svg" width="11" height="11" aria-hidden="true"><path d="M7 11 Q4 8 2 6 Q0 4 2 2 Q4 0 7 3 Q10 0 12 2 Q14 4 12 6 Q10 8 7 11Z"/></svg>
+        </div>
+        <input class="slx-diary-tcho-input" type="text" data-slx-diary-new-book-role
+          value="${escapeHtml(diaryPanelState.composeRoleName)}"
+          placeholder="写下角色名字..." />
+        <button class="slx-diary-tcho-create-btn" type="button" data-slx-create-diary-book>
+          <i class="fa-solid fa-heart"></i> 创建日记
         </button>
-      `).join('') : renderDiaryEmpty('角色日记本')}
+      </div>
+
+      <div class="slx-diary-tcho-books-section">
+        <div class="slx-diary-tcho-section-hd">
+          ${TCHO_LEAF_L}
+          <span>我的日记本们</span>
+          ${TCHO_LEAF_R}
+        </div>
+        <div class="slx-diary-tcho-book-list">
+          ${notebooks.map(book => `
+            <button class="slx-diary-tcho-book-card" type="button" data-slx-open-diary-book="${escapeHtml(book.roleName)}">
+              <span class="slx-diary-tcho-book-spine" style="background: ${escapeHtml(getTchoSpineColor(book.roleName))}"></span>
+              <div class="slx-diary-tcho-book-info">
+                <b>${escapeHtml(book.roleName)}</b>
+                <small>${escapeHtml(book.entryCount)} 篇日记</small>
+              </div>
+              <span class="slx-diary-tcho-open-pill">打开</span>
+            </button>
+          `).join('')}
+        </div>
+        ${!notebooks.length ? `<p class="slx-diary-tcho-empty">还没有日记本，从上面创建第一本吧~</p>` : ''}
+        <p class="slx-diary-tcho-tagline">把属于角色的故事收进这里。</p>
+        <!-- 素材图占位：填入 src 即可显示，留空不显示 -->
+        <img class="slx-diary-tcho-deco slx-diary-tcho-deco-vase" src="" alt="" aria-hidden="true" />
+        <img class="slx-diary-tcho-deco slx-diary-tcho-deco-flora" src="" alt="" aria-hidden="true" />
+      </div>
     </div>
   `;
 }
@@ -465,7 +513,7 @@ function renderDiarySettings(chatState) {
   const hasCustomCover = Boolean(getSafeImageSource(settings.customCover));
   const hasCustomPage = Boolean(getSafeImageSource(settings.customPage));
   return `
-    <div class="slx-detail-card slx-diary-shell-card">
+    <div class="slx-detail-card slx-diary-shell-card slx-diary-tcho-settings">
       <div class="slx-summary-card-head">
         <div>
           <div class="slx-detail-title">日记设置</div>
@@ -770,21 +818,14 @@ function renderDiaryNotebookModal(chatState) {
 
 export function renderDiaryPanel(settings, chatState) {
   getDiaryStore(chatState);
-  const entries = getDiaryEntries(chatState);
-  const draftCount = entries.filter(entry => entry.status === 'draft').length;
-  const collectedCount = entries.filter(entry => entry.status === 'collected').length;
 
   return `
-    <div class="slx-detail-card slx-diary-home-card">
-      <div class="slx-summary-card-head">
-        <div>
-          <div class="slx-detail-title">聊天内日记本</div>
-          <p>${escapeHtml(collectedCount)} 篇已收录，${escapeHtml(draftCount)} 篇草稿。</p>
-        </div>
-      </div>
+    <div class="slx-diary-tcho-frame">
       ${renderDiaryTabs()}
+      <div class="slx-diary-tcho-body">
+        ${diaryPanelState.tab === 'settings' ? renderDiarySettings(chatState) : renderDiaryLibrary(chatState)}
+      </div>
     </div>
-    ${diaryPanelState.tab === 'settings' ? renderDiarySettings(chatState) : renderDiaryLibrary(chatState)}
     ${renderDiaryNotebookModal(chatState)}
     ${renderDiaryEditor(chatState)}
   `;

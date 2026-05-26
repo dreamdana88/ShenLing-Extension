@@ -2622,3 +2622,537 @@ body.slx-panel-open-lock {
     }
   }
 }
+
+/* ════════════════════════════════════════════════════
+   手账（Tcho）主题  ── 日记模块 library + settings 屏
+   ════════════════════════════════════════════════════ */
+
+/* ── 外框 & Tab 区 ── */
+
+.slx-diary-tcho-frame {
+  display: flex;
+  flex-direction: column;
+  border: 2px solid #e8b0a8;
+  border-radius: 16px;
+  background: #fef6f0;
+}
+
+.slx-diary-tcho-frame .slx-segment-row.slx-diary-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+  gap: 6px;
+  margin: 10px 12px 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid #e8c0b8;
+  overflow: visible;
+}
+
+.slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn {
+  min-height: 36px;
+  border: 1.5px solid #e8c0b8;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  background: rgba(255, 234, 226, 0.6);
+  color: #c09080;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transform: translateY(1.5px);
+  transition: background 0.2s, color 0.2s;
+}
+
+.slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn:hover {
+  background: rgba(255, 230, 220, 0.9);
+  color: #8b4b43;
+}
+
+.slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn-active,
+.slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn-active:hover {
+  min-height: 40px;
+  background: #fef6f0;
+  color: #7a3a30;
+  border-color: #e8b0a8;
+  transform: translateY(1.5px);
+  box-shadow: 0 -2px 8px rgba(200, 120, 110, 0.06);
+}
+
+/* ── 内容区 ── */
+
+.slx-diary-tcho-body {
+  padding: 0;
+}
+
+/* ── Library 屏 ── */
+
+.slx-diary-tcho-library {
+  position: relative;
+  padding: 16px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 散落的闪亮星星 */
+.slx-diary-tcho-stars {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
+}
+
+.slx-diary-tcho-stars svg:nth-child(1) { width: 13px; height: 13px; opacity: 0.88; }
+.slx-diary-tcho-stars svg:nth-child(2) { width: 9px;  height: 9px;  opacity: 0.60; }
+.slx-diary-tcho-stars svg:nth-child(3) { width: 11px; height: 11px; opacity: 0.75; }
+
+/* 标题区 */
+.slx-diary-tcho-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.slx-diary-tcho-title-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slx-diary-tcho-icon-slot {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  background: rgba(232, 176, 168, 0.12);
+  border: 1.5px dashed #e8b8b0;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 素材图存在时填满，不存在时显示备用 emoji */
+.slx-diary-tcho-book-illus {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: none;
+}
+
+.slx-diary-tcho-book-illus[src]:not([src=""]) {
+  display: block;
+}
+
+.slx-diary-tcho-icon-slot::after {
+  content: '📔';
+  font-size: 26px;
+  line-height: 1;
+}
+
+.slx-diary-tcho-icon-slot:has(.slx-diary-tcho-book-illus[src]:not([src=""]))::after {
+  display: none;
+}
+
+.slx-diary-tcho-title-text {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.slx-diary-tcho-title {
+  font-family: 'Noto Serif SC', Georgia, serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: #6b3a2e;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+}
+
+.slx-diary-tcho-wave {
+  width: 114px;
+  height: 9px;
+  display: block;
+}
+
+/* 导出标签按钮 */
+.slx-diary-tcho-export-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1.5px solid #e0b0a0;
+  border-radius: 8px;
+  background: rgba(255, 246, 240, 0.95);
+  color: #a06050;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 1px 2px 5px rgba(200, 120, 100, 0.1);
+  transition: background 0.2s, border-color 0.2s;
+  margin-top: 4px;
+}
+
+.slx-diary-tcho-export-tag:hover:not(:disabled) {
+  background: rgba(255, 232, 224, 0.98);
+  border-color: #c8907a;
+}
+
+.slx-diary-tcho-export-tag:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* 新建区 */
+.slx-diary-tcho-create-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slx-diary-tcho-create-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: linear-gradient(135deg, #f5bfb8, #efaaa0);
+  border-radius: 10px;
+  color: #7a3530;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 2px 7px rgba(200, 100, 90, 0.15);
+}
+
+.slx-diary-tcho-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+  border: 1.5px solid #e8c0b8;
+  border-bottom: 2px solid #d8a090;
+  border-radius: 10px;
+  background: rgba(255, 252, 249, 0.92);
+  color: #6b3a2e;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 13px;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.slx-diary-tcho-input::placeholder {
+  color: #c8a09a;
+}
+
+.slx-diary-tcho-input:focus {
+  border-color: #c89090;
+  border-bottom-color: #b07060;
+  background: #fff;
+}
+
+.slx-diary-tcho-create-btn {
+  min-height: 44px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f0aaa2, #e89090);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(200, 100, 90, 0.22);
+  transition: filter 0.2s, transform 0.18s;
+}
+
+.slx-diary-tcho-create-btn:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.slx-diary-tcho-create-btn:active {
+  transform: translateY(0);
+  filter: brightness(0.97);
+}
+
+/* 日记本列表区 */
+.slx-diary-tcho-books-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  padding-bottom: 88px;
+}
+
+.slx-diary-tcho-section-hd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.slx-diary-tcho-section-hd > span {
+  padding: 5px 16px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #8ab49a, #6a9a7a);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.slx-diary-tcho-leaf {
+  flex-shrink: 0;
+  width: 50px;
+  height: 22px;
+}
+
+.slx-diary-tcho-leaf-r {
+  transform: scaleX(-1);
+}
+
+/* 日记本卡片 */
+.slx-diary-tcho-book-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.slx-diary-tcho-book-card {
+  width: 100%;
+  min-height: 70px;
+  border: 1.5px solid #edd8d0;
+  border-radius: 12px;
+  background: rgba(255, 250, 247, 0.92);
+  color: #5c3d2e;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 0;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 1px 2px 8px rgba(180, 120, 100, 0.07);
+  overflow: hidden;
+  transition: box-shadow 0.2s, border-color 0.2s, transform 0.18s;
+}
+
+.slx-diary-tcho-book-card:hover {
+  border-color: #d4a090;
+  box-shadow: 2px 4px 14px rgba(180, 100, 80, 0.13);
+  transform: translateY(-1px);
+}
+
+.slx-diary-tcho-book-spine {
+  align-self: stretch;
+  width: 14px;
+  border-radius: 6px 0 0 6px;
+  flex-shrink: 0;
+}
+
+.slx-diary-tcho-book-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding-left: 2px;
+}
+
+.slx-diary-tcho-book-info b {
+  font-size: 14px;
+  font-weight: 700;
+  color: #5c3d2e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slx-diary-tcho-book-info small {
+  font-size: 11px;
+  color: #a07060;
+}
+
+.slx-diary-tcho-open-pill {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #8ab49a, #6a9a7a);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  transition: filter 0.2s;
+}
+
+.slx-diary-tcho-book-card:hover .slx-diary-tcho-open-pill {
+  filter: brightness(1.08);
+}
+
+/* 空状态 */
+.slx-diary-tcho-empty {
+  margin: 0;
+  padding: 18px 14px;
+  border: 1.5px dashed #e8c0b8;
+  border-radius: 12px;
+  background: rgba(255, 246, 242, 0.6);
+  color: #b08070;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 底部题词 */
+.slx-diary-tcho-tagline {
+  margin: 0;
+  text-align: center;
+  color: #c09888;
+  font-size: 12px;
+  font-style: italic;
+  font-family: 'Noto Serif SC', Georgia, serif;
+}
+
+/* 素材图占位 */
+.slx-diary-tcho-deco {
+  position: absolute;
+  pointer-events: none;
+}
+
+.slx-diary-tcho-deco[src=""],
+.slx-diary-tcho-deco:not([src]) {
+  display: none;
+}
+
+.slx-diary-tcho-deco-vase {
+  right: 4px;
+  bottom: 0;
+  width: 76px;
+  height: 84px;
+  object-fit: contain;
+}
+
+.slx-diary-tcho-deco-flora {
+  left: 0;
+  bottom: 0;
+  width: 68px;
+  height: 76px;
+  object-fit: contain;
+}
+
+/* ── 日记设置 Tab（tcho 覆写） ── */
+
+.slx-diary-tcho-settings {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 16px !important;
+  gap: 14px !important;
+}
+
+.slx-diary-tcho-settings .slx-detail-title {
+  font-family: 'Noto Serif SC', Georgia, serif;
+  font-size: 17px;
+  color: #6b3a2e;
+}
+
+.slx-diary-tcho-settings .slx-summary-card-head p {
+  color: #a07060;
+}
+
+.slx-diary-tcho-settings .slx-diary-setting-line {
+  border-color: #e8c0b8;
+  background: rgba(255, 246, 242, 0.7);
+}
+
+.slx-diary-tcho-settings .slx-diary-setting-line > span {
+  color: #8b5a4e;
+}
+
+.slx-diary-tcho-settings .slx-diary-pill-toggle {
+  border-color: #e0b8a8;
+  background: rgba(255, 240, 235, 0.8);
+}
+
+.slx-diary-tcho-settings .slx-diary-pill-toggle button {
+  color: #a07060;
+}
+
+.slx-diary-tcho-settings .slx-diary-pill-toggle button.is-active {
+  background: linear-gradient(135deg, #f0aaa2, #e89090);
+  color: #fff;
+}
+
+.slx-diary-tcho-settings .slx-field span {
+  color: #8b5a4e;
+}
+
+.slx-diary-tcho-settings .slx-diary-upload-box {
+  border-color: #e0b8a8;
+  background: rgba(255, 246, 242, 0.55);
+}
+
+.slx-diary-tcho-settings .slx-diary-upload-box span {
+  color: #7a4a3a;
+}
+
+.slx-diary-tcho-settings .slx-soft-btn {
+  border-color: #e0b8a8;
+  color: #8b5a4e;
+  background: rgba(255, 246, 242, 0.9);
+}
+
+.slx-diary-tcho-settings .slx-soft-btn:hover:not(:disabled) {
+  border-color: #c09080;
+  background: rgba(255, 234, 226, 0.98);
+}
+
+.slx-diary-tcho-settings .slx-primary-btn {
+  border-color: #e09080;
+  background: rgba(255, 228, 220, 0.9);
+  color: #7a3a30;
+}
+
+/* ── 响应式 ── */
+
+@media (max-width: 720px) {
+  .slx-diary-tcho-frame {
+    border-radius: 14px;
+  }
+
+  .slx-diary-tcho-library {
+    padding: 14px 14px 0;
+    gap: 14px;
+  }
+
+  .slx-diary-tcho-title {
+    font-size: 19px;
+  }
+
+  .slx-diary-tcho-wave {
+    width: 92px;
+  }
+
+  .slx-diary-tcho-book-card {
+    min-height: 62px;
+  }
+
+  .slx-diary-tcho-settings {
+    padding: 14px !important;
+  }
+}
