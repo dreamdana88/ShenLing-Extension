@@ -941,18 +941,15 @@ body.slx-panel-open-lock {
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(circle at 50% 28%, rgba(220, 194, 132, 0.12), transparent 34%),
-    linear-gradient(180deg, rgb(22, 17, 13), rgb(8, 7, 6));
+  background: transparent;
   padding:
     max(18px, var(--slx-safe-top))
     max(18px, var(--slx-safe-right))
     max(18px, var(--slx-safe-bottom))
     max(18px, var(--slx-safe-left));
   box-sizing: border-box;
-  overflow: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
-  backdrop-filter: blur(6px);
 }
 
 .slx-diary-notebook-stage {
@@ -967,7 +964,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-stage-cover {
-  width: min(100%, clamp(220px, calc((var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 132px) * 0.707), 420px));
+  width: min(100%, clamp(220px, calc((var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 154px) * 0.707), 420px));
 }
 
 .slx-diary-stage-open {
@@ -2548,7 +2545,7 @@ body.slx-panel-open-lock {
   }
 
   .slx-diary-stage-cover {
-    width: min(100%, clamp(220px, calc((var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 170px) * 0.707), 300px));
+    width: min(100%, clamp(200px, calc((var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 190px) * 0.707), 300px));
   }
 
   .slx-diary-cover {
