@@ -13,11 +13,13 @@ import {
 } from '../../core/settings.js';
 import {
   resolveDiaryContext,
+  collectRecentMemories,
 } from '../../core/context-resolver.js';
 import {
   replacePromptMacros,
 } from '../../core/macros.js';
 import {
+  extractMemoryBlocks,
   getOpenAiResponseContent,
 } from '../../core/summary.js';
 
@@ -270,10 +272,20 @@ function getEntryPreview(entry) {
 
 function getDefaultDiaryDate(chatState) {
   const store = getDiaryStore(chatState);
-  return store.lastComposeDate
+  const latestMemoryTime = getLatestMemoryTime();
+  return latestMemoryTime
+    || store.lastComposeDate
     || chatState.summary?.currentStoryDate
     || chatState.identity?.storyDate
     || formatTimestamp();
+}
+
+function getLatestMemoryTime() {
+  const latestMemory = collectRecentMemories({ limit: 1 })[0]?.content || '';
+  const time = String(latestMemory).match(/<time>\s*([\s\S]*?)\s*<\/time>/i)?.[1]?.trim();
+  if (time) return time;
+  const nestedMemory = extractMemoryBlocks(latestMemory).at(-1) || '';
+  return String(nestedMemory).match(/<time>\s*([\s\S]*?)\s*<\/time>/i)?.[1]?.trim() || '';
 }
 
 function getRoleEntries(entries, roleName) {
@@ -628,10 +640,11 @@ function renderDiaryCompose(chatState) {
       <section class="slx-diary-book-page">
         <div class="slx-diary-book-page-title">撰写日记</div>
         <div class="slx-diary-book-rule"></div>
-        <label class="slx-field slx-diary-paper-field">
+        <input type="hidden" data-slx-diary-compose-role value="${escapeHtml(roleName)}" />
+        <div class="slx-diary-paper-field">
           <span>日记角色</span>
-          <input type="text" data-slx-diary-compose-role value="${escapeHtml(roleName)}" placeholder="输入角色名称" />
-        </label>
+          <p>${escapeHtml(roleName || '未命名角色')}</p>
+        </div>
         <label class="slx-field slx-diary-paper-field">
           <span>日记日期</span>
           <input type="text" data-slx-diary-compose-date value="${escapeHtml(dateValue)}" placeholder="默认当前剧情日期，可手动改" />
@@ -799,10 +812,7 @@ async function generateRoleDiary({ roleName, date }) {
 
   if (store.settings.apiMode === 'main') {
     const requestBody = {
-      user_input: prompt,
-      ordered_prompts: [],
-      should_silence: true,
-      max_chat_history: 0,
+      prompt: messages,
     };
     try {
       const generateRaw = getPanelOption('getGenerateRawFunction')?.();

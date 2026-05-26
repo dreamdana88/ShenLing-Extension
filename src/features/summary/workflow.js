@@ -55,7 +55,6 @@ import {
   forceMemoryNumber,
   getLegacyArchiveBatchSize,
   getOpenAiResponseContent,
-  getSummaryPromptUserInput,
   isGrandMemoryOnly,
   normalizeMemoryBlock,
   parseMemoryNumber,
@@ -247,12 +246,8 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结' }
   const messages = replacePromptMessageMacros(buildMemorySummaryMessages(prompt));
 
   if (api.mode === 'main_api') {
-    const userInput = replacePromptMacros(getSummaryPromptUserInput(prompt));
     const requestBody = {
-      user_input: userInput,
-      ordered_prompts: messages.slice(0, -1),
-      should_silence: true,
-      max_chat_history: 0,
+      prompt: messages,
     };
     try {
       const generateRaw = requireWorkflowOption('getGenerateRawFunction')();

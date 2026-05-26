@@ -1125,6 +1125,15 @@ body.slx-panel-open-lock {
   color: rgba(79, 57, 38, 0.72);
 }
 
+.slx-diary-paper-field p {
+  margin: 6px 0 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(139, 75, 67, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 252, 235, 0.44);
+  color: #4f3926;
+}
+
 .slx-diary-paper-field input,
 .slx-diary-paper-field textarea {
   border-color: rgba(139, 75, 67, 0.24);
