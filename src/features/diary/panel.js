@@ -285,11 +285,17 @@ function getDefaultDiaryDate(chatState) {
 }
 
 function getLatestMemoryTime() {
-  const latestMemory = collectRecentMemories({ limit: 1 })[0]?.content || '';
-  const time = String(latestMemory).match(/<time>\s*([\s\S]*?)\s*<\/time>/i)?.[1]?.trim();
-  if (time) return time;
-  const nestedMemory = extractMemoryBlocks(latestMemory).at(-1) || '';
-  return String(nestedMemory).match(/<time>\s*([\s\S]*?)\s*<\/time>/i)?.[1]?.trim() || '';
+  const memories = collectRecentMemories({ limit: 12 }).map(item => item.content).filter(Boolean).reverse();
+  for (const memory of memories) {
+    const time = String(memory).match(/<time>\s*([\s\S]*?)\s*<\/time>/i)?.[1]?.trim()
+      || String(memory).match(/时间[:：]\s*([^\n<]+)/i)?.[1]?.trim();
+    if (time) return time;
+    const nestedMemory = extractMemoryBlocks(memory).at(-1) || '';
+    const nestedTime = String(nestedMemory).match(/<time>\s*([\s\S]*?)\s*<\/time>/i)?.[1]?.trim()
+      || String(nestedMemory).match(/时间[:：]\s*([^\n<]+)/i)?.[1]?.trim();
+    if (nestedTime) return nestedTime;
+  }
+  return '';
 }
 
 function getRoleEntries(entries, roleName) {
@@ -1283,7 +1289,7 @@ export function bindDiaryPanelEvents(panelRoot) {
       const chatState = getChatState();
       setDiaryScreen('compose', {
         composeRoleName: diaryPanelState.roleName,
-        composeDate: diaryPanelState.composeDate || getDefaultDiaryDate(chatState),
+        composeDate: getDefaultDiaryDate(chatState),
       });
     });
   });
