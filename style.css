@@ -1008,6 +1008,11 @@ body.slx-panel-open-lock {
   width: min(980px, calc((var(--slx-viewport-height) - 116px) * 1.414), calc(100vw - 36px));
 }
 
+.slx-diary-cover-wrap {
+  position: relative;
+  width: 100%;
+}
+
 .slx-diary-notebook-toolbar {
   display: flex;
   align-items: center;
@@ -1075,6 +1080,103 @@ body.slx-panel-open-lock {
   padding: 32px 28px;
   text-align: center;
   cursor: pointer;
+}
+
+.slx-diary-book-close-btn,
+.slx-diary-page-corner-btn,
+.slx-diary-page-action-btn,
+.slx-diary-feather-btn {
+  border: 1px solid rgba(139, 75, 67, 0.22);
+  background: rgba(255, 247, 218, 0.48);
+  color: rgba(92, 54, 44, 0.74);
+  box-shadow: 0 5px 14px rgba(72, 42, 34, 0.1);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
+}
+
+.slx-diary-book-close-btn:hover,
+.slx-diary-page-corner-btn:hover,
+.slx-diary-page-action-btn:hover,
+.slx-diary-feather-btn:hover {
+  border-color: rgba(139, 75, 67, 0.42);
+  background: rgba(255, 247, 218, 0.78);
+  color: #7a3f37;
+  transform: translateY(-1px);
+}
+
+.slx-diary-book-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 5;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slx-diary-cover-wrap .slx-diary-book-close-btn {
+  background: rgba(245, 227, 184, 0.14);
+  border-color: rgba(245, 227, 184, 0.2);
+  color: rgba(255, 242, 200, 0.64);
+  box-shadow: none;
+}
+
+.slx-diary-cover-wrap .slx-diary-book-close-btn:hover {
+  background: rgba(245, 227, 184, 0.24);
+  border-color: rgba(245, 227, 184, 0.34);
+  color: #fff2c8;
+}
+
+.slx-diary-page-close-btn {
+  top: 22px;
+  right: 24px;
+}
+
+.slx-diary-page-corner-btn {
+  position: absolute;
+  left: 28px;
+  bottom: 22px;
+  z-index: 4;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slx-diary-page-actions {
+  position: absolute;
+  top: 22px;
+  right: 70px;
+  z-index: 4;
+  display: flex;
+  gap: 6px;
+}
+
+.slx-diary-page-action-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+
+.slx-diary-feather-btn {
+  width: 58px;
+  height: 58px;
+  margin-top: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #8b4b43;
+  font-size: 22px;
 }
 
 .slx-diary-cover:hover {

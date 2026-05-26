@@ -581,14 +581,16 @@ function renderDiaryCover(chatState) {
   const roleName = diaryPanelState.roleName;
   const entries = getRoleEntries(getDiaryEntries(chatState), roleName);
   return `
-    <div class="slx-diary-nav-row">
-      <button class="slx-soft-btn" type="button" data-slx-diary-back-library><i class="fa-solid fa-arrow-left"></i><span>返回书架</span></button>
+    <div class="slx-diary-cover-wrap">
+      <button class="slx-diary-book-close-btn" type="button" data-slx-close-diary-notebook title="回到书架">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+      <button class="slx-diary-cover" type="button" data-slx-open-diary-toc>
+        <span class="slx-diary-cover-label">SHENLING DIARY</span>
+        <b>${escapeHtml(roleName || '未命名角色')}</b>
+        <small>${escapeHtml(entries.length)} 篇记录 · 点击翻开目录</small>
+      </button>
     </div>
-    <button class="slx-diary-cover" type="button" data-slx-open-diary-toc>
-      <span class="slx-diary-cover-label">SHENLING DIARY</span>
-      <b>${escapeHtml(roleName || '未命名角色')}</b>
-      <small>${escapeHtml(entries.length)} 篇记录 · 点击翻开目录</small>
-    </button>
   `;
 }
 
@@ -596,12 +598,11 @@ function renderDiaryToc(chatState) {
   const roleName = diaryPanelState.roleName;
   const entries = getRoleEntries(getDiaryEntries(chatState), roleName);
   return `
-    <div class="slx-diary-nav-row">
-      <button class="slx-soft-btn" type="button" data-slx-diary-back-cover><i class="fa-solid fa-arrow-left"></i><span>返回封面</span></button>
-      <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-open-diary-compose><i class="fa-solid fa-feather"></i><span>撰写日记</span></button>
-    </div>
     <div class="slx-diary-book-spread slx-diary-inline-book">
       <section class="slx-diary-book-page">
+        <button class="slx-diary-page-corner-btn slx-diary-page-corner-left" type="button" data-slx-diary-back-cover title="返回封面">
+          <i class="fa-solid fa-arrow-left"></i>
+        </button>
         <div class="slx-diary-book-page-title">目录</div>
         <div class="slx-diary-book-rule"></div>
         <div class="slx-diary-toc-list">
@@ -613,12 +614,17 @@ function renderDiaryToc(chatState) {
             </button>
           `).join('') : '<p>这本日记还没有写下第一篇。</p>'}
         </div>
-        <div class="slx-diary-book-page-num">目录</div>
       </section>
       <section class="slx-diary-book-page slx-diary-book-page-right">
+        <button class="slx-diary-book-close-btn slx-diary-page-close-btn" type="button" data-slx-close-diary-notebook title="回到书架">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
         <div class="slx-diary-book-page-title">撰写</div>
         <div class="slx-diary-book-rule"></div>
-        <p>点击“撰写日记”进入新页面。若你的日记内容为空，会生成角色独白；若写下给角色看的内容，会生成交换日记。</p>
+        <p>若你的日记内容为空，会生成角色独白；若写下给角色看的内容，会生成交换日记。</p>
+        <button class="slx-diary-feather-btn" type="button" data-slx-open-diary-compose title="撰写日记">
+          <i class="fa-solid fa-feather"></i>
+        </button>
         <div class="slx-diary-book-page-num">${escapeHtml(roleName || '')}</div>
       </section>
     </div>
@@ -647,22 +653,25 @@ function renderDiaryEntryPage(chatState) {
     ].join('\n');
 
   return `
-    <div class="slx-diary-nav-row">
-      <button class="slx-soft-btn" type="button" data-slx-diary-back-toc><i class="fa-solid fa-list"></i><span>目录</span></button>
-      <div class="slx-card-actions">
-        ${entry.status === 'draft' ? `<button class="slx-mini-action-btn" type="button" data-slx-collect-diary="${escapeHtml(entry.id)}" title="收录"><i class="fa-solid fa-check"></i></button>` : ''}
-        <button class="slx-mini-action-btn" type="button" data-slx-edit-diary="${escapeHtml(entry.id)}" title="编辑"><i class="fa-solid fa-pen-to-square"></i></button>
-        <button class="slx-mini-action-btn" type="button" data-slx-delete-diary="${escapeHtml(entry.id)}" title="删除"><i class="fa-solid fa-trash"></i></button>
-      </div>
-    </div>
     <div class="slx-diary-book-spread slx-diary-inline-book">
       <section class="slx-diary-book-page">
+        <button class="slx-diary-page-corner-btn slx-diary-page-corner-left" type="button" data-slx-diary-back-toc title="返回目录">
+          <i class="fa-solid fa-list"></i>
+        </button>
         <div class="slx-diary-book-page-title">${escapeHtml(leftTitle)}</div>
         <div class="slx-diary-book-rule"></div>
         <p>${escapeHtml(leftText)}</p>
         <div class="slx-diary-book-page-num">${escapeHtml(index + 1)}</div>
       </section>
       <section class="slx-diary-book-page slx-diary-book-page-right">
+        <button class="slx-diary-book-close-btn slx-diary-page-close-btn" type="button" data-slx-close-diary-notebook title="回到书架">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+        <div class="slx-diary-page-actions">
+          ${entry.status === 'draft' ? `<button class="slx-diary-page-action-btn" type="button" data-slx-collect-diary="${escapeHtml(entry.id)}" title="收录"><i class="fa-solid fa-check"></i></button>` : ''}
+          <button class="slx-diary-page-action-btn" type="button" data-slx-edit-diary="${escapeHtml(entry.id)}" title="编辑"><i class="fa-solid fa-pen-to-square"></i></button>
+          <button class="slx-diary-page-action-btn" type="button" data-slx-delete-diary="${escapeHtml(entry.id)}" title="删除"><i class="fa-solid fa-trash"></i></button>
+        </div>
         <div class="slx-diary-book-page-title">${escapeHtml(rightTitle)}</div>
         <div class="slx-diary-book-rule"></div>
         <p>${escapeHtml(rightText)}</p>
@@ -686,11 +695,11 @@ function renderDiaryCompose(chatState) {
       ? diaryPanelState.generationError || '日记生成失败。'
       : '用户内容为空时会生成角色独白；写下内容时先创建交换日记草稿。';
   return `
-    <div class="slx-diary-nav-row">
-      <button class="slx-soft-btn" type="button" data-slx-diary-back-toc><i class="fa-solid fa-arrow-left"></i><span>返回目录</span></button>
-    </div>
     <div class="slx-diary-book-spread slx-diary-inline-book">
       <section class="slx-diary-book-page">
+        <button class="slx-diary-page-corner-btn slx-diary-page-corner-left" type="button" data-slx-diary-back-toc title="返回目录">
+          <i class="fa-solid fa-arrow-left"></i>
+        </button>
         <div class="slx-diary-book-page-title">撰写日记</div>
         <div class="slx-diary-book-rule"></div>
         <input type="hidden" data-slx-diary-compose-role value="${escapeHtml(roleName)}" />
@@ -708,6 +717,9 @@ function renderDiaryCompose(chatState) {
         </label>
       </section>
       <section class="slx-diary-book-page slx-diary-book-page-right">
+        <button class="slx-diary-book-close-btn slx-diary-page-close-btn" type="button" data-slx-close-diary-notebook title="回到书架">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
         <div class="slx-diary-book-page-title">落笔前</div>
         <div class="slx-diary-book-rule"></div>
         <p>标题由 AI 生成。生成完成后会先作为草稿收入这本日记。</p>
@@ -797,19 +809,11 @@ function renderDiaryNotebookBody(chatState) {
 
 function renderDiaryNotebookModal(chatState) {
   if (diaryPanelState.tab !== 'notebooks' || diaryPanelState.screen === 'library') return '';
-  const roleName = diaryPanelState.roleName || diaryPanelState.composeRoleName || '未命名日记本';
   const stageClass = diaryPanelState.screen === 'cover' ? 'slx-diary-stage-cover' : 'slx-diary-stage-open';
   const visualStyle = buildDiaryVisualStyle(getDiaryStore(chatState).settings);
   return `
     <div class="slx-diary-notebook-modal" data-slx-close-diary-notebook>
       <div class="slx-diary-notebook-stage ${stageClass}" data-slx-diary-notebook-stage${visualStyle}>
-        <div class="slx-diary-notebook-toolbar">
-          <div>
-            <b>${escapeHtml(roleName)}</b>
-            <span>${diaryPanelState.screen === 'cover' ? '封面' : diaryPanelState.screen === 'toc' ? '目录' : diaryPanelState.screen === 'compose' ? '撰写日记' : '日记页'}</span>
-          </div>
-          <button class="slx-icon-btn" type="button" data-slx-close-diary-notebook title="关闭">×</button>
-        </div>
         ${renderDiaryNotebookBody(chatState)}
       </div>
     </div>
