@@ -9,6 +9,10 @@ import {
 import { buildApiUrl } from '../../core/api.js';
 import { buildCharacterFoundationBlock } from '../../core/character.js';
 import {
+  replacePromptMacros,
+  replacePromptMessageMacros,
+} from '../../core/macros.js';
+import {
   createAssistantChatMessage,
   createMessageIdRange,
   getChatMessageById,
@@ -240,10 +244,10 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结' }
   const api = requireWorkflowOption('getApiSettings')(settings);
   const addCommunicationLog = requireWorkflowOption('addCommunicationLog');
   const startedAt = performance.now();
-  const messages = buildMemorySummaryMessages(prompt);
+  const messages = replacePromptMessageMacros(buildMemorySummaryMessages(prompt));
 
   if (api.mode === 'main_api') {
-    const userInput = getSummaryPromptUserInput(prompt);
+    const userInput = replacePromptMacros(getSummaryPromptUserInput(prompt));
     const requestBody = {
       user_input: userInput,
       ordered_prompts: messages.slice(0, -1),
