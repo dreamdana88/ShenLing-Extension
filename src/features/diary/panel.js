@@ -831,6 +831,10 @@ export function renderDiaryPanel(settings, chatState) {
   `;
 }
 
+export function isDiaryNotebookOpen() {
+  return diaryPanelState.tab === 'notebooks' && diaryPanelState.screen !== 'library';
+}
+
 function saveEntry(entryInput) {
   const chatState = getChatState();
   const store = getDiaryStore(chatState);

@@ -64,6 +64,7 @@ import {
 import {
   bindDiaryPanelEvents,
   configureDiaryPanel,
+  isDiaryNotebookOpen,
   renderDiaryPanel,
 } from './src/features/diary/panel.js';
 import {
@@ -671,9 +672,14 @@ function renderFloatingPanel(options = {}) {
     document.body.appendChild(panelRoot);
   }
 
+  const panelClasses = [
+    'slx-panel',
+    activeModule.id === 'diary' && isDiaryNotebookOpen() ? 'slx-panel-diary-book-only' : '',
+  ].filter(Boolean).join(' ');
+
   panelRoot.innerHTML = `
     <div class="slx-backdrop" data-slx-close="true"></div>
-    <section class="slx-panel" data-theme="${escapeHtml(settings.theme)}">
+    <section class="${panelClasses}" data-theme="${escapeHtml(settings.theme)}">
       <div class="slx-bubbles"><span></span><span></span><span></span><span></span></div>
       <header class="slx-header">
         <div class="slx-brand">

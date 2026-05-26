@@ -280,6 +280,43 @@ body.slx-panel-open-lock {
   color-scheme: dark;
 }
 
+.slx-panel.slx-panel-diary-book-only {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.slx-panel.slx-panel-diary-book-only > .slx-bubbles,
+.slx-panel.slx-panel-diary-book-only > .slx-header,
+.slx-panel.slx-panel-diary-book-only > .slx-communication-log-panel {
+  display: none;
+}
+
+.slx-panel.slx-panel-diary-book-only > .slx-body {
+  display: block;
+  min-height: 100%;
+  padding: 0;
+  overflow: visible;
+}
+
+.slx-panel.slx-panel-diary-book-only .slx-module-grid,
+.slx-panel.slx-panel-diary-book-only .slx-detail > .slx-detail-head,
+.slx-panel.slx-panel-diary-book-only .slx-diary-tcho-frame,
+.slx-panel.slx-panel-diary-book-only .slx-diary-reader-modal {
+  display: none;
+}
+
+.slx-panel.slx-panel-diary-book-only .slx-detail {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
 .slx-bubbles {
   position: absolute;
   inset: 0;
