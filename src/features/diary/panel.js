@@ -17,11 +17,15 @@ import {
 } from '../../core/context-resolver.js';
 import {
   replacePromptMacros,
+  replacePromptMessageMacros,
 } from '../../core/macros.js';
 import {
   extractMemoryBlocks,
   getOpenAiResponseContent,
 } from '../../core/summary.js';
+import {
+  SUMMARY_SUPPORT_MESSAGES,
+} from '../../prompts.js';
 
 const DIARY_TABS = [
   { id: 'notebooks', label: '日记本', icon: 'fa-book-open' },
@@ -808,7 +812,10 @@ async function generateRoleDiary({ roleName, date }) {
     diaryDate: date,
     diaryContextMaterial: context.material,
   });
-  const messages = [{ role: 'user', content: prompt }];
+  const messages = replacePromptMessageMacros([
+    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+    { role: 'user', content: prompt },
+  ]);
 
   if (store.settings.apiMode === 'main') {
     const requestBody = {

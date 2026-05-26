@@ -3,6 +3,7 @@ import {
 } from '../constants.js';
 import {
   isPlainObject,
+  extractSummarySourceContent,
 } from '../utils/text.js';
 import {
   getCurrentCharacterInfo,
@@ -15,6 +16,7 @@ import {
 } from './chat.js';
 import {
   getChatState,
+  getSummarySettings,
 } from './settings.js';
 import {
   extractMemoryBlocks,
@@ -194,11 +196,13 @@ function normalizeChatRecord(message) {
   const speaker = role === 'user'
     ? userName
     : pickText(message.name, charInfo.name, 'Assistant');
+  const rawContent = cleanText(message.message);
+  const summaryContent = extractSummarySourceContent(rawContent, getSummarySettings());
   return {
     messageId: Number(message.message_id),
     role,
     speaker,
-    content: cleanText(message.message),
+    content: summaryContent || rawContent,
     isHidden: Boolean(message.is_hidden),
   };
 }
@@ -230,12 +234,14 @@ export function formatRecentChatForContext(messages = []) {
 export function collectRecentMemories({
   limit = DEFAULT_MEMORY_LIMIT,
   beforeMessageId = null,
+  includeHidden = false,
 } = {}) {
   const maxId = Number(beforeMessageId);
   const hasMaxId = Number.isFinite(maxId);
   const safeLimit = Math.max(0, Number(limit) || DEFAULT_MEMORY_LIMIT);
   const messages = getChatMessagesSafe(undefined, { hide_state: 'all' })
     .filter(message => message.role === 'assistant')
+    .filter(message => includeHidden || !message.is_hidden)
     .filter(message => !hasMaxId || Number(message.message_id) < maxId)
     .filter(message => !GRAND_MEMORY_BLOCK_RE.test(String(message.message || '')));
 
@@ -251,12 +257,14 @@ export function collectRecentMemories({
 export function collectRecentGrandMemories({
   limit = DEFAULT_GRAND_MEMORY_LIMIT,
   beforeMessageId = null,
+  includeHidden = false,
 } = {}) {
   const maxId = Number(beforeMessageId);
   const hasMaxId = Number.isFinite(maxId);
   const safeLimit = Math.max(0, Number(limit) || DEFAULT_GRAND_MEMORY_LIMIT);
   const grandMemories = getChatMessagesSafe(undefined, { hide_state: 'all' })
     .filter(message => message.role === 'assistant')
+    .filter(message => includeHidden || !message.is_hidden)
     .filter(message => !hasMaxId || Number(message.message_id) < maxId)
     .flatMap(message => {
       const match = String(message.message || '').match(GRAND_MEMORY_BLOCK_RE);
@@ -960,12 +968,23 @@ function formatEmotionProfilesForDiary(items = []) {
   ].filter(Boolean).join('\n')).join('\n\n');
 }
 
+function formatTimelineArchivesForDiary(memories = [], grandMemories = []) {
+  const items = [
+    ...(Array.isArray(grandMemories) ? grandMemories.map(item => ({ ...item, archiveType: 'grand_memory' })) : []),
+    ...(Array.isArray(memories) ? memories.map(item => ({ ...item, archiveType: 'memory' })) : []),
+  ].sort((a, b) => Number(a.messageId ?? 0) - Number(b.messageId ?? 0));
+
+  if (!items.length) return '';
+  return items.map(item => {
+    const source = Number.isFinite(Number(item.messageId)) ? `第 ${item.messageId} 楼` : '未记录楼层';
+    return `### ${source}｜${item.archiveType}\n${cleanText(item.content)}`;
+  }).join('\n\n');
+}
+
 function formatWorldInfoForDiary(entries = []) {
   if (!Array.isArray(entries) || !entries.length) return '';
   return entries.map(entry => [
     `### ${entry.title || '未命名条目'}`,
-    entry.world ? `世界书：${entry.world}` : '',
-    entry.keys?.length ? `关键词：${entry.keys.join('、')}` : '',
     cleanText(entry.content),
   ].filter(Boolean).join('\n')).join('\n\n');
 }
@@ -985,18 +1004,21 @@ function formatWorldInfoInjectionForDiary(context = {}) {
   return injectionText;
 }
 
+function formatWorldInfoMaterialForDiary(context = {}) {
+  return [
+    formatWorldInfoForDiary(context.activatedWorldInfo),
+    formatWorldInfoInjectionForDiary(context),
+  ].filter(Boolean).join('\n\n');
+}
+
 export function buildDiaryContextMaterial(context = {}) {
-  const targetRoleName = cleanText(context.targetRoleName);
   const sections = [
-    createSection('日记目标视角', targetRoleName ? `这篇日记由「${targetRoleName}」书写。` : ''),
     createSection('当前角色卡基础信息', formatCharacterCardForDiary(context.characterCard)),
     createSection('用户 Persona', context.userPersona),
-    createSection('最近主线聊天', context.recentChat),
-    createSection('近期 memory', formatMemoryItemsForDiary(context.memories, '近期 memory')),
-    createSection('近期 grand_memory', formatMemoryItemsForDiary(context.grandMemories, '近期 grand_memory')),
+    createSection('当前世界信息', formatWorldInfoMaterialForDiary(context)),
+    createSection('近期梦境档案', formatTimelineArchivesForDiary(context.memories, context.grandMemories)),
+    createSection('最近主要剧情', context.recentChat),
     createSection('情感档案', formatEmotionProfilesForDiary(context.emotionProfiles)),
-    createSection('当前激活世界书', formatWorldInfoForDiary(context.activatedWorldInfo)),
-    createSection('当前世界书注入文本兜底', formatWorldInfoInjectionForDiary(context)),
   ].filter(Boolean);
 
   return sections.join('\n\n---\n\n');
