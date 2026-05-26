@@ -413,8 +413,8 @@ function normalizeWorldInfoEntriesFromPayload(payload, source = 'event') {
   }
 
   const sources = [
-    ['sortedEntries', payload.sortedEntries],
     ['allActivatedEntries', payload.allActivatedEntries],
+    ['sortedEntries', payload.sortedEntries],
     ['activated.entries', payload.activated?.entries],
     ['entries', payload.entries],
   ];

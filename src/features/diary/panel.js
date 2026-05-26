@@ -53,7 +53,7 @@ const ROLE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
 \${diaryContextMaterial}
 
 日记要求：
-- 日记正文不得少于 500 字。
+- 日记正文控制在 300-500 字。
 - 语气、用词、关注重点必须符合【\${targetRoleName}】的角色设定。
 - 是角色的私密日记，应展示其真实内心且富有生活气息，像真正的私人手帐/日记一样自然。
 - 只写【\${targetRoleName}】本人能知道、能感受到、会在意的事情，避免全知视角。
@@ -275,13 +275,8 @@ function getEntryPreview(entry) {
 }
 
 function getDefaultDiaryDate(chatState) {
-  const store = getDiaryStore(chatState);
   const latestMemoryTime = getLatestMemoryTime();
-  return latestMemoryTime
-    || store.lastComposeDate
-    || chatState.summary?.currentStoryDate
-    || chatState.identity?.storyDate
-    || formatTimestamp();
+  return latestMemoryTime || '';
 }
 
 function getLatestMemoryTime() {
@@ -941,7 +936,7 @@ async function generateRoleDiary({ roleName, date }) {
 
 async function createUnifiedDiaryDraft(panelRoot) {
   const roleName = normalizeRoleName(panelRoot.querySelector('[data-slx-diary-compose-role]')?.value);
-  const date = String(panelRoot.querySelector('[data-slx-diary-compose-date]')?.value || '').trim() || formatTimestamp();
+  const date = String(panelRoot.querySelector('[data-slx-diary-compose-date]')?.value || '').trim();
   const userContent = String(panelRoot.querySelector('[data-slx-diary-compose-user-content]')?.value || '').trim();
   if (!roleName) return;
 
