@@ -1148,6 +1148,23 @@ body.slx-panel-open-lock {
   justify-content: center;
 }
 
+.slx-diary-page-footer-left {
+  position: absolute;
+  left: 28px;
+  bottom: 22px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #8b4b43;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 13px;
+}
+
+.slx-diary-page-footer-left .slx-diary-page-corner-btn {
+  position: static;
+}
+
 .slx-diary-page-actions {
   position: absolute;
   top: 22px;
@@ -1155,6 +1172,10 @@ body.slx-panel-open-lock {
   z-index: 4;
   display: flex;
   gap: 6px;
+}
+
+.slx-diary-entry-page-actions {
+  right: 28px;
 }
 
 .slx-diary-page-action-btn {
@@ -1622,6 +1643,10 @@ body.slx-panel-open-lock {
   color: #8b4b43;
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 13px;
+}
+
+.slx-diary-blank-page {
+  min-height: 100%;
 }
 
 @media (max-width: 768px) {

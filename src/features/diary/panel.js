@@ -61,6 +61,7 @@ const TCHO_LEAF_L = `<svg class="slx-diary-tcho-leaf" viewBox="0 0 56 24" fill="
 const TCHO_LEAF_R = `<svg class="slx-diary-tcho-leaf slx-diary-tcho-leaf-r" viewBox="0 0 56 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 12 Q18 6 32 11" stroke="#8ab49a" stroke-width="1.2" stroke-linecap="round"/><path d="M24 11 Q30 5 40 8 Q32 9 24 11Z" fill="#a8c8b4" opacity="0.85"/><path d="M24 11 Q30 17 40 14 Q32 13 24 11Z" fill="#c0d8c6" opacity="0.7"/><path d="M36 10 Q42 5 50 8 Q43 9 36 10Z" fill="#a8c8b4" opacity="0.8"/><path d="M36 10 Q42 15 50 12 Q43 11 36 10Z" fill="#c0d8c6" opacity="0.65"/></svg>`;
 
 const DIARY_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+const DIARY_DATE_FALLBACK_LABEL = '当前剧情日期';
 const ROLE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
 
 请根据下方梦境上下文素材，以【\${targetRoleName}】的第一人称视角与口吻，写一则日期为【\${diaryDate}】的角色日记。
@@ -140,9 +141,10 @@ function fillTemplate(template, values = {}) {
 }
 
 function buildRoleDiaryPrompt({ targetRoleName, diaryDate, diaryContextMaterial }) {
+  const promptDiaryDate = String(diaryDate || '').trim() || DIARY_DATE_FALLBACK_LABEL;
   return replacePromptMacros(fillTemplate(ROLE_DIARY_PROMPT_TEMPLATE, {
     targetRoleName,
-    diaryDate,
+    diaryDate: promptDiaryDate,
     diaryContextMaterial,
   }));
 }
@@ -643,39 +645,39 @@ function renderDiaryEntryPage(chatState) {
   const leftTitle = isExchange ? '你的日记' : getEntryTitle(entry);
   const leftText = isExchange ? entry.userContent : entry.content || '正文将在生成后写入这里。';
   const rightTitle = isExchange ? (entry.characterReply?.title || '角色回信') : '日记信息';
-  const rightText = isExchange
-    ? entry.characterReply?.content || '角色回信将在生成后写入这里。'
-    : [
-      `作者：${getEntryRoleName(entry)}`,
-      `日期：${getEntryTime(entry)}`,
-      `状态：${entry.status === 'draft' ? '草稿' : '已收录'}`,
-      `来源：${entry.source === 'generated' ? 'AI 生成' : '手动草稿'}`,
-    ].join('\n');
+  const rightText = isExchange ? entry.characterReply?.content || '角色回信将在生成后写入这里。' : '';
+  const entryActions = `
+    <div class="slx-diary-page-actions slx-diary-entry-page-actions">
+      ${entry.status === 'draft' ? `<button class="slx-diary-page-action-btn" type="button" data-slx-collect-diary="${escapeHtml(entry.id)}" title="收录"><i class="fa-solid fa-check"></i></button>` : ''}
+      <button class="slx-diary-page-action-btn" type="button" data-slx-edit-diary="${escapeHtml(entry.id)}" title="编辑"><i class="fa-solid fa-pen-to-square"></i></button>
+      <button class="slx-diary-page-action-btn" type="button" data-slx-delete-diary="${escapeHtml(entry.id)}" title="删除"><i class="fa-solid fa-trash"></i></button>
+    </div>
+  `;
 
   return `
     <div class="slx-diary-book-spread slx-diary-inline-book">
       <section class="slx-diary-book-page">
-        <button class="slx-diary-page-corner-btn slx-diary-page-corner-left" type="button" data-slx-diary-back-toc title="返回目录">
-          <i class="fa-solid fa-list"></i>
-        </button>
+        ${entryActions}
         <div class="slx-diary-book-page-title">${escapeHtml(leftTitle)}</div>
         <div class="slx-diary-book-rule"></div>
         <p>${escapeHtml(leftText)}</p>
-        <div class="slx-diary-book-page-num">${escapeHtml(index + 1)}</div>
+        <div class="slx-diary-page-footer-left">
+          <button class="slx-diary-page-corner-btn" type="button" data-slx-diary-back-toc title="返回目录">
+            <i class="fa-solid fa-list"></i>
+          </button>
+          <span>${escapeHtml(index + 1)}</span>
+        </div>
       </section>
       <section class="slx-diary-book-page slx-diary-book-page-right">
         <button class="slx-diary-book-close-btn slx-diary-page-close-btn" type="button" data-slx-close-diary-notebook title="回到书架">
           <i class="fa-solid fa-xmark"></i>
         </button>
-        <div class="slx-diary-page-actions">
-          ${entry.status === 'draft' ? `<button class="slx-diary-page-action-btn" type="button" data-slx-collect-diary="${escapeHtml(entry.id)}" title="收录"><i class="fa-solid fa-check"></i></button>` : ''}
-          <button class="slx-diary-page-action-btn" type="button" data-slx-edit-diary="${escapeHtml(entry.id)}" title="编辑"><i class="fa-solid fa-pen-to-square"></i></button>
-          <button class="slx-diary-page-action-btn" type="button" data-slx-delete-diary="${escapeHtml(entry.id)}" title="删除"><i class="fa-solid fa-trash"></i></button>
-        </div>
-        <div class="slx-diary-book-page-title">${escapeHtml(rightTitle)}</div>
-        <div class="slx-diary-book-rule"></div>
-        <p>${escapeHtml(rightText)}</p>
-        <div class="slx-diary-book-page-num">${escapeHtml(getEntryTime(entry))}</div>
+        ${isExchange ? `
+          <div class="slx-diary-book-page-title">${escapeHtml(rightTitle)}</div>
+          <div class="slx-diary-book-rule"></div>
+          <p>${escapeHtml(rightText)}</p>
+          <div class="slx-diary-book-page-num">${escapeHtml(getEntryTime(entry))}</div>
+        ` : '<div class="slx-diary-blank-page" aria-hidden="true"></div>'}
       </section>
     </div>
     <div class="slx-diary-page-turns">
@@ -856,6 +858,7 @@ async function generateRoleDiary({ roleName, date }) {
   const store = getDiaryStore(chatState);
   const addCommunicationLog = getPanelOption('addCommunicationLog');
   const startedAt = performance.now();
+  const fallbackDate = String(date || '').trim() || DIARY_DATE_FALLBACK_LABEL;
   const context = await resolveDiaryContext({ targetRoleName: roleName });
   const prompt = buildRoleDiaryPrompt({
     targetRoleName: roleName,
@@ -877,7 +880,7 @@ async function generateRoleDiary({ roleName, date }) {
         throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
       }
       const responseText = await generateRaw(requestBody);
-      const parsedResult = parseDiaryGenerationResult(responseText, date);
+      const parsedResult = parseDiaryGenerationResult(responseText, fallbackDate);
       addCommunicationLog?.({
         moduleName: '日程日记 / 主 API',
         taskType: '角色日记生成',
@@ -948,7 +951,7 @@ async function generateRoleDiary({ roleName, date }) {
     if (!content) {
       throw new Error(`接口返回成功，但没有读取到回复正文：${responseText}`);
     }
-    const parsedResult = parseDiaryGenerationResult(content, date);
+    const parsedResult = parseDiaryGenerationResult(content, fallbackDate);
     addCommunicationLog?.({
       moduleName: '日程日记 / 副 API',
       taskType: '角色日记生成',
