@@ -3348,3 +3348,489 @@ body.slx-panel-open-lock {
     padding: 14px !important;
   }
 }
+
+/* ── 手账面板精修：只影响日记模块书架/设置页 ── */
+
+.slx-diary-tcho-frame {
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  border-radius: 18px;
+  padding: 58px 14px 14px 24px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.45) 0 1px, transparent 1px) 0 0 / 18px 18px,
+    linear-gradient(0deg, rgba(255, 255, 255, 0.35) 0 1px, transparent 1px) 0 0 / 18px 18px,
+    linear-gradient(135deg, #f6b7ac, #f3cbc2 58%, #f7b9b0);
+  box-shadow:
+    inset 0 0 0 2px rgba(177, 105, 90, 0.22),
+    inset 0 0 0 8px rgba(255, 238, 230, 0.28),
+    0 12px 24px rgba(137, 77, 62, 0.12);
+  overflow: visible;
+}
+
+.slx-diary-tcho-frame::before,
+.slx-diary-tcho-frame::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  z-index: 3;
+  width: 18px;
+  height: 18px;
+  border: 3px solid #d7ad55;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 244, 205, 0.95) 0 34%, rgba(201, 143, 46, 0.16) 36% 100%);
+  box-shadow:
+    0 1px 2px rgba(112, 70, 24, 0.24),
+    inset 0 1px 1px rgba(255, 255, 255, 0.65);
+}
+
+.slx-diary-tcho-frame::before {
+  top: 150px;
+}
+
+.slx-diary-tcho-frame::after {
+  bottom: 158px;
+}
+
+.slx-diary-tcho-frame .slx-segment-row.slx-diary-tabs {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  left: 64px;
+  right: 92px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 52px;
+  border: 1px solid rgba(166, 112, 80, 0.28);
+  border-bottom-color: rgba(166, 112, 80, 0.18);
+  border-radius: 16px 16px 0 0;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 6px, rgba(121, 86, 52, 0.045) 6px 7px),
+    linear-gradient(180deg, #fff7eb, #f7e6d5);
+  color: #6f4234;
+  font-family: 'Noto Serif SC', Georgia, serif;
+  font-size: 17px;
+  font-weight: 800;
+  transform: translateY(11px);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+    0 -3px 10px rgba(129, 75, 49, 0.08);
+}
+
+.slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border: 1px dashed rgba(127, 95, 62, 0.28);
+  border-bottom: 0;
+  border-radius: 11px 11px 0 0;
+  pointer-events: none;
+}
+
+.slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn:nth-child(2) {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 6px, rgba(72, 106, 74, 0.045) 6px 7px),
+    linear-gradient(180deg, #edf5df, #dfeccd);
+  color: #667d5c;
+}
+
+.slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn-active,
+.slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn-active:hover {
+  min-height: 58px;
+  color: #5b3329;
+  transform: translateY(4px);
+  box-shadow:
+    0 -8px 18px rgba(129, 75, 49, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.58);
+}
+
+.slx-diary-tcho-body {
+  position: relative;
+  z-index: 2;
+  min-height: 460px;
+  border: 1px solid rgba(188, 132, 94, 0.25);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.55), transparent 26%),
+    repeating-linear-gradient(0deg, transparent 0 23px, rgba(170, 121, 74, 0.04) 23px 24px),
+    linear-gradient(135deg, rgba(255, 251, 239, 0.98), rgba(255, 244, 226, 0.96));
+  box-shadow:
+    inset 0 0 0 8px rgba(255, 255, 255, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.65),
+    0 10px 22px rgba(127, 72, 51, 0.14);
+  overflow: hidden;
+}
+
+.slx-diary-tcho-body::before {
+  content: '';
+  position: absolute;
+  inset: 18px;
+  border: 1px dashed rgba(186, 132, 88, 0.24);
+  border-radius: 16px;
+  pointer-events: none;
+}
+
+.slx-diary-tcho-body::after {
+  content: '☾';
+  position: absolute;
+  right: 32px;
+  bottom: 48px;
+  color: rgba(223, 166, 75, 0.56);
+  font-size: 34px;
+  transform: rotate(-12deg);
+  pointer-events: none;
+}
+
+.slx-diary-tcho-library {
+  position: relative;
+  z-index: 1;
+  padding: 34px 28px 26px;
+  gap: 20px;
+}
+
+.slx-diary-tcho-stars {
+  top: 36px;
+  right: 48px;
+  gap: 8px;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.55));
+}
+
+.slx-diary-tcho-header {
+  align-items: center;
+  padding: 0 12px 2px;
+}
+
+.slx-diary-tcho-title-block {
+  gap: 18px;
+}
+
+.slx-diary-tcho-icon-slot {
+  width: 66px;
+  height: 66px;
+  border-radius: 14px;
+  border: 1px dashed rgba(206, 137, 126, 0.62);
+  background:
+    linear-gradient(135deg, rgba(255, 234, 225, 0.9), rgba(255, 248, 242, 0.68));
+  box-shadow:
+    0 4px 10px rgba(154, 88, 72, 0.08),
+    inset 0 0 0 5px rgba(255, 255, 255, 0.4);
+  transform: rotate(-4deg);
+}
+
+.slx-diary-tcho-title {
+  color: #5b3329;
+  font-family: 'Noto Serif SC', 'Kaiti SC', Georgia, serif;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.slx-diary-tcho-wave {
+  width: 150px;
+  height: 12px;
+}
+
+.slx-diary-tcho-export-tag {
+  position: relative;
+  margin: 4px 10px 0 0;
+  padding: 10px 16px;
+  border: 1px solid rgba(211, 139, 124, 0.42);
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, rgba(255, 225, 217, 0.92), rgba(255, 242, 234, 0.96));
+  color: #8d4f42;
+  font-size: 14px;
+  box-shadow:
+    0 5px 12px rgba(155, 87, 70, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.slx-diary-tcho-export-tag::before {
+  content: '★';
+  position: absolute;
+  top: -18px;
+  left: 8px;
+  color: #e8c46a;
+  font-size: 15px;
+}
+
+.slx-diary-tcho-export-tag::after {
+  content: '';
+  position: absolute;
+  right: -10px;
+  bottom: -8px;
+  width: 38px;
+  height: 13px;
+  border-radius: 3px;
+  background: rgba(222, 178, 123, 0.35);
+  transform: rotate(-16deg);
+}
+
+.slx-diary-tcho-create-section {
+  position: relative;
+  gap: 14px;
+  padding: 4px 34px 2px;
+}
+
+.slx-diary-tcho-create-label {
+  position: relative;
+  align-self: center;
+  min-width: min(300px, 100%);
+  padding: 12px 28px;
+  border: 1px solid rgba(214, 137, 125, 0.36);
+  border-radius: 12px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0 12px, transparent 12px 24px),
+    linear-gradient(180deg, #f7bbb1, #efa79e);
+  color: #6e3a32;
+  font-family: 'Noto Serif SC', 'Kaiti SC', serif;
+  font-size: 17px;
+  box-shadow:
+    0 5px 13px rgba(177, 91, 82, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+
+.slx-diary-tcho-create-label::after {
+  content: '';
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  width: 92px;
+  border-top: 2px dashed rgba(208, 159, 101, 0.42);
+}
+
+.slx-diary-tcho-input {
+  min-height: 56px;
+  border: 1px solid rgba(190, 139, 92, 0.26);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 248, 237, 0.86));
+  color: #5b3329;
+  font-size: 17px;
+  padding: 12px 20px;
+  box-shadow:
+    inset 0 2px 8px rgba(141, 86, 51, 0.07),
+    0 3px 9px rgba(135, 82, 55, 0.06);
+}
+
+.slx-diary-tcho-input::placeholder {
+  color: rgba(128, 91, 70, 0.48);
+}
+
+.slx-diary-tcho-create-btn {
+  align-self: center;
+  min-width: min(240px, 78%);
+  min-height: 54px;
+  border: 1px solid rgba(208, 124, 113, 0.44);
+  border-radius: 15px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0 10px, transparent 10px 20px),
+    linear-gradient(180deg, #f4aaa2, #ea8f8f);
+  font-size: 17px;
+  box-shadow:
+    0 8px 15px rgba(183, 89, 83, 0.22),
+    inset 0 0 0 2px rgba(255, 226, 221, 0.42);
+}
+
+.slx-diary-tcho-books-section {
+  margin-top: 4px;
+  padding: 4px 26px 112px;
+}
+
+.slx-diary-tcho-section-hd::before,
+.slx-diary-tcho-section-hd::after {
+  content: '';
+  flex: 1 1 42px;
+  max-width: 94px;
+  border-top: 2px dashed rgba(208, 159, 101, 0.36);
+}
+
+.slx-diary-tcho-section-hd > span {
+  padding: 9px 26px;
+  border: 1px solid rgba(105, 140, 96, 0.22);
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 9px, transparent 9px 18px),
+    linear-gradient(135deg, #bfd7b5, #8eb383);
+  color: #355d45;
+  font-family: 'Noto Serif SC', 'Kaiti SC', serif;
+  font-size: 15px;
+  box-shadow: 0 5px 12px rgba(80, 119, 83, 0.12);
+}
+
+.slx-diary-tcho-book-card {
+  position: relative;
+  min-height: 86px;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 14px 18px 14px 0;
+  border: 1px solid rgba(190, 139, 92, 0.24);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 248, 235, 0.88));
+  box-shadow:
+    0 5px 12px rgba(137, 86, 52, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.48);
+}
+
+.slx-diary-tcho-book-card::after {
+  content: '☆';
+  position: absolute;
+  right: 18px;
+  bottom: 9px;
+  color: rgba(228, 183, 86, 0.72);
+  font-size: 17px;
+}
+
+.slx-diary-tcho-book-spine {
+  width: 26px;
+  border-radius: 9px 4px 4px 9px;
+  box-shadow:
+    inset -4px 0 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px rgba(90, 64, 48, 0.08);
+}
+
+.slx-diary-tcho-book-info b {
+  color: #5b3329;
+  font-family: 'Noto Serif SC', 'Kaiti SC', serif;
+  font-size: 18px;
+}
+
+.slx-diary-tcho-book-info small {
+  color: rgba(107, 76, 58, 0.62);
+  font-size: 13px;
+}
+
+.slx-diary-tcho-open-pill {
+  padding: 10px 18px;
+  border: 1px solid rgba(93, 132, 84, 0.22);
+  border-radius: 13px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.13) 0 8px, transparent 8px 16px),
+    linear-gradient(135deg, #aac89e, #83aa78);
+  color: #335742;
+  box-shadow:
+    0 5px 10px rgba(74, 115, 76, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.34);
+}
+
+.slx-diary-tcho-tagline {
+  position: relative;
+  margin-top: 14px;
+  color: rgba(119, 86, 68, 0.72);
+  font-size: 16px;
+  font-style: normal;
+}
+
+.slx-diary-tcho-tagline::before {
+  content: '✿';
+  position: absolute;
+  left: 18%;
+  top: 42px;
+  color: rgba(211, 131, 115, 0.44);
+  font-size: 26px;
+}
+
+.slx-diary-tcho-empty {
+  border-color: rgba(190, 139, 92, 0.28);
+  background: rgba(255, 249, 238, 0.72);
+}
+
+.slx-diary-tcho-settings {
+  position: relative;
+  z-index: 1;
+  padding: 34px 32px 28px !important;
+}
+
+.slx-diary-tcho-settings .slx-summary-card-head {
+  padding: 0 8px 8px;
+  border-bottom: 1px dashed rgba(184, 127, 92, 0.28);
+}
+
+.slx-diary-tcho-settings .slx-detail-title {
+  color: #5b3329;
+  font-family: 'Noto Serif SC', 'Kaiti SC', Georgia, serif;
+  font-size: 24px;
+  letter-spacing: 0.06em;
+}
+
+.slx-diary-tcho-settings .slx-diary-setting-line,
+.slx-diary-tcho-settings .slx-field,
+.slx-diary-tcho-settings .slx-diary-upload-box {
+  border: 1px dashed rgba(184, 127, 92, 0.28);
+  border-radius: 15px;
+  background: rgba(255, 249, 238, 0.66);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+}
+
+.slx-diary-tcho-settings .slx-field {
+  padding: 10px;
+}
+
+.slx-diary-tcho-settings .slx-field input:not([type='checkbox']),
+.slx-diary-tcho-settings .slx-field select,
+.slx-diary-tcho-settings .slx-field textarea {
+  border-color: rgba(190, 139, 92, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 253, 247, 0.84);
+  color: #5b3329;
+}
+
+.slx-diary-tcho-settings .slx-diary-pill-toggle {
+  border-color: rgba(190, 139, 92, 0.24);
+  background: rgba(255, 253, 247, 0.7);
+}
+
+.slx-diary-tcho-settings .slx-diary-pill-toggle button.is-active {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.14) 0 8px, transparent 8px 16px),
+    linear-gradient(180deg, #f4aaa2, #ea8f8f);
+}
+
+.slx-diary-tcho-settings .slx-soft-btn {
+  border-radius: 12px;
+  background: rgba(255, 249, 238, 0.78);
+}
+
+@media (max-width: 720px) {
+  .slx-diary-tcho-frame {
+    padding: 54px 10px 10px 16px;
+  }
+
+  .slx-diary-tcho-frame .slx-segment-row.slx-diary-tabs {
+    left: 34px;
+    right: 18px;
+    gap: 6px;
+  }
+
+  .slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn {
+    font-size: 14px;
+  }
+
+  .slx-diary-tcho-library,
+  .slx-diary-tcho-settings {
+    padding: 26px 18px 22px !important;
+  }
+
+  .slx-diary-tcho-title {
+    font-size: 22px;
+  }
+
+  .slx-diary-tcho-create-section,
+  .slx-diary-tcho-books-section {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .slx-diary-tcho-create-label::after {
+    display: none;
+  }
+}
