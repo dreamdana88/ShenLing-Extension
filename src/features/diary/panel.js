@@ -639,8 +639,6 @@ function renderDiaryEntryPage(chatState) {
   if (!entry) return renderDiaryToc(chatState);
 
   const index = entries.findIndex(item => item.id === entry.id);
-  const previousEntry = entries[index - 1] || null;
-  const nextEntry = entries[index + 1] || null;
   const isExchange = entry.type === 'exchange_diary';
   const leftTitle = isExchange ? '你的日记' : getEntryTitle(entry);
   const leftText = isExchange ? entry.userContent : entry.content || '正文将在生成后写入这里。';
@@ -681,10 +679,6 @@ function renderDiaryEntryPage(chatState) {
           <div class="slx-diary-book-page-num">${escapeHtml(getEntryTime(entry))}</div>
         ` : '<div class="slx-diary-blank-page" aria-hidden="true"></div>'}
       </section>
-    </div>
-    <div class="slx-diary-page-turns">
-      <button class="slx-soft-btn" type="button" data-slx-open-diary-entry="${escapeHtml(previousEntry?.id || '')}" ${previousEntry ? '' : 'disabled'}><i class="fa-solid fa-chevron-left"></i><span>上一篇</span></button>
-      <button class="slx-soft-btn slx-primary-btn" type="button" ${nextEntry ? `data-slx-open-diary-entry="${escapeHtml(nextEntry.id)}"` : 'data-slx-open-diary-compose'}><span>${nextEntry ? '下一篇' : '撰写新日记'}</span><i class="fa-solid fa-chevron-right"></i></button>
     </div>
   `;
 }
