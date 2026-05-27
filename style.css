@@ -1636,6 +1636,31 @@ body.slx-panel-open-lock {
   white-space: pre-wrap;
 }
 
+.slx-diary-entry-left-page {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 74px;
+}
+
+.slx-diary-entry-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(122, 84, 44, 0.24) transparent;
+}
+
+.slx-diary-entry-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.slx-diary-entry-scroll::-webkit-scrollbar-thumb {
+  background: rgba(122, 84, 44, 0.24);
+  border-radius: 999px;
+}
+
 .slx-diary-book-page-num {
   position: absolute;
   right: 38px;

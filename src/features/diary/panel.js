@@ -656,11 +656,13 @@ function renderDiaryEntryPage(chatState) {
 
   return `
     <div class="slx-diary-book-spread slx-diary-inline-book">
-      <section class="slx-diary-book-page">
+      <section class="slx-diary-book-page slx-diary-entry-left-page">
         ${entryActions}
         <div class="slx-diary-book-page-title">${escapeHtml(leftTitle)}</div>
         <div class="slx-diary-book-rule"></div>
-        <p>${escapeHtml(leftText)}</p>
+        <div class="slx-diary-entry-scroll">
+          <p>${escapeHtml(leftText)}</p>
+        </div>
         <div class="slx-diary-page-footer-left">
           <button class="slx-diary-page-corner-btn" type="button" data-slx-diary-back-toc title="返回目录">
             <i class="fa-solid fa-list"></i>
