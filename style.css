@@ -1639,7 +1639,7 @@ body.slx-panel-open-lock {
 .slx-diary-entry-left-page {
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  overflow: hidden;
   padding-bottom: 74px;
 }
 
@@ -1647,8 +1647,8 @@ body.slx-panel-open-lock {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  margin-right: -52px;
-  padding-right: 52px;
+  margin-right: -40px;
+  padding-right: 40px;
   scrollbar-width: thin;
   scrollbar-color: rgba(122, 84, 44, 0.24) transparent;
 }
