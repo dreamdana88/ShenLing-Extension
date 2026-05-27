@@ -3356,32 +3356,21 @@ body.slx-panel-open-lock {
   isolation: isolate;
   border: 0;
   border-radius: 18px;
-  padding: 58px 14px 14px 24px;
+  padding: 54px 6px 8px;
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.45) 0 1px, transparent 1px) 0 0 / 18px 18px,
     linear-gradient(0deg, rgba(255, 255, 255, 0.35) 0 1px, transparent 1px) 0 0 / 18px 18px,
     linear-gradient(135deg, #f6b7ac, #f3cbc2 58%, #f7b9b0);
   box-shadow:
     inset 0 0 0 2px rgba(177, 105, 90, 0.22),
-    inset 0 0 0 8px rgba(255, 238, 230, 0.28),
+    inset 0 0 0 4px rgba(255, 238, 230, 0.22),
     0 12px 24px rgba(137, 77, 62, 0.12);
   overflow: visible;
 }
 
 .slx-diary-tcho-frame::before,
 .slx-diary-tcho-frame::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  z-index: 3;
-  width: 18px;
-  height: 18px;
-  border: 3px solid #d7ad55;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(255, 244, 205, 0.95) 0 34%, rgba(201, 143, 46, 0.16) 36% 100%);
-  box-shadow:
-    0 1px 2px rgba(112, 70, 24, 0.24),
-    inset 0 1px 1px rgba(255, 255, 255, 0.65);
+  display: none;
 }
 
 .slx-diary-tcho-frame::before {
@@ -3395,9 +3384,9 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-frame .slx-segment-row.slx-diary-tabs {
   position: absolute;
   z-index: 1;
-  top: 10px;
-  left: 64px;
-  right: 92px;
+  top: 9px;
+  left: 78px;
+  right: 78px;
   display: flex;
   align-items: flex-end;
   gap: 10px;
@@ -3456,7 +3445,7 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-body {
   position: relative;
   z-index: 2;
-  min-height: 460px;
+  min-height: 468px;
   border: 1px solid rgba(188, 132, 94, 0.25);
   border-radius: 22px;
   background:
@@ -3473,7 +3462,7 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-body::before {
   content: '';
   position: absolute;
-  inset: 18px;
+  inset: 12px;
   border: 1px dashed rgba(186, 132, 88, 0.24);
   border-radius: 16px;
   pointer-events: none;
@@ -3493,29 +3482,30 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-library {
   position: relative;
   z-index: 1;
-  padding: 34px 28px 26px;
-  gap: 20px;
+  padding: 30px 20px 24px;
+  gap: 18px;
 }
 
 .slx-diary-tcho-stars {
   top: 36px;
-  right: 48px;
+  right: 70px;
   gap: 8px;
   filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.55));
 }
 
 .slx-diary-tcho-header {
   align-items: center;
-  padding: 0 12px 2px;
+  padding: 0 4px 2px;
 }
 
 .slx-diary-tcho-title-block {
-  gap: 18px;
+  gap: 14px;
+  min-width: 0;
 }
 
 .slx-diary-tcho-icon-slot {
-  width: 66px;
-  height: 66px;
+  width: 58px;
+  height: 58px;
   border-radius: 14px;
   border: 1px dashed rgba(206, 137, 126, 0.62);
   background:
@@ -3529,9 +3519,10 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-title {
   color: #5b3329;
   font-family: 'Noto Serif SC', 'Kaiti SC', Georgia, serif;
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 .slx-diary-tcho-wave {
@@ -3541,14 +3532,14 @@ body.slx-panel-open-lock {
 
 .slx-diary-tcho-export-tag {
   position: relative;
-  margin: 4px 10px 0 0;
-  padding: 10px 16px;
+  margin: 4px 0 0 8px;
+  padding: 9px 13px;
   border: 1px solid rgba(211, 139, 124, 0.42);
   border-radius: 13px;
   background:
     linear-gradient(135deg, rgba(255, 225, 217, 0.92), rgba(255, 242, 234, 0.96));
   color: #8d4f42;
-  font-size: 14px;
+  font-size: 13px;
   box-shadow:
     0 5px 12px rgba(155, 87, 70, 0.12),
     inset 0 0 0 1px rgba(255, 255, 255, 0.45);
@@ -3578,14 +3569,15 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-create-section {
   position: relative;
   gap: 14px;
-  padding: 4px 34px 2px;
+  padding: 4px 14px 2px;
 }
 
 .slx-diary-tcho-create-label {
   position: relative;
   align-self: center;
-  min-width: min(300px, 100%);
-  padding: 12px 28px;
+  width: min(100%, 360px);
+  min-width: 0;
+  padding: 12px 18px;
   border: 1px solid rgba(214, 137, 125, 0.36);
   border-radius: 12px;
   background:
@@ -3593,7 +3585,7 @@ body.slx-panel-open-lock {
     linear-gradient(180deg, #f7bbb1, #efa79e);
   color: #6e3a32;
   font-family: 'Noto Serif SC', 'Kaiti SC', serif;
-  font-size: 17px;
+  font-size: 16px;
   box-shadow:
     0 5px 13px rgba(177, 91, 82, 0.18),
     inset 0 0 0 1px rgba(255, 255, 255, 0.32);
@@ -3602,9 +3594,9 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-create-label::after {
   content: '';
   position: absolute;
-  left: calc(100% + 14px);
+  left: calc(100% + 10px);
   top: 50%;
-  width: 92px;
+  width: 58px;
   border-top: 2px dashed rgba(208, 159, 101, 0.42);
 }
 
@@ -3628,7 +3620,7 @@ body.slx-panel-open-lock {
 
 .slx-diary-tcho-create-btn {
   align-self: center;
-  min-width: min(240px, 78%);
+  min-width: min(260px, 86%);
   min-height: 54px;
   border: 1px solid rgba(208, 124, 113, 0.44);
   border-radius: 15px;
@@ -3643,7 +3635,7 @@ body.slx-panel-open-lock {
 
 .slx-diary-tcho-books-section {
   margin-top: 4px;
-  padding: 4px 26px 112px;
+  padding: 4px 14px 106px;
 }
 
 .slx-diary-tcho-section-hd::before,
@@ -3802,12 +3794,12 @@ body.slx-panel-open-lock {
 
 @media (max-width: 720px) {
   .slx-diary-tcho-frame {
-    padding: 54px 10px 10px 16px;
+    padding: 52px 5px 7px;
   }
 
   .slx-diary-tcho-frame .slx-segment-row.slx-diary-tabs {
-    left: 34px;
-    right: 18px;
+    left: 42px;
+    right: 42px;
     gap: 6px;
   }
 
@@ -3817,11 +3809,11 @@ body.slx-panel-open-lock {
 
   .slx-diary-tcho-library,
   .slx-diary-tcho-settings {
-    padding: 26px 18px 22px !important;
+    padding: 24px 14px 20px !important;
   }
 
   .slx-diary-tcho-title {
-    font-size: 22px;
+    font-size: 21px;
   }
 
   .slx-diary-tcho-create-section,
