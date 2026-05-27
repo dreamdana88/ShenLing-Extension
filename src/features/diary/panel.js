@@ -61,6 +61,7 @@ const TCHO_LEAF_L = `<svg class="slx-diary-tcho-leaf" viewBox="0 0 56 24" fill="
 const TCHO_LEAF_R = `<svg class="slx-diary-tcho-leaf slx-diary-tcho-leaf-r" viewBox="0 0 56 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 12 Q18 6 32 11" stroke="#8ab49a" stroke-width="1.2" stroke-linecap="round"/><path d="M24 11 Q30 5 40 8 Q32 9 24 11Z" fill="#a8c8b4" opacity="0.85"/><path d="M24 11 Q30 17 40 14 Q32 13 24 11Z" fill="#c0d8c6" opacity="0.7"/><path d="M36 10 Q42 5 50 8 Q43 9 36 10Z" fill="#a8c8b4" opacity="0.8"/><path d="M36 10 Q42 15 50 12 Q43 11 36 10Z" fill="#c0d8c6" opacity="0.65"/></svg>`;
 
 const DIARY_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+const DIARY_PLANNER_STICKER_SRC = 'scripts/extensions/third-party/ShenLing-Extension/assets/diary/planner-sticker.png';
 const DIARY_DATE_FALLBACK_LABEL = '当前剧情日期';
 const ROLE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
 
@@ -455,7 +456,7 @@ function renderDiaryLibrary(chatState) {
         <div class="slx-diary-tcho-title-block">
           <div class="slx-diary-tcho-icon-slot" aria-hidden="true">
             <!-- 素材图占位：日记本插画，填入 src 路径后即可显示 -->
-            <img class="slx-diary-tcho-book-illus" src="" alt="" />
+            <img class="slx-diary-tcho-book-illus" src="${escapeHtml(DIARY_PLANNER_STICKER_SRC)}" alt="" />
           </div>
           <div class="slx-diary-tcho-title-text">
             <div class="slx-diary-tcho-title">角色日记本</div>
