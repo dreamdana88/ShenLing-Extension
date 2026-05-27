@@ -1647,7 +1647,8 @@ body.slx-panel-open-lock {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding-right: 10px;
+  margin-right: -34px;
+  padding-right: 34px;
   scrollbar-width: thin;
   scrollbar-color: rgba(122, 84, 44, 0.24) transparent;
 }
