@@ -529,14 +529,19 @@ function renderDiaryLibrary(chatState) {
         </div>
         <div class="slx-diary-tcho-book-list">
           ${notebooks.map(book => `
-            <button class="slx-diary-tcho-book-card" type="button" data-slx-open-diary-book="${escapeHtml(book.roleName)}">
+            <div class="slx-diary-tcho-book-card">
               <span class="slx-diary-tcho-book-spine" style="background: ${escapeHtml(getTchoSpineColor(book.roleName))}"></span>
               <div class="slx-diary-tcho-book-info">
                 <b>${escapeHtml(book.roleName)}</b>
                 <small>${escapeHtml(book.entryCount)} 篇日记</small>
               </div>
-              <span class="slx-diary-tcho-open-pill">打开</span>
-            </button>
+              <div class="slx-diary-tcho-book-actions">
+                <button class="slx-diary-tcho-open-pill" type="button" data-slx-open-diary-book="${escapeHtml(book.roleName)}">打开</button>
+                <button class="slx-diary-tcho-delete-pill" type="button" data-slx-delete-diary-book="${escapeHtml(book.roleName)}" title="删除日记本">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              </div>
+            </div>
           `).join('')}
         </div>
         ${!notebooks.length ? `<p class="slx-diary-tcho-empty">还没有日记本，从上面创建第一本吧~</p>` : ''}
@@ -1197,6 +1202,35 @@ function deleteDiaryEntry(entryId) {
   refreshPanel();
 }
 
+function deleteDiaryBook(roleName) {
+  const cleanRoleName = normalizeRoleName(roleName);
+  if (!cleanRoleName) return;
+  const chatState = getChatState();
+  const store = getDiaryStore(chatState);
+  const entries = getDiaryEntries(chatState);
+  const deleteCount = entries.filter(entry => getEntryRoleName(entry) === cleanRoleName).length;
+  const message = deleteCount
+    ? `删除「${cleanRoleName}」这本日记本？里面的 ${deleteCount} 篇日记也会一起删除。`
+    : `删除「${cleanRoleName}」这本空日记本？`;
+  if (!confirm(message)) return;
+
+  store.books = store.books.filter(book => normalizeRoleName(book.roleName || book.name) !== cleanRoleName);
+  store.entries = entries.filter(entry => getEntryRoleName(entry) !== cleanRoleName);
+  store.lastSavedAt = formatTimestamp();
+  saveChatState();
+
+  if (diaryPanelState.roleName === cleanRoleName) {
+    diaryPanelState = {
+      ...diaryPanelState,
+      roleName: '',
+      composeRoleName: '',
+      entryId: '',
+      screen: 'library',
+    };
+  }
+  refreshPanel();
+}
+
 function exportDiaryBook() {
   const chatState = getChatState();
   const store = getDiaryStore(chatState);
@@ -1366,6 +1400,14 @@ export function bindDiaryPanelEvents(panelRoot) {
         screen: 'cover',
       };
       refreshPanel();
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-delete-diary-book]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteDiaryBook(button.dataset.slxDeleteDiaryBook);
     });
   });
 

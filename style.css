@@ -3680,6 +3680,7 @@ body.slx-panel-open-lock {
   box-shadow:
     0 5px 12px rgba(137, 86, 52, 0.08),
     inset 0 0 0 1px rgba(255, 255, 255, 0.48);
+  cursor: default;
 }
 
 .slx-diary-tcho-book-card::after {
@@ -3710,6 +3711,14 @@ body.slx-panel-open-lock {
   font-size: 12px;
 }
 
+.slx-diary-tcho-book-actions {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .slx-diary-tcho-open-pill {
   padding: 7px 14px;
   border: 1px solid rgba(93, 132, 84, 0.22);
@@ -3721,6 +3730,31 @@ body.slx-panel-open-lock {
   box-shadow:
     0 5px 10px rgba(74, 115, 76, 0.12),
     inset 0 0 0 1px rgba(255, 255, 255, 0.34);
+  cursor: pointer;
+  font: inherit;
+}
+
+.slx-diary-tcho-delete-pill {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(179, 92, 86, 0.22);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 244, 0.96), rgba(247, 226, 220, 0.92));
+  color: #9c5a52;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow:
+    0 4px 9px rgba(150, 86, 76, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+  transition: transform 0.18s, filter 0.18s, border-color 0.18s;
+}
+
+.slx-diary-tcho-delete-pill:hover {
+  border-color: rgba(179, 92, 86, 0.38);
+  filter: brightness(1.03);
+  transform: translateY(-1px);
 }
 
 .slx-diary-tcho-tagline {
