@@ -86,6 +86,35 @@ const ROLE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
   "content": "正文"
 }`;
 
+const EXCHANGE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
+
+请根据下方梦境上下文素材，以【\${targetRoleName}】的第一人称视角与口吻，写一则日期为【\${diaryDate}】、写给{{user}}看的交换日记回复。
+
+以下是本次日记可参考的梦境上下文素材：
+\${diaryContextMaterial}
+
+以下是本次{{user}}已经写下的日记内容：
+\${userDiaryContent}
+
+交换日记要求：
+- 【\${targetRoleName}】与{{user}}在同一本日记上书写，{{user}}已经先写了她的部分，现在轮到【\${targetRoleName}】写下回应。
+
+
+- 语气、用词、关注重点必须符合【\${targetRoleName}】的角色设定。
+- 应展示真实内心且富有生活气息，像真正的私人手帐/日记一样自然。
+- 内容要回应{{user}}写的内容，可以补充【\${targetRoleName}】的视角、感受、或分享这边发生的事。
+- 只写【\${targetRoleName}】本人能知道、能感受到、会在意的事情，避免全知视角。
+- 不要写未来剧情，只内化已发生的事。
+- 如果角色设定语言不是中文，content 字段内先写角色设定语言版本，再写中文翻译版。
+- 必须只输出合法 JSON，不要输出 Markdown 代码块，不要输出解释文字。
+
+输出格式：
+{
+  "title": "角色回复标题",
+  "time": "\${diaryDate}",
+  "content": "回复日记内容"
+}`;
+
 let panelOptions = {
   addCommunicationLog: null,
   getActiveApiProfile: null,
@@ -147,6 +176,16 @@ function buildRoleDiaryPrompt({ targetRoleName, diaryDate, diaryContextMaterial 
     targetRoleName,
     diaryDate: promptDiaryDate,
     diaryContextMaterial,
+  }));
+}
+
+function buildExchangeDiaryPrompt({ targetRoleName, diaryDate, diaryContextMaterial, userDiaryContent }) {
+  const promptDiaryDate = String(diaryDate || '').trim() || DIARY_DATE_FALLBACK_LABEL;
+  return replacePromptMacros(fillTemplate(EXCHANGE_DIARY_PROMPT_TEMPLATE, {
+    targetRoleName,
+    diaryDate: promptDiaryDate,
+    diaryContextMaterial,
+    userDiaryContent,
   }));
 }
 
@@ -694,7 +733,7 @@ function renderDiaryCompose(chatState) {
     ? `【${roleName || '角色'}】正在书写日记……`
     : diaryPanelState.generationStatus === 'failed'
       ? diaryPanelState.generationError || '日记生成失败。'
-      : '用户内容为空时会生成角色独白；写下内容时先创建交换日记草稿。';
+      : '用户内容为空时生成角色独白；写下内容时生成交换日记回复。';
   return `
     <div class="slx-diary-book-spread slx-diary-inline-book">
       <section class="slx-diary-book-page">
@@ -852,22 +891,10 @@ function saveEntry(entryInput) {
   return entry;
 }
 
-async function generateRoleDiary({ roleName, date }) {
-  const chatState = getChatState();
-  const store = getDiaryStore(chatState);
+async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
+  const store = getDiaryStore(getChatState());
   const addCommunicationLog = getPanelOption('addCommunicationLog');
   const startedAt = performance.now();
-  const fallbackDate = String(date || '').trim() || DIARY_DATE_FALLBACK_LABEL;
-  const context = await resolveDiaryContext({ targetRoleName: roleName });
-  const prompt = buildRoleDiaryPrompt({
-    targetRoleName: roleName,
-    diaryDate: date,
-    diaryContextMaterial: context.material,
-  });
-  const messages = replacePromptMessageMacros([
-    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
-    { role: 'user', content: prompt },
-  ]);
 
   if (store.settings.apiMode === 'main') {
     const requestBody = {
@@ -882,7 +909,7 @@ async function generateRoleDiary({ roleName, date }) {
       const parsedResult = parseDiaryGenerationResult(responseText, fallbackDate);
       addCommunicationLog?.({
         moduleName: '日程日记 / 主 API',
-        taskType: '角色日记生成',
+        taskType,
         status: 'success',
         startedAt: formatTimestamp(),
         durationMs: Math.round(performance.now() - startedAt),
@@ -898,7 +925,7 @@ async function generateRoleDiary({ roleName, date }) {
     } catch (error) {
       addCommunicationLog?.({
         moduleName: '日程日记 / 主 API',
-        taskType: '角色日记生成',
+        taskType,
         status: 'failure',
         startedAt: formatTimestamp(),
         durationMs: Math.round(performance.now() - startedAt),
@@ -953,7 +980,7 @@ async function generateRoleDiary({ roleName, date }) {
     const parsedResult = parseDiaryGenerationResult(content, fallbackDate);
     addCommunicationLog?.({
       moduleName: '日程日记 / 副 API',
-      taskType: '角色日记生成',
+      taskType,
       status: 'success',
       startedAt: formatTimestamp(),
       durationMs: Math.round(performance.now() - startedAt),
@@ -970,7 +997,7 @@ async function generateRoleDiary({ roleName, date }) {
   } catch (error) {
     addCommunicationLog?.({
       moduleName: '日程日记 / 副 API',
-      taskType: '角色日记生成',
+      taskType,
       status: 'failure',
       startedAt: formatTimestamp(),
       durationMs: Math.round(performance.now() - startedAt),
@@ -985,6 +1012,47 @@ async function generateRoleDiary({ roleName, date }) {
   }
 }
 
+async function generateRoleDiary({ roleName, date }) {
+  const fallbackDate = String(date || '').trim() || DIARY_DATE_FALLBACK_LABEL;
+  const context = await resolveDiaryContext({ targetRoleName: roleName });
+  const prompt = buildRoleDiaryPrompt({
+    targetRoleName: roleName,
+    diaryDate: date,
+    diaryContextMaterial: context.material,
+  });
+  const messages = replacePromptMessageMacros([
+    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+    { role: 'user', content: prompt },
+  ]);
+
+  return runDiaryGeneration({
+    messages,
+    taskType: '角色日记生成',
+    fallbackDate,
+  });
+}
+
+async function generateExchangeDiary({ roleName, date, userDiaryContent }) {
+  const fallbackDate = String(date || '').trim() || DIARY_DATE_FALLBACK_LABEL;
+  const context = await resolveDiaryContext({ targetRoleName: roleName });
+  const prompt = buildExchangeDiaryPrompt({
+    targetRoleName: roleName,
+    diaryDate: date,
+    diaryContextMaterial: context.material,
+    userDiaryContent,
+  });
+  const messages = replacePromptMessageMacros([
+    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+    { role: 'user', content: prompt },
+  ]);
+
+  return runDiaryGeneration({
+    messages,
+    taskType: '交换日记生成',
+    fallbackDate,
+  });
+}
+
 async function createUnifiedDiaryDraft(panelRoot) {
   const roleName = normalizeRoleName(panelRoot.querySelector('[data-slx-diary-compose-role]')?.value);
   const date = String(panelRoot.querySelector('[data-slx-diary-compose-date]')?.value || '').trim();
@@ -993,21 +1061,22 @@ async function createUnifiedDiaryDraft(panelRoot) {
 
   diaryPanelState.composeRoleName = roleName;
   diaryPanelState.composeDate = date;
-  diaryPanelState.generationStatus = userContent ? 'idle' : 'running';
+  diaryPanelState.generationStatus = 'running';
   diaryPanelState.generationError = '';
   refreshPanel();
   const now = formatTimestamp();
   let generated = null;
-  if (!userContent) {
-    try {
-      generated = await generateRoleDiary({ roleName, date });
-    } catch (error) {
-      diaryPanelState.generationStatus = 'failed';
-      diaryPanelState.generationError = error.message || String(error);
-      refreshPanel();
-      return;
-    }
+  try {
+    generated = userContent
+      ? await generateExchangeDiary({ roleName, date, userDiaryContent: userContent })
+      : await generateRoleDiary({ roleName, date });
+  } catch (error) {
+    diaryPanelState.generationStatus = 'failed';
+    diaryPanelState.generationError = error.message || String(error);
+    refreshPanel();
+    return;
   }
+  const entryTime = generated?.time || date || DIARY_DATE_FALLBACK_LABEL;
 
   const entry = saveEntry({
     type: userContent ? 'exchange_diary' : 'role_diary',
@@ -1015,15 +1084,17 @@ async function createUnifiedDiaryDraft(panelRoot) {
     roleName,
     authorName: roleName,
     targetRoleName: roleName,
-    title: generated?.title || '',
-    time: generated?.time || date,
-    content: generated?.content || '',
+    title: userContent ? generated?.title || '' : generated?.title || '',
+    time: entryTime,
+    content: userContent ? '' : generated?.content || '',
     userContent,
-    characterReply: userContent ? { title: '', time: date, content: '' } : null,
-    source: generated ? 'ai' : 'manual',
+    characterReply: userContent
+      ? { title: generated?.title || '', time: entryTime, content: generated?.content || '' }
+      : null,
+    source: 'ai',
     createdAt: now,
     updatedAt: formatTimestamp(),
-    contextDigest: generated ? { generatedAt: formatTimestamp() } : null,
+    contextDigest: { generatedAt: formatTimestamp() },
   });
 
   diaryPanelState = {
