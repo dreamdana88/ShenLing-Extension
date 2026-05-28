@@ -643,6 +643,7 @@ function renderDiaryEntryPage(chatState) {
   const isExchange = entry.type === 'exchange_diary';
   const leftTitle = isExchange ? '你的日记' : getEntryTitle(entry);
   const leftText = isExchange ? entry.userContent : entry.content || '正文将在生成后写入这里。';
+  const entryTime = getEntryTime(entry);
   const rightTitle = isExchange ? (entry.characterReply?.title || '角色回信') : '日记信息';
   const rightText = isExchange ? entry.characterReply?.content || '角色回信将在生成后写入这里。' : '';
   const entryActions = `
@@ -658,6 +659,7 @@ function renderDiaryEntryPage(chatState) {
       <section class="slx-diary-book-page slx-diary-entry-left-page">
         ${entryActions}
         <div class="slx-diary-book-page-title">${escapeHtml(leftTitle)}</div>
+        <div class="slx-diary-book-page-date">${escapeHtml(entryTime || '当前剧情日期')}</div>
         <div class="slx-diary-book-rule"></div>
         <div class="slx-diary-entry-scroll">
           <p>${escapeHtml(leftText)}</p>
@@ -677,7 +679,7 @@ function renderDiaryEntryPage(chatState) {
           <div class="slx-diary-book-page-title">${escapeHtml(rightTitle)}</div>
           <div class="slx-diary-book-rule"></div>
           <p>${escapeHtml(rightText)}</p>
-          <div class="slx-diary-book-page-num">${escapeHtml(getEntryTime(entry))}</div>
+          <div class="slx-diary-book-page-num">${escapeHtml(entryTime)}</div>
         ` : '<div class="slx-diary-blank-page" aria-hidden="true"></div>'}
       </section>
     </div>

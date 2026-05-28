@@ -1621,9 +1621,17 @@ body.slx-panel-open-lock {
   letter-spacing: 0.12em;
 }
 
+.slx-diary-book-page-date {
+  margin-top: 7px;
+  color: rgba(139, 75, 67, 0.64);
+  font-family: 'Noto Serif SC', Georgia, serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .slx-diary-book-rule {
   height: 1px;
-  margin: 14px 0 24px;
+  margin: 12px 0 20px;
   background: rgba(139, 75, 67, 0.42);
 }
 
