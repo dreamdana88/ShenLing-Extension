@@ -33,18 +33,14 @@ const DIARY_TABS = [
 ];
 
 const DEFAULT_COVERS = [
-  { id: 'linen', label: '布面旧册' },
-  { id: 'red', label: '酒红硬封' },
-  { id: 'green', label: '墨绿手账' },
+  { id: 'linen', label: '简约日册' },
   { id: 'gufeng', label: '古风花笺' },
   { id: 'shouhui', label: '手绘手账' },
   { id: 'fugu', label: '复古蓝灰' },
 ];
 
 const DEFAULT_PAGES = [
-  { id: 'warm', label: '暖黄纸页' },
-  { id: 'plain', label: '素白纸页' },
-  { id: 'lined', label: '横线手账' },
+  { id: 'warm', label: '简约纸页' },
   { id: 'gufeng', label: '古风信笺' },
   { id: 'shouhui', label: '手绘横线' },
   { id: 'fugu', label: '复古横线' },
