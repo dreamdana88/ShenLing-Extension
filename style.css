@@ -1252,13 +1252,73 @@ body.slx-panel-open-lock {
   filter: brightness(1.03) saturate(1.02);
 }
 
-.slx-diary-theme-cover-gufeng .slx-diary-cover-wrap .slx-diary-book-close-btn {
+.slx-diary-cover-shouhui,
+.slx-diary-cover-fugu {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  background:
+    var(--slx-diary-cover-image, linear-gradient(transparent, transparent)),
+    linear-gradient(180deg, #f5eadf, #e5d5c9);
+  background-size:
+    contain,
+    auto;
+  background-repeat:
+    no-repeat,
+    repeat;
+  background-position:
+    center,
+    center;
+  padding: 0;
+  box-shadow:
+    0 18px 40px rgba(65, 38, 26, 0.18);
+}
+
+.slx-diary-cover-fugu {
+  background:
+    var(--slx-diary-cover-image, linear-gradient(transparent, transparent)),
+    linear-gradient(180deg, #202a31, #11181d);
+  background-size:
+    cover,
+    auto;
+  color: rgba(232, 225, 208, 0.9);
+}
+
+.slx-diary-cover-shouhui .slx-diary-cover-owner {
+  top: 25.5%;
+  width: 45%;
+  height: 7%;
+  color: #6e4e38;
+  font-size: clamp(18px, 5vw, 25px);
+  letter-spacing: 0.08em;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+  text-shadow: 0 1px 0 rgba(255, 247, 228, 0.8);
+}
+
+.slx-diary-cover-fugu .slx-diary-cover-owner {
+  top: 47%;
+  width: 47%;
+  height: 10%;
+  color: rgba(42, 55, 62, 0.88);
+  font-size: clamp(18px, 5.4vw, 28px);
+  letter-spacing: 0.1em;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+  text-shadow: 0 1px 0 rgba(238, 232, 213, 0.66);
+}
+
+.slx-diary-theme-cover-gufeng .slx-diary-cover-wrap .slx-diary-book-close-btn,
+.slx-diary-theme-cover-shouhui .slx-diary-cover-wrap .slx-diary-book-close-btn,
+.slx-diary-theme-cover-fugu .slx-diary-cover-wrap .slx-diary-book-close-btn {
   background: rgba(92, 45, 35, 0.14);
   border-color: rgba(92, 45, 35, 0.12);
   color: rgba(112, 61, 47, 0.5);
 }
 
-.slx-diary-theme-cover-gufeng .slx-diary-cover-wrap .slx-diary-book-close-btn:hover {
+.slx-diary-theme-cover-gufeng .slx-diary-cover-wrap .slx-diary-book-close-btn:hover,
+.slx-diary-theme-cover-shouhui .slx-diary-cover-wrap .slx-diary-book-close-btn:hover,
+.slx-diary-theme-cover-fugu .slx-diary-cover-wrap .slx-diary-book-close-btn:hover {
   background: rgba(92, 45, 35, 0.22);
   border-color: rgba(92, 45, 35, 0.2);
   color: rgba(96, 43, 34, 0.78);
@@ -1297,6 +1357,71 @@ body.slx-panel-open-lock {
 
 .slx-diary-theme-page-gufeng .slx-diary-book-rule {
   background: rgba(128, 76, 43, 0.34);
+}
+
+.slx-diary-theme-page-shouhui .slx-diary-book-page,
+.slx-diary-theme-page-fugu .slx-diary-book-page {
+  background:
+    var(--slx-diary-page-image, linear-gradient(transparent, transparent)),
+    linear-gradient(180deg, rgba(250, 246, 236, 0.98), rgba(239, 231, 214, 0.96));
+  background-size:
+    cover,
+    auto;
+  background-position:
+    center,
+    center;
+}
+
+.slx-diary-theme-page-shouhui .slx-diary-book-page {
+  padding-top: 152px;
+}
+
+.slx-diary-theme-page-fugu .slx-diary-book-page {
+  padding-top: 142px;
+}
+
+.slx-diary-theme-page-shouhui .slx-diary-book-page-title,
+.slx-diary-theme-page-shouhui .slx-diary-book-page-date,
+.slx-diary-theme-page-fugu .slx-diary-book-page-title,
+.slx-diary-theme-page-fugu .slx-diary-book-page-date {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  max-width: 44%;
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slx-diary-theme-page-shouhui .slx-diary-book-page-title {
+  top: 54px;
+  color: #91604f;
+  font-size: 17px;
+  letter-spacing: 0.08em;
+}
+
+.slx-diary-theme-page-shouhui .slx-diary-book-page-date {
+  top: 82px;
+  color: rgba(145, 96, 79, 0.7);
+}
+
+.slx-diary-theme-page-fugu .slx-diary-book-page-title {
+  top: 54px;
+  color: #59686d;
+  font-size: 17px;
+  letter-spacing: 0.08em;
+}
+
+.slx-diary-theme-page-fugu .slx-diary-book-page-date {
+  top: 82px;
+  color: rgba(89, 104, 109, 0.72);
+}
+
+.slx-diary-theme-page-shouhui .slx-diary-book-rule,
+.slx-diary-theme-page-fugu .slx-diary-book-rule {
+  display: none;
 }
 
 .slx-diary-inline-book {

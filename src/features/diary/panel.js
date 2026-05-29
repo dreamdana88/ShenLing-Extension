@@ -37,6 +37,8 @@ const DEFAULT_COVERS = [
   { id: 'red', label: '酒红硬封' },
   { id: 'green', label: '墨绿手账' },
   { id: 'gufeng', label: '古风花笺' },
+  { id: 'shouhui', label: '手绘手账' },
+  { id: 'fugu', label: '复古蓝灰' },
 ];
 
 const DEFAULT_PAGES = [
@@ -44,6 +46,8 @@ const DEFAULT_PAGES = [
   { id: 'plain', label: '素白纸页' },
   { id: 'lined', label: '横线手账' },
   { id: 'gufeng', label: '古风信笺' },
+  { id: 'shouhui', label: '手绘横线' },
+  { id: 'fugu', label: '复古横线' },
 ];
 
 // ── 手账（Tcho）主题：仅用于 UI 渲染，不涉及业务逻辑 ──
@@ -67,6 +71,10 @@ const DIARY_ASSET_BASE = '/scripts/extensions/third-party/ShenLing-Extension/ass
 const DIARY_PLANNER_STICKER_SRC = `${DIARY_ASSET_BASE}planner-sticker.png`;
 const DIARY_GUFENG_COVER_SRC = `${DIARY_ASSET_BASE}gufeng-cover.png`;
 const DIARY_GUFENG_PAGE_SRC = `${DIARY_ASSET_BASE}gufeng-page.png`;
+const DIARY_SHOUHUI_COVER_SRC = `${DIARY_ASSET_BASE}shouhui-cover.png`;
+const DIARY_SHOUHUI_PAGE_SRC = `${DIARY_ASSET_BASE}shouhui-page.png`;
+const DIARY_FUGU_COVER_SRC = `${DIARY_ASSET_BASE}fugu-cover.png`;
+const DIARY_FUGU_PAGE_SRC = `${DIARY_ASSET_BASE}fugu-page.png`;
 const DIARY_DATE_FALLBACK_LABEL = '当前剧情日期';
 const ROLE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
 
@@ -250,12 +258,20 @@ function getSafeImageSource(value) {
 
 function getBuiltinCoverSource(coverPreset) {
   if (coverPreset === 'gufeng') return DIARY_GUFENG_COVER_SRC;
+  if (coverPreset === 'shouhui') return DIARY_SHOUHUI_COVER_SRC;
+  if (coverPreset === 'fugu') return DIARY_FUGU_COVER_SRC;
   return '';
 }
 
 function getBuiltinPageSource(pagePreset) {
   if (pagePreset === 'gufeng') return DIARY_GUFENG_PAGE_SRC;
+  if (pagePreset === 'shouhui') return DIARY_SHOUHUI_PAGE_SRC;
+  if (pagePreset === 'fugu') return DIARY_FUGU_PAGE_SRC;
   return '';
+}
+
+function getDiaryCoverTheme(coverPreset) {
+  return ['gufeng', 'shouhui', 'fugu'].includes(coverPreset) ? coverPreset : '';
 }
 
 function buildDiaryVisualStyle(settings = {}) {
@@ -643,14 +659,14 @@ function renderDiaryCover(chatState) {
   const roleName = diaryPanelState.roleName;
   const entries = getRoleEntries(getDiaryEntries(chatState), roleName);
   const settings = getDiaryStore(chatState).settings;
-  const isGufengCover = settings.coverPreset === 'gufeng';
+  const coverTheme = getDiaryCoverTheme(settings.coverPreset);
   return `
     <div class="slx-diary-cover-wrap">
       <button class="slx-diary-book-close-btn" type="button" data-slx-close-diary-notebook title="回到书架">
         <i class="fa-solid fa-xmark"></i>
       </button>
-      <button class="slx-diary-cover ${isGufengCover ? 'slx-diary-cover-gufeng' : ''}" type="button" data-slx-open-diary-toc>
-        ${isGufengCover
+      <button class="slx-diary-cover ${coverTheme ? `slx-diary-cover-${coverTheme}` : ''}" type="button" data-slx-open-diary-toc>
+        ${coverTheme
           ? `<span class="slx-diary-cover-owner">${escapeHtml(roleName || '未命名角色')}</span>`
           : `
             <span class="slx-diary-cover-label">SHENLING DIARY</span>
@@ -878,9 +894,12 @@ function renderDiaryNotebookModal(chatState) {
   const stageClass = diaryPanelState.screen === 'cover' ? 'slx-diary-stage-cover' : 'slx-diary-stage-open';
   const settings = getDiaryStore(chatState).settings;
   const visualStyle = buildDiaryVisualStyle(settings);
+  const coverTheme = getDiaryCoverTheme(settings.coverPreset);
   const themeClass = [
-    settings.coverPreset === 'gufeng' ? 'slx-diary-theme-cover-gufeng' : '',
+    coverTheme ? `slx-diary-theme-cover-${coverTheme}` : '',
     settings.pagePreset === 'gufeng' ? 'slx-diary-theme-page-gufeng' : '',
+    settings.pagePreset === 'shouhui' ? 'slx-diary-theme-page-shouhui' : '',
+    settings.pagePreset === 'fugu' ? 'slx-diary-theme-page-fugu' : '',
   ].filter(Boolean).join(' ');
   return `
     <div class="slx-diary-notebook-modal" data-slx-close-diary-notebook>
