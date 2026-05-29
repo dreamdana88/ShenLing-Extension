@@ -3686,10 +3686,10 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-book-card::after {
   content: '☆';
   position: absolute;
-  right: 18px;
-  bottom: 9px;
-  color: rgba(228, 183, 86, 0.72);
-  font-size: 17px;
+  right: 108px;
+  bottom: 8px;
+  color: rgba(228, 183, 86, 0.58);
+  font-size: 15px;
 }
 
 .slx-diary-tcho-book-spine {
@@ -3716,7 +3716,7 @@ body.slx-panel-open-lock {
   z-index: 1;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
 }
 
 .slx-diary-tcho-open-pill {
@@ -3735,25 +3735,29 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-tcho-delete-pill {
-  width: 32px;
-  height: 32px;
-  border: 1px solid rgba(179, 92, 86, 0.22);
-  border-radius: 12px;
+  width: 27px;
+  height: 27px;
+  border: 1px dashed rgba(198, 146, 132, 0.48);
+  border-radius: 999px;
   background:
-    linear-gradient(180deg, rgba(255, 247, 244, 0.96), rgba(247, 226, 220, 0.92));
-  color: #9c5a52;
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.82), transparent 46%),
+    linear-gradient(180deg, rgba(255, 250, 244, 0.82), rgba(242, 221, 211, 0.66));
+  color: rgba(139, 82, 74, 0.74);
   display: inline-grid;
   place-items: center;
   cursor: pointer;
   box-shadow:
-    0 4px 9px rgba(150, 86, 76, 0.1),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.45);
-  transition: transform 0.18s, filter 0.18s, border-color 0.18s;
+    0 3px 7px rgba(150, 102, 86, 0.06),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.34);
+  font-size: 11px;
+  opacity: 0.76;
+  transition: transform 0.18s, filter 0.18s, border-color 0.18s, opacity 0.18s;
 }
 
 .slx-diary-tcho-delete-pill:hover {
-  border-color: rgba(179, 92, 86, 0.38);
+  border-color: rgba(169, 98, 88, 0.52);
   filter: brightness(1.03);
+  opacity: 1;
   transform: translateY(-1px);
 }
 
