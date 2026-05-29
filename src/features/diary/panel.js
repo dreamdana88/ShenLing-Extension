@@ -65,8 +65,8 @@ const TCHO_LEAF_R = `<svg class="slx-diary-tcho-leaf slx-diary-tcho-leaf-r" view
 const DIARY_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
 const DIARY_ASSET_BASE = 'scripts/extensions/third-party/ShenLing-Extension/assets/diary/';
 const DIARY_PLANNER_STICKER_SRC = 'scripts/extensions/third-party/ShenLing-Extension/assets/diary/planner-sticker.png';
-const DIARY_GUFENG_COVER_SRC = `${DIARY_ASSET_BASE}${encodeURIComponent('古风-封面.png')}`;
-const DIARY_GUFENG_PAGE_SRC = `${DIARY_ASSET_BASE}${encodeURIComponent('古风-内页.png')}`;
+const DIARY_GUFENG_COVER_SRC = `${DIARY_ASSET_BASE}gufeng-cover.png`;
+const DIARY_GUFENG_PAGE_SRC = `${DIARY_ASSET_BASE}gufeng-page.png`;
 const DIARY_DATE_FALLBACK_LABEL = '当前剧情日期';
 const ROLE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
 
