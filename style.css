@@ -1090,6 +1090,12 @@ body.slx-panel-open-lock {
   cursor: pointer;
 }
 
+.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) {
+  justify-content: flex-start;
+  gap: 0;
+  padding: 0;
+}
+
 .slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu)::before {
   content: '';
   position: absolute;
@@ -1105,7 +1111,7 @@ body.slx-panel-open-lock {
 .slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu)::after {
   content: '';
   position: absolute;
-  top: 29%;
+  top: 27.5%;
   left: 50%;
   width: 58%;
   height: 24%;
@@ -1115,6 +1121,31 @@ body.slx-panel-open-lock {
   background: rgba(255, 249, 232, 0.26);
   box-shadow: 0 8px 18px rgba(95, 60, 42, 0.08);
   pointer-events: none;
+}
+
+.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) .slx-diary-cover-label,
+.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) b,
+.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) small {
+  position: absolute;
+  left: 50%;
+  z-index: 1;
+  width: 52%;
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) .slx-diary-cover-label {
+  top: 35.8%;
+}
+
+.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) b {
+  top: 40.3%;
+  font-size: clamp(23px, 6.2vw, 34px);
+  line-height: 1.05;
+}
+
+.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) small {
+  top: 49.4%;
 }
 
 .slx-diary-book-close-btn,
@@ -1309,8 +1340,9 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-cover-shouhui .slx-diary-cover-owner {
-  top: 35.2%;
-  width: 43%;
+  top: 33.3%;
+  left: 51.4%;
+  width: 45%;
   height: 8.8%;
   color: #6e4e38;
   font-size: clamp(18px, 5vw, 26px);
@@ -2964,10 +2996,10 @@ body.slx-panel-open-lock {
   .slx-diary-notebook-modal {
     align-items: center;
     padding:
-      max(10px, var(--slx-safe-top))
-      max(10px, var(--slx-safe-right))
-      max(10px, var(--slx-safe-bottom))
-      max(10px, var(--slx-safe-left));
+      max(6px, var(--slx-safe-top))
+      max(6px, var(--slx-safe-right))
+      max(6px, var(--slx-safe-bottom))
+      max(6px, var(--slx-safe-left));
   }
 
   .slx-diary-notebook-stage {
@@ -2980,7 +3012,10 @@ body.slx-panel-open-lock {
   }
 
   .slx-diary-stage-cover {
-    width: min(100%, clamp(200px, calc((var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 190px) * 0.707), 300px));
+    width: min(
+      calc(100vw - var(--slx-safe-left) - var(--slx-safe-right) - 12px),
+      calc((var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 12px) * 0.707)
+    );
   }
 
   .slx-diary-cover {
