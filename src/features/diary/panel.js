@@ -36,12 +36,14 @@ const DEFAULT_COVERS = [
   { id: 'linen', label: '布面旧册' },
   { id: 'red', label: '酒红硬封' },
   { id: 'green', label: '墨绿手账' },
+  { id: 'gufeng', label: '古风花笺' },
 ];
 
 const DEFAULT_PAGES = [
   { id: 'warm', label: '暖黄纸页' },
   { id: 'plain', label: '素白纸页' },
   { id: 'lined', label: '横线手账' },
+  { id: 'gufeng', label: '古风信笺' },
 ];
 
 // ── 手账（Tcho）主题：仅用于 UI 渲染，不涉及业务逻辑 ──
@@ -61,7 +63,10 @@ const TCHO_LEAF_L = `<svg class="slx-diary-tcho-leaf" viewBox="0 0 56 24" fill="
 const TCHO_LEAF_R = `<svg class="slx-diary-tcho-leaf slx-diary-tcho-leaf-r" viewBox="0 0 56 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 12 Q18 6 32 11" stroke="#8ab49a" stroke-width="1.2" stroke-linecap="round"/><path d="M24 11 Q30 5 40 8 Q32 9 24 11Z" fill="#a8c8b4" opacity="0.85"/><path d="M24 11 Q30 17 40 14 Q32 13 24 11Z" fill="#c0d8c6" opacity="0.7"/><path d="M36 10 Q42 5 50 8 Q43 9 36 10Z" fill="#a8c8b4" opacity="0.8"/><path d="M36 10 Q42 15 50 12 Q43 11 36 10Z" fill="#c0d8c6" opacity="0.65"/></svg>`;
 
 const DIARY_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+const DIARY_ASSET_BASE = 'scripts/extensions/third-party/ShenLing-Extension/assets/diary/';
 const DIARY_PLANNER_STICKER_SRC = 'scripts/extensions/third-party/ShenLing-Extension/assets/diary/planner-sticker.png';
+const DIARY_GUFENG_COVER_SRC = `${DIARY_ASSET_BASE}${encodeURIComponent('古风-封面.png')}`;
+const DIARY_GUFENG_PAGE_SRC = `${DIARY_ASSET_BASE}${encodeURIComponent('古风-内页.png')}`;
 const DIARY_DATE_FALLBACK_LABEL = '当前剧情日期';
 const ROLE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
 
@@ -243,9 +248,19 @@ function getSafeImageSource(value) {
   return '';
 }
 
+function getBuiltinCoverSource(coverPreset) {
+  if (coverPreset === 'gufeng') return DIARY_GUFENG_COVER_SRC;
+  return '';
+}
+
+function getBuiltinPageSource(pagePreset) {
+  if (pagePreset === 'gufeng') return DIARY_GUFENG_PAGE_SRC;
+  return '';
+}
+
 function buildDiaryVisualStyle(settings = {}) {
-  const coverImage = getSafeImageSource(settings.customCover);
-  const pageImage = getSafeImageSource(settings.customPage);
+  const coverImage = getBuiltinCoverSource(settings.coverPreset) || getSafeImageSource(settings.customCover);
+  const pageImage = getBuiltinPageSource(settings.pagePreset) || getSafeImageSource(settings.customPage);
   const declarations = [];
   if (coverImage) declarations.push(`--slx-diary-cover-image: url("${toCssString(coverImage)}")`);
   if (pageImage) declarations.push(`--slx-diary-page-image: url("${toCssString(pageImage)}")`);
@@ -627,15 +642,21 @@ function renderDiarySettings(chatState) {
 function renderDiaryCover(chatState) {
   const roleName = diaryPanelState.roleName;
   const entries = getRoleEntries(getDiaryEntries(chatState), roleName);
+  const settings = getDiaryStore(chatState).settings;
+  const isGufengCover = settings.coverPreset === 'gufeng';
   return `
     <div class="slx-diary-cover-wrap">
       <button class="slx-diary-book-close-btn" type="button" data-slx-close-diary-notebook title="回到书架">
         <i class="fa-solid fa-xmark"></i>
       </button>
-      <button class="slx-diary-cover" type="button" data-slx-open-diary-toc>
-        <span class="slx-diary-cover-label">SHENLING DIARY</span>
-        <b>${escapeHtml(roleName || '未命名角色')}</b>
-        <small>${escapeHtml(entries.length)} 篇记录 · 点击翻开目录</small>
+      <button class="slx-diary-cover ${isGufengCover ? 'slx-diary-cover-gufeng' : ''}" type="button" data-slx-open-diary-toc>
+        ${isGufengCover
+          ? `<span class="slx-diary-cover-owner">${escapeHtml(roleName || '未命名角色')}</span>`
+          : `
+            <span class="slx-diary-cover-label">SHENLING DIARY</span>
+            <b>${escapeHtml(roleName || '未命名角色')}</b>
+            <small>${escapeHtml(entries.length)} 篇记录 · 点击翻开目录</small>
+          `}
       </button>
     </div>
   `;
@@ -855,10 +876,15 @@ function renderDiaryNotebookBody(chatState) {
 function renderDiaryNotebookModal(chatState) {
   if (diaryPanelState.tab !== 'notebooks' || diaryPanelState.screen === 'library') return '';
   const stageClass = diaryPanelState.screen === 'cover' ? 'slx-diary-stage-cover' : 'slx-diary-stage-open';
-  const visualStyle = buildDiaryVisualStyle(getDiaryStore(chatState).settings);
+  const settings = getDiaryStore(chatState).settings;
+  const visualStyle = buildDiaryVisualStyle(settings);
+  const themeClass = [
+    settings.coverPreset === 'gufeng' ? 'slx-diary-theme-cover-gufeng' : '',
+    settings.pagePreset === 'gufeng' ? 'slx-diary-theme-page-gufeng' : '',
+  ].filter(Boolean).join(' ');
   return `
     <div class="slx-diary-notebook-modal" data-slx-close-diary-notebook>
-      <div class="slx-diary-notebook-stage ${stageClass}" data-slx-diary-notebook-stage${visualStyle}>
+      <div class="slx-diary-notebook-stage ${stageClass} ${themeClass}" data-slx-diary-notebook-stage${visualStyle}>
         ${renderDiaryNotebookBody(chatState)}
       </div>
     </div>
