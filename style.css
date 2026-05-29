@@ -1004,6 +1004,11 @@ body.slx-panel-open-lock {
   width: min(100%, clamp(220px, calc((var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 154px) * 0.707), 420px));
 }
 
+.slx-diary-stage-cover.slx-diary-theme-cover-shouhui,
+.slx-diary-stage-cover.slx-diary-theme-cover-fugu {
+  width: min(100%, clamp(230px, calc((var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 154px) * 0.75), 470px));
+}
+
 .slx-diary-stage-open {
   width: min(980px, calc((var(--slx-viewport-height) - 116px) * 1.414), calc(100vw - 36px));
 }
@@ -1257,39 +1262,28 @@ body.slx-panel-open-lock {
   position: relative;
   overflow: hidden;
   border: 0;
-  background:
-    var(--slx-diary-cover-image, linear-gradient(transparent, transparent)),
-    linear-gradient(180deg, #f5eadf, #e5d5c9);
+  aspect-ratio: 1086 / 1448;
+  background: var(--slx-diary-cover-image, linear-gradient(transparent, transparent));
   background-size:
-    contain,
-    auto;
-  background-repeat:
-    no-repeat,
-    repeat;
-  background-position:
-    center,
-    center;
+    100% 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-color: transparent;
   padding: 0;
   box-shadow:
     0 18px 40px rgba(65, 38, 26, 0.18);
 }
 
 .slx-diary-cover-fugu {
-  background:
-    var(--slx-diary-cover-image, linear-gradient(transparent, transparent)),
-    linear-gradient(180deg, #202a31, #11181d);
-  background-size:
-    cover,
-    auto;
   color: rgba(232, 225, 208, 0.9);
 }
 
 .slx-diary-cover-shouhui .slx-diary-cover-owner {
-  top: 25.5%;
-  width: 45%;
-  height: 7%;
+  top: 24.4%;
+  width: 39%;
+  height: 5.8%;
   color: #6e4e38;
-  font-size: clamp(18px, 5vw, 25px);
+  font-size: clamp(16px, 4.5vw, 22px);
   letter-spacing: 0.08em;
   writing-mode: horizontal-tb;
   text-orientation: mixed;
@@ -1365,7 +1359,7 @@ body.slx-panel-open-lock {
     var(--slx-diary-page-image, linear-gradient(transparent, transparent)),
     linear-gradient(180deg, rgba(250, 246, 236, 0.98), rgba(239, 231, 214, 0.96));
   background-size:
-    cover,
+    100% 100%,
     auto;
   background-position:
     center,
@@ -1838,11 +1832,19 @@ body.slx-panel-open-lock {
 
 .slx-diary-book-page p {
   margin: 0;
-  color: #4f3926;
+  color: var(--slx-diary-character-text-color, #4f3926);
   font-family: 'Noto Serif SC', Georgia, serif;
   font-size: 16px;
   line-height: 2;
   white-space: pre-wrap;
+}
+
+.slx-diary-book-page p.slx-diary-text-user {
+  color: var(--slx-diary-user-text-color, #8b4b43);
+}
+
+.slx-diary-book-page p.slx-diary-text-character {
+  color: var(--slx-diary-character-text-color, #4f3926);
 }
 
 .slx-diary-entry-left-page {

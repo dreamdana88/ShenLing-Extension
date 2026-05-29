@@ -280,6 +280,8 @@ function buildDiaryVisualStyle(settings = {}) {
   const declarations = [];
   if (coverImage) declarations.push(`--slx-diary-cover-image: url("${toCssString(coverImage)}")`);
   if (pageImage) declarations.push(`--slx-diary-page-image: url("${toCssString(pageImage)}")`);
+  declarations.push(`--slx-diary-user-text-color: ${toCssString(settings.userTextColor || '#8b4b43')}`);
+  declarations.push(`--slx-diary-character-text-color: ${toCssString(settings.characterTextColor || '#4f3926')}`);
   return declarations.length ? ` style="${escapeHtml(declarations.join('; '))}"` : '';
 }
 
@@ -743,7 +745,7 @@ function renderDiaryEntryPage(chatState) {
         <div class="slx-diary-book-page-date">${escapeHtml(entryTime || '当前剧情日期')}</div>
         <div class="slx-diary-book-rule"></div>
         <div class="slx-diary-entry-scroll">
-          <p>${escapeHtml(leftText)}</p>
+          <p class="${isExchange ? 'slx-diary-text-user' : 'slx-diary-text-character'}">${escapeHtml(leftText)}</p>
         </div>
         <div class="slx-diary-page-footer-left">
           <button class="slx-diary-page-corner-btn" type="button" data-slx-diary-back-toc title="返回目录">
@@ -759,7 +761,7 @@ function renderDiaryEntryPage(chatState) {
         ${isExchange ? `
           <div class="slx-diary-book-page-title">${escapeHtml(rightTitle)}</div>
           <div class="slx-diary-book-rule"></div>
-          <p>${escapeHtml(rightText)}</p>
+          <p class="slx-diary-text-character">${escapeHtml(rightText)}</p>
           <div class="slx-diary-book-page-num">${escapeHtml(entryTime)}</div>
         ` : '<div class="slx-diary-blank-page" aria-hidden="true"></div>'}
       </section>
