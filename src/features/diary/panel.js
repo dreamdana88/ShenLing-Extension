@@ -678,7 +678,7 @@ function renderDiaryToc(chatState) {
   const roleName = diaryPanelState.roleName;
   const entries = getRoleEntries(getDiaryEntries(chatState), roleName);
   return `
-    <div class="slx-diary-book-spread slx-diary-inline-book">
+    <div class="slx-diary-book-spread slx-diary-inline-book slx-diary-toc-spread">
       <section class="slx-diary-book-page">
         <button class="slx-diary-page-corner-btn slx-diary-page-corner-left" type="button" data-slx-diary-back-cover title="返回封面">
           <i class="fa-solid fa-arrow-left"></i>
@@ -694,6 +694,9 @@ function renderDiaryToc(chatState) {
             </button>
           `).join('') : '<p>这本日记还没有写下第一篇。</p>'}
         </div>
+        <button class="slx-diary-feather-btn slx-diary-mobile-compose-btn" type="button" data-slx-open-diary-compose title="撰写日记">
+          <i class="fa-solid fa-feather"></i>
+        </button>
       </section>
       <section class="slx-diary-book-page slx-diary-book-page-right">
         <button class="slx-diary-book-close-btn slx-diary-page-close-btn" type="button" data-slx-close-diary-notebook title="回到书架">
@@ -732,7 +735,7 @@ function renderDiaryEntryPage(chatState) {
   `;
 
   return `
-    <div class="slx-diary-book-spread slx-diary-inline-book">
+    <div class="slx-diary-book-spread slx-diary-inline-book slx-diary-entry-spread ${isExchange ? 'slx-diary-exchange-spread' : ''}">
       <section class="slx-diary-book-page slx-diary-entry-left-page">
         ${entryActions}
         <div class="slx-diary-book-page-title">${escapeHtml(leftTitle)}</div>
@@ -773,7 +776,7 @@ function renderDiaryCompose(chatState) {
       ? diaryPanelState.generationError || '日记生成失败。'
       : '用户内容为空时生成角色独白；写下内容时生成交换日记回复。';
   return `
-    <div class="slx-diary-book-spread slx-diary-inline-book">
+    <div class="slx-diary-book-spread slx-diary-inline-book slx-diary-compose-spread">
       <section class="slx-diary-book-page">
         <button class="slx-diary-page-corner-btn slx-diary-page-corner-left" type="button" data-slx-diary-back-toc title="返回目录">
           <i class="fa-solid fa-arrow-left"></i>
@@ -793,6 +796,17 @@ function renderDiaryCompose(chatState) {
           <span>给角色看的内容</span>
           <textarea class="slx-diary-new-textarea" data-slx-diary-compose-user-content placeholder="可空。为空时生成角色独白；写下你的内容时生成交换日记。"></textarea>
         </label>
+        <div class="slx-diary-compose-mobile-actions">
+          <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-create-unified-diary-draft ${isGenerating ? 'disabled' : ''}>
+            <i class="fa-solid fa-feather"></i><span>${isGenerating ? '日记生成中' : '生成日记草稿'}</span>
+          </button>
+          <button class="slx-soft-btn" type="button" data-slx-test-diary-context ${diaryContextTestState.status === 'running' ? 'disabled' : ''}>
+            <i class="fa-solid fa-magnifying-glass"></i><span>测试上下文</span>
+          </button>
+          <div class="slx-field-hint">${escapeHtml(generationHint)}</div>
+          <div class="slx-field-hint">${escapeHtml(getContextTestStatusText())}</div>
+          ${renderContextTestResult()}
+        </div>
       </section>
       <section class="slx-diary-book-page slx-diary-book-page-right">
         <button class="slx-diary-book-close-btn slx-diary-page-close-btn" type="button" data-slx-close-diary-notebook title="回到书架">
@@ -1494,12 +1508,16 @@ export function bindDiaryPanelEvents(panelRoot) {
     });
   });
 
-  panelRoot.querySelector('[data-slx-create-unified-diary-draft]')?.addEventListener('click', () => {
-    void createUnifiedDiaryDraft(panelRoot);
+  panelRoot.querySelectorAll('[data-slx-create-unified-diary-draft]').forEach(button => {
+    button.addEventListener('click', () => {
+      void createUnifiedDiaryDraft(panelRoot);
+    });
   });
 
-  panelRoot.querySelector('[data-slx-test-diary-context]')?.addEventListener('click', () => {
-    void testDiaryContext(panelRoot);
+  panelRoot.querySelectorAll('[data-slx-test-diary-context]').forEach(button => {
+    button.addEventListener('click', () => {
+      void testDiaryContext(panelRoot);
+    });
   });
 
   panelRoot.querySelectorAll('[data-slx-edit-diary]').forEach(button => {
