@@ -1124,8 +1124,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) .slx-diary-cover-label,
-.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) b,
-.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) small {
+.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) b {
   position: absolute;
   left: 50%;
   z-index: 1;
@@ -1139,13 +1138,9 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) b {
-  top: 40.3%;
+  top: 42%;
   font-size: clamp(23px, 6.2vw, 34px);
   line-height: 1.05;
-}
-
-.slx-diary-cover:not(.slx-diary-cover-gufeng):not(.slx-diary-cover-shouhui):not(.slx-diary-cover-fugu) small {
-  top: 49.4%;
 }
 
 .slx-diary-book-close-btn,

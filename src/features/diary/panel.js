@@ -655,7 +655,6 @@ function renderDiarySettings(chatState) {
 
 function renderDiaryCover(chatState) {
   const roleName = diaryPanelState.roleName;
-  const entries = getRoleEntries(getDiaryEntries(chatState), roleName);
   const settings = getDiaryStore(chatState).settings;
   const coverTheme = getDiaryCoverTheme(settings.coverPreset);
   return `
@@ -669,7 +668,6 @@ function renderDiaryCover(chatState) {
           : `
             <span class="slx-diary-cover-label">SHENLING DIARY</span>
             <b>${escapeHtml(roleName || '未命名角色')}</b>
-            <small>${escapeHtml(entries.length)} 篇记录 · 点击翻开目录</small>
           `}
       </button>
     </div>
