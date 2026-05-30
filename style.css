@@ -3035,10 +3035,9 @@ body.slx-panel-open-lock {
   }
 
   .slx-diary-stage-open {
-    width: min(
-      calc(100vw - var(--slx-safe-left) - var(--slx-safe-right) - 12px),
-      calc((var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 12px) * 0.707)
-    );
+    width: calc(100vw - var(--slx-safe-left) - var(--slx-safe-right) - 12px);
+    height: calc(var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 12px);
+    max-height: calc(var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 12px);
   }
 
   .slx-diary-cover {
@@ -3055,9 +3054,11 @@ body.slx-panel-open-lock {
 
   .slx-diary-book-spread {
     min-height: 0;
+    width: 100%;
+    height: 100%;
     display: block;
     grid-template-columns: none;
-    aspect-ratio: 1 / 1.414;
+    aspect-ratio: auto;
     max-height: none;
     overflow: hidden;
     scrollbar-width: thin;
@@ -3076,6 +3077,18 @@ body.slx-panel-open-lock {
     padding: 30px 26px 68px;
     scrollbar-width: thin;
     scrollbar-color: rgba(122, 84, 44, 0.28) transparent;
+    background-size:
+      100% 100%,
+      100% 100%,
+      auto;
+  }
+
+  .slx-diary-theme-page-gufeng .slx-diary-book-page,
+  .slx-diary-theme-page-shouhui .slx-diary-book-page,
+  .slx-diary-theme-page-fugu .slx-diary-book-page {
+    background-size:
+      100% 100%,
+      100% 100%;
   }
 
   .slx-diary-book-page-right {
@@ -3090,10 +3103,15 @@ body.slx-panel-open-lock {
 
   .slx-diary-mobile-compose-btn {
     position: absolute;
-    left: 26px;
-    bottom: 24px;
+    top: 24px;
+    right: 26px;
+    left: auto;
+    bottom: auto;
     display: inline-flex;
     margin: 0;
+    width: 42px;
+    height: 42px;
+    font-size: 18px;
   }
 
   .slx-diary-toc-list {
@@ -3112,13 +3130,13 @@ body.slx-panel-open-lock {
 
   .slx-diary-exchange-spread {
     aspect-ratio: auto;
-    max-height: calc(var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 12px);
+    max-height: 100%;
     overflow-y: auto;
   }
 
   .slx-diary-exchange-spread .slx-diary-book-page {
     height: auto;
-    min-height: calc((100vw - var(--slx-safe-left) - var(--slx-safe-right) - 12px) * 1.414);
+    min-height: 100%;
   }
 
   .slx-diary-book-page p {
