@@ -69,6 +69,7 @@ const DIARY_GUFENG_COVER_SRC = `${DIARY_ASSET_BASE}gufeng-cover.png`;
 const DIARY_GUFENG_PAGE_SRC = `${DIARY_ASSET_BASE}gufeng-page.png`;
 const DIARY_SHOUHUI_COVER_SRC = `${DIARY_ASSET_BASE}shouhui-cover.png`;
 const DIARY_SHOUHUI_PAGE_SRC = `${DIARY_ASSET_BASE}shouhui-page.png`;
+const DIARY_SHOUHUI_PAGE_MOBILE_SRC = `${DIARY_ASSET_BASE}shouhui-page-mobile.png`;
 const DIARY_FUGU_COVER_SRC = `${DIARY_ASSET_BASE}fugu-cover.png`;
 const DIARY_FUGU_PAGE_SRC = `${DIARY_ASSET_BASE}fugu-page.png`;
 const DIARY_DATE_FALLBACK_LABEL = '当前剧情日期';
@@ -276,6 +277,9 @@ function buildDiaryVisualStyle(settings = {}) {
   const declarations = [];
   if (coverImage) declarations.push(`--slx-diary-cover-image: url("${toCssString(coverImage)}")`);
   if (pageImage) declarations.push(`--slx-diary-page-image: url("${toCssString(pageImage)}")`);
+  if (settings.pagePreset === 'shouhui' && !settings.customPage) {
+    declarations.push(`--slx-diary-page-mobile-image: url("${toCssString(DIARY_SHOUHUI_PAGE_MOBILE_SRC)}")`);
+  }
   declarations.push(`--slx-diary-user-text-color: ${toCssString(settings.userTextColor || '#8b4b43')}`);
   declarations.push(`--slx-diary-character-text-color: ${toCssString(settings.characterTextColor || '#4f3926')}`);
   return declarations.length ? ` style="${escapeHtml(declarations.join('; '))}"` : '';

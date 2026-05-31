@@ -86,6 +86,70 @@ function limitText(value, maxLength = 0) {
   return `${text.slice(0, maxLength)}...`;
 }
 
+function normalizeLimit(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const limit = Number(value);
+  if (!Number.isFinite(limit)) return fallback;
+  if (limit === 0) return fallback;
+  return Math.max(0, limit);
+}
+
+function normalizeMessageId(value) {
+  const messageId = Number(value);
+  return Number.isFinite(messageId) ? messageId : null;
+}
+
+function takeLastItems(items = [], limit = 0) {
+  if (!Array.isArray(items) || limit <= 0) return [];
+  return items.slice(-limit);
+}
+
+function createWorldInfoDiagnostics(overrides = {}) {
+  return {
+    source: 'unknown',
+    mode: '',
+    cacheCount: 0,
+    rawSourceCounts: {},
+    worldInfoBeforeLength: 0,
+    worldInfoAfterLength: 0,
+    injectionTextLength: 0,
+    activatedCount: 0,
+    filteredCount: 0,
+    suspiciousCount: 0,
+    usedCount: 0,
+    filteredEntries: [],
+    suspiciousEntries: [],
+    notes: [],
+    ...overrides,
+  };
+}
+
+function createWorldInfoContextResult({
+  entries = [],
+  worldInfoBefore = '',
+  worldInfoAfter = '',
+  injectionText = '',
+  diagnostics = {},
+} = {}) {
+  const safeEntries = Array.isArray(entries) ? entries : [];
+  const before = cleanText(worldInfoBefore);
+  const after = cleanText(worldInfoAfter);
+  const injection = cleanText(injectionText);
+  return {
+    entries: safeEntries,
+    worldInfoBefore: before,
+    worldInfoAfter: after,
+    injectionText: injection,
+    diagnostics: createWorldInfoDiagnostics({
+      worldInfoBeforeLength: before.length,
+      worldInfoAfterLength: after.length,
+      injectionTextLength: injection.length,
+      usedCount: safeEntries.length,
+      ...diagnostics,
+    }),
+  };
+}
+
 function getTavernEventsSafe() {
   const context = getContextSafe();
   return globalThis.tavern_events || context?.tavern_events || context?.event_types || {};
@@ -199,11 +263,12 @@ function normalizeChatRecord(message) {
   const rawContent = cleanText(message.message);
   const summaryContent = extractSummarySourceContent(rawContent, getSummarySettings());
   return {
-    messageId: Number(message.message_id),
+    messageId: normalizeMessageId(message.message_id),
     role,
     speaker,
     content: summaryContent || rawContent,
     isHidden: Boolean(message.is_hidden),
+    source: 'chat',
   };
 }
 
@@ -212,7 +277,7 @@ export function collectRecentChatMessages({
   includeHidden = false,
   maxContentLength = 0,
 } = {}) {
-  const safeLimit = Math.max(0, Number(limit) || DEFAULT_RECENT_MESSAGE_LIMIT);
+  const safeLimit = normalizeLimit(limit, DEFAULT_RECENT_MESSAGE_LIMIT);
   const messages = getChatMessagesSafe(undefined, { hide_state: 'all' })
     .map(normalizeChatRecord)
     .filter(message => message.content)
@@ -238,7 +303,7 @@ export function collectRecentMemories({
 } = {}) {
   const maxId = Number(beforeMessageId);
   const hasMaxId = Number.isFinite(maxId);
-  const safeLimit = Math.max(0, Number(limit) || DEFAULT_MEMORY_LIMIT);
+  const safeLimit = normalizeLimit(limit, DEFAULT_MEMORY_LIMIT);
   const messages = getChatMessagesSafe(undefined, { hide_state: 'all' })
     .filter(message => message.role === 'assistant')
     .filter(message => includeHidden || !message.is_hidden)
@@ -247,11 +312,14 @@ export function collectRecentMemories({
 
   const memories = messages.flatMap(message => extractMemoryBlocks(message.message)
     .map(memory => ({
-      messageId: Number(message.message_id),
+      messageId: normalizeMessageId(message.message_id),
       content: memory,
+      archiveType: 'memory',
+      isHidden: Boolean(message.is_hidden),
+      source: 'chat_memory',
     })));
 
-  return safeLimit > 0 ? memories.slice(-safeLimit) : memories;
+  return takeLastItems(memories, safeLimit);
 }
 
 export function collectRecentGrandMemories({
@@ -261,7 +329,7 @@ export function collectRecentGrandMemories({
 } = {}) {
   const maxId = Number(beforeMessageId);
   const hasMaxId = Number.isFinite(maxId);
-  const safeLimit = Math.max(0, Number(limit) || DEFAULT_GRAND_MEMORY_LIMIT);
+  const safeLimit = normalizeLimit(limit, DEFAULT_GRAND_MEMORY_LIMIT);
   const grandMemories = getChatMessagesSafe(undefined, { hide_state: 'all' })
     .filter(message => message.role === 'assistant')
     .filter(message => includeHidden || !message.is_hidden)
@@ -269,12 +337,15 @@ export function collectRecentGrandMemories({
     .flatMap(message => {
       const match = String(message.message || '').match(GRAND_MEMORY_BLOCK_RE);
       return match ? [{
-        messageId: Number(message.message_id),
+        messageId: normalizeMessageId(message.message_id),
         content: match[0].trim(),
+        archiveType: 'grand_memory',
+        isHidden: Boolean(message.is_hidden),
+        source: 'chat_grand_memory',
       }] : [];
     });
 
-  return safeLimit > 0 ? grandMemories.slice(-safeLimit) : grandMemories;
+  return takeLastItems(grandMemories, safeLimit);
 }
 
 function getLatestEmotionRecord(profile) {
@@ -468,7 +539,7 @@ export function filterActivatedWorldInfoEntries(entries = [], { limit = DEFAULT_
   const filtered = [];
   const suspicious = [];
   const seen = new Set();
-  const safeLimit = Math.max(0, Number(limit) || DEFAULT_WORLD_INFO_LIMIT);
+  const safeLimit = normalizeLimit(limit, DEFAULT_WORLD_INFO_LIMIT);
 
   for (const entry of entries) {
     if (!entry?.content) continue;
@@ -557,13 +628,14 @@ export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT
     cacheSource: record.source,
   })));
   const filtered = filterActivatedWorldInfoEntries(entries, { limit });
-  return {
+  return createWorldInfoContextResult({
     entries: filtered.used,
     worldInfoBefore: latestInjection?.worldInfoBefore || '',
     worldInfoAfter: latestInjection?.worldInfoAfter || '',
     injectionText: latestInjection?.injectionText || '',
     diagnostics: {
       source: cache.length ? 'event_cache' : 'event_cache_empty',
+      mode: 'cache_only',
       cacheCount: cache.length,
       rawSourceCounts: cache[0]?.rawSourceCounts || {},
       worldInfoBeforeLength: cleanText(latestInjection?.worldInfoBefore).length,
@@ -585,7 +657,7 @@ export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT
       })),
       notes: cache.length ? [] : ['尚未捕获到本聊天的世界书激活事件。'],
     },
-  };
+  });
 }
 
 function getCharacterCardFieldsForWorldInfo() {
@@ -685,13 +757,14 @@ export async function collectDryRunWorldInfoContext({
       },
     );
     if (!chatForScan.length) {
-      return {
+      return createWorldInfoContextResult({
         entries: [],
         worldInfoBefore: '',
         worldInfoAfter: '',
         injectionText: '',
         diagnostics: {
           source: 'dry_run_empty_chat',
+          mode: 'dry_run',
           cacheCount: 0,
           activatedCount: 0,
           filteredCount: 0,
@@ -699,7 +772,7 @@ export async function collectDryRunWorldInfoContext({
           usedCount: 0,
           notes: ['最近聊天为空，跳过世界书 dry run。'],
         },
-      };
+      });
     }
 
     const maxContext = await getWorldInfoMaxContext();
@@ -713,13 +786,14 @@ export async function collectDryRunWorldInfoContext({
     const injection = getWorldInfoInjectionFromPayload(result);
     const entries = normalizeWorldInfoEntriesFromPayload(result, 'dry_run');
     const filtered = filterActivatedWorldInfoEntries(entries, { limit });
-    return {
+    return createWorldInfoContextResult({
       entries: filtered.used,
       worldInfoBefore: injection.worldInfoBefore,
       worldInfoAfter: injection.worldInfoAfter,
       injectionText: injection.injectionText,
       diagnostics: {
         source: 'dry_run',
+        mode: 'dry_run',
         cacheCount: 0,
         rawSourceCounts,
         worldInfoBeforeLength: injection.worldInfoBefore.length,
@@ -741,15 +815,16 @@ export async function collectDryRunWorldInfoContext({
         })),
         notes: cleanText(targetRoleName) ? [`dry run 扫描已加入日记角色名关键词：${cleanText(targetRoleName)}`] : [],
       },
-    };
+    });
   } catch (error) {
-    return {
+    return createWorldInfoContextResult({
       entries: [],
       worldInfoBefore: '',
       worldInfoAfter: '',
       injectionText: '',
       diagnostics: {
         source: 'dry_run_failed',
+        mode: 'dry_run',
         cacheCount: 0,
         activatedCount: 0,
         filteredCount: 0,
@@ -757,7 +832,7 @@ export async function collectDryRunWorldInfoContext({
         usedCount: 0,
         notes: [`世界书 dry run 不可用：${error.message || String(error)}`],
       },
-    };
+    });
   }
 }
 
@@ -769,18 +844,23 @@ export async function collectWorldInfoContext({
 } = {}) {
   if (mode === 'dry_run') {
     const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages, targetRoleName });
+    dryRun.diagnostics.mode = mode;
     if (dryRun.entries.length || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
-    return collectCachedWorldInfoContext({ limit });
+    const cachedFallback = collectCachedWorldInfoContext({ limit });
+    cachedFallback.diagnostics.mode = mode;
+    return cachedFallback;
   }
 
   const cached = collectCachedWorldInfoContext({ limit });
+  cached.diagnostics.mode = mode;
   if (mode === 'cache_only') return cached;
   if (cached.entries.length && cached.injectionText) return cached;
 
   const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages, targetRoleName });
+  dryRun.diagnostics.mode = mode;
   if (cached.entries.length) {
     const hasDryRunInjection = Boolean(dryRun.injectionText);
-    return {
+    return createWorldInfoContextResult({
       entries: cached.entries,
       worldInfoBefore: cached.worldInfoBefore || dryRun.worldInfoBefore || '',
       worldInfoAfter: cached.worldInfoAfter || dryRun.worldInfoAfter || '',
@@ -788,6 +868,7 @@ export async function collectWorldInfoContext({
       diagnostics: {
         ...cached.diagnostics,
         source: hasDryRunInjection ? 'event_cache_with_dry_run_injection' : cached.diagnostics.source,
+        mode,
         worldInfoBeforeLength: cleanText(cached.worldInfoBefore || dryRun.worldInfoBefore).length,
         worldInfoAfterLength: cleanText(cached.worldInfoAfter || dryRun.worldInfoAfter).length,
         injectionTextLength: cleanText(cached.injectionText || dryRun.injectionText).length,
@@ -797,12 +878,12 @@ export async function collectWorldInfoContext({
           ...(!hasDryRunInjection ? (dryRun.diagnostics.notes || []) : []),
         ],
       },
-    };
+    });
   }
 
   if (dryRun.entries.length || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
 
-  return {
+  return createWorldInfoContextResult({
     entries: cached.entries,
     worldInfoBefore: cached.worldInfoBefore || '',
     worldInfoAfter: cached.worldInfoAfter || '',
@@ -810,12 +891,13 @@ export async function collectWorldInfoContext({
     diagnostics: {
       ...cached.diagnostics,
       source: 'event_cache_empty_dry_run_failed',
+      mode,
       notes: [
         ...(cached.diagnostics.notes || []),
         ...(dryRun.diagnostics.notes || []),
       ],
     },
-  };
+  });
 }
 
 export function registerWorldInfoContextEvents() {
@@ -844,16 +926,22 @@ export function registerWorldInfoContextEvents() {
 }
 
 export function createEmptyWorldInfoContext() {
-  return {
+  return createWorldInfoContextResult({
     entries: [],
+    worldInfoBefore: '',
+    worldInfoAfter: '',
+    injectionText: '',
     diagnostics: {
       source: 'event_cache_empty',
+      mode: 'cache_only',
+      cacheCount: 0,
       activatedCount: 0,
       filteredCount: 0,
+      suspiciousCount: 0,
       usedCount: 0,
       notes: ['尚未捕获到本聊天的世界书激活事件。'],
     },
-  };
+  });
 }
 
 export async function resolveShenlingContext(options = {}) {
@@ -895,19 +983,26 @@ export async function resolveShenlingContext(options = {}) {
       recentMessages,
       targetRoleName,
     })
-    : {
+    : createWorldInfoContextResult({
       entries: [],
       worldInfoBefore: '',
       worldInfoAfter: '',
       injectionText: '',
       diagnostics: {
         source: 'disabled',
+        mode: 'disabled',
+        cacheCount: 0,
         activatedCount: 0,
         filteredCount: 0,
+        suspiciousCount: 0,
         usedCount: 0,
         notes: [],
       },
-    };
+    });
+  const timelineArchives = [
+    ...grandMemories,
+    ...memories,
+  ].sort((a, b) => Number(a.messageId ?? 0) - Number(b.messageId ?? 0));
 
   return {
     purpose,
@@ -919,7 +1014,9 @@ export async function resolveShenlingContext(options = {}) {
     recentChat: formatRecentChatForContext(recentMessages),
     memories,
     grandMemories,
+    timelineArchives,
     emotionProfiles,
+    worldInfo,
     activatedWorldInfo: worldInfo.entries,
     worldInfoBefore: worldInfo.worldInfoBefore || '',
     worldInfoAfter: worldInfo.worldInfoAfter || '',
@@ -930,6 +1027,16 @@ export async function resolveShenlingContext(options = {}) {
       grandMemoryCount: grandMemories.length,
       emotionProfileCount: emotionProfiles.length,
       worldInfo: worldInfo.diagnostics,
+      hiddenPolicy: {
+        recentChat: 'visible_only',
+        memories: 'visible_only',
+        grandMemories: 'visible_only',
+      },
+      sorting: {
+        recentChat: 'message_id_ascending',
+        timelineArchives: 'message_id_ascending',
+        worldInfo: 'tavern_order_best_effort',
+      },
     },
   };
 }
