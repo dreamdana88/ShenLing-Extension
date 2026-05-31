@@ -389,6 +389,40 @@ function getEntryLabel(entry) {
   return pickText(entry?.comment, entry?.title, entry?.name, keys.join(', '), '未命名条目');
 }
 
+function normalizeOptionalNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function getWorldInfoPositionRank(position) {
+  switch (normalizeOptionalNumber(position)) {
+    case 0: return 0; // before character
+    case 1: return 1; // after character
+    case 4: return 2; // at depth
+    case 2: return 3; // author's note top
+    case 3: return 4; // author's note bottom
+    case 5: return 5; // example messages top
+    case 6: return 6; // example messages bottom
+    case 7: return 7; // outlet
+    default: return 99;
+  }
+}
+
+function compareOptionalNumber(a, b, fallback = Number.MAX_SAFE_INTEGER) {
+  return (normalizeOptionalNumber(a) ?? fallback) - (normalizeOptionalNumber(b) ?? fallback);
+}
+
+function sortWorldInfoEntriesForMaterial(entries = []) {
+  return [...entries].sort((a, b) => (
+    getWorldInfoPositionRank(a.position) - getWorldInfoPositionRank(b.position)
+    || compareOptionalNumber(a.depth, b.depth)
+    || compareOptionalNumber(a.role, b.role)
+    || compareOptionalNumber(a.order, b.order)
+    || compareOptionalNumber(a.sourceIndex, b.sourceIndex)
+    || cleanText(a.title).localeCompare(cleanText(b.title))
+  ));
+}
+
 function normalizeWorldInfoEntry(entry, index = 0, source = 'event') {
   if (!entry || typeof entry !== 'object') return null;
   const content = cleanText(entry.content || entry.entry || entry.text);
@@ -400,8 +434,11 @@ function normalizeWorldInfoEntry(entry, index = 0, source = 'event') {
     world: cleanText(entry.world || entry.book || entry.worldName),
     comment: cleanText(entry.comment),
     keys: getEntryKeys(entry),
-    position: entry.position ?? entry.role ?? null,
-    depth: entry.depth ?? entry.order ?? null,
+    position: normalizeOptionalNumber(entry.position ?? entry.extensions?.position),
+    depth: normalizeOptionalNumber(entry.depth ?? entry.extensions?.depth),
+    role: normalizeOptionalNumber(entry.role ?? entry.extensions?.role),
+    order: normalizeOptionalNumber(entry.order ?? entry.insertion_order ?? entry.insertorder),
+    sourceIndex: index,
     source,
   };
 }
@@ -568,8 +605,10 @@ export function filterActivatedWorldInfoEntries(entries = [], { limit = DEFAULT_
     }
   }
 
+  const sortedUsed = sortWorldInfoEntriesForMaterial(used);
+
   return {
-    used: safeLimit > 0 ? used.slice(0, safeLimit) : used,
+    used: safeLimit > 0 ? sortedUsed.slice(0, safeLimit) : sortedUsed,
     suspicious,
     filtered,
   };
