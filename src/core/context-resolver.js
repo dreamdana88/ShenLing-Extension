@@ -71,6 +71,7 @@ const worldInfoEventStops = [];
 let activatedWorldInfoCache = [];
 let worldInfoModulePromise = null;
 let scriptModulePromise = null;
+let dryRunWorldInfoScanDepth = 0;
 
 function cleanText(value) {
   return String(value ?? '').trim();
@@ -485,7 +486,6 @@ function normalizeWorldInfoEntriesFromPayload(payload, source = 'event') {
 
   const sources = [
     ['allActivatedEntries', payload.allActivatedEntries],
-    ['sortedEntries', payload.sortedEntries],
     ['activated.entries', payload.activated?.entries],
     ['entries', payload.entries],
   ];
@@ -776,12 +776,18 @@ export async function collectDryRunWorldInfoContext({
     }
 
     const maxContext = await getWorldInfoMaxContext();
-    const result = await checkWorldInfo(
-      chatForScan,
-      maxContext,
-      true,
-      getCharacterCardFieldsForWorldInfo(),
-    );
+    dryRunWorldInfoScanDepth += 1;
+    let result = null;
+    try {
+      result = await checkWorldInfo(
+        chatForScan,
+        maxContext,
+        true,
+        getCharacterCardFieldsForWorldInfo(),
+      );
+    } finally {
+      dryRunWorldInfoScanDepth = Math.max(0, dryRunWorldInfoScanDepth - 1);
+    }
     const rawSourceCounts = getWorldInfoPayloadSourceCounts(result);
     const injection = getWorldInfoInjectionFromPayload(result);
     const entries = normalizeWorldInfoEntriesFromPayload(result, 'dry_run');
@@ -888,6 +894,7 @@ export function registerWorldInfoContextEvents() {
   if (activatedStop) worldInfoEventStops.push(activatedStop);
 
   const scanDoneStop = registerTavernEvent(tavernEvents.WORLDINFO_SCAN_DONE, eventData => {
+    if (dryRunWorldInfoScanDepth > 0) return;
     rememberActivatedWorldInfo(eventData, 'WORLDINFO_SCAN_DONE');
   });
   if (scanDoneStop) worldInfoEventStops.push(scanDoneStop);
