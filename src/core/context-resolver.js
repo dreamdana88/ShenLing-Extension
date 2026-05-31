@@ -732,7 +732,7 @@ function buildWorldInfoScanChat(messages = collectRecentChatMessages(), {
     .reverse();
   const cleanRoleName = cleanText(targetRoleName);
   if (cleanRoleName) {
-    chatForScan.push(cleanRoleName);
+    chatForScan.unshift(cleanRoleName);
   }
   return chatForScan;
 }
@@ -854,32 +854,10 @@ export async function collectWorldInfoContext({
   const cached = collectCachedWorldInfoContext({ limit });
   cached.diagnostics.mode = mode;
   if (mode === 'cache_only') return cached;
-  if (cached.entries.length && cached.injectionText) return cached;
+  if (cached.entries.length || cached.injectionText) return cached;
 
   const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages, targetRoleName });
   dryRun.diagnostics.mode = mode;
-  if (cached.entries.length) {
-    const hasDryRunInjection = Boolean(dryRun.injectionText);
-    return createWorldInfoContextResult({
-      entries: cached.entries,
-      worldInfoBefore: cached.worldInfoBefore || dryRun.worldInfoBefore || '',
-      worldInfoAfter: cached.worldInfoAfter || dryRun.worldInfoAfter || '',
-      injectionText: cached.injectionText || dryRun.injectionText || '',
-      diagnostics: {
-        ...cached.diagnostics,
-        source: hasDryRunInjection ? 'event_cache_with_dry_run_injection' : cached.diagnostics.source,
-        mode,
-        worldInfoBeforeLength: cleanText(cached.worldInfoBefore || dryRun.worldInfoBefore).length,
-        worldInfoAfterLength: cleanText(cached.worldInfoAfter || dryRun.worldInfoAfter).length,
-        injectionTextLength: cleanText(cached.injectionText || dryRun.injectionText).length,
-        notes: [
-          ...(cached.diagnostics.notes || []),
-          ...(hasDryRunInjection ? ['实际触发缓存缺少注入文本，已用 dry run 补齐世界书文本兜底。'] : []),
-          ...(!hasDryRunInjection ? (dryRun.diagnostics.notes || []) : []),
-        ],
-      },
-    });
-  }
 
   if (dryRun.entries.length || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
 
@@ -1111,18 +1089,22 @@ function formatWorldInfoInjectionForDiary(context = {}) {
   return injectionText;
 }
 
-function formatWorldInfoMaterialForDiary(context = {}) {
-  return [
-    formatWorldInfoForDiary(context.activatedWorldInfo),
-    formatWorldInfoInjectionForDiary(context),
-  ].filter(Boolean).join('\n\n');
+function formatWorldInfoMaterialForDiary(context = {}, { mode = 'injection_first' } = {}) {
+  const entriesMaterial = formatWorldInfoForDiary(context.activatedWorldInfo);
+  const injectionMaterial = formatWorldInfoInjectionForDiary(context);
+  if (mode === 'entries_only') return entriesMaterial;
+  if (mode === 'injection_only') return injectionMaterial;
+  if (mode === 'full') return [entriesMaterial, injectionMaterial].filter(Boolean).join('\n\n');
+  return injectionMaterial || entriesMaterial;
 }
 
-export function buildDiaryContextMaterial(context = {}) {
+export function buildDiaryContextMaterial(context = {}, options = {}) {
   const sections = [
     createSection('当前角色卡基础信息', formatCharacterCardForDiary(context.characterCard)),
     createSection('用户 Persona', context.userPersona),
-    createSection('当前世界信息', formatWorldInfoMaterialForDiary(context)),
+    createSection('当前世界信息', formatWorldInfoMaterialForDiary(context, {
+      mode: options.worldInfoMaterialMode,
+    })),
     createSection('近期梦境档案', formatTimelineArchivesForDiary(context.memories, context.grandMemories)),
     createSection('最近主要剧情', context.recentChat),
     createSection('情感档案', formatEmotionProfilesForDiary(context.emotionProfiles)),
@@ -1132,6 +1114,10 @@ export function buildDiaryContextMaterial(context = {}) {
 }
 
 export async function resolveDiaryContext(options = {}) {
+  const {
+    worldInfoMaterialMode = 'injection_first',
+    ...contextOptions
+  } = options;
   const context = await resolveShenlingContext({
     purpose: 'diary',
     recentMessageLimit: 8,
@@ -1141,11 +1127,11 @@ export async function resolveDiaryContext(options = {}) {
     includeEmotionProfile: true,
     includeMemories: true,
     includeGrandMemories: true,
-    ...options,
+    ...contextOptions,
   });
 
   return {
     ...context,
-    material: buildDiaryContextMaterial(context),
+    material: buildDiaryContextMaterial(context, { worldInfoMaterialMode }),
   };
 }

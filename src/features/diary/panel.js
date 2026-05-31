@@ -1076,9 +1076,19 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
   }
 }
 
+function getDiaryContextOptions(roleName) {
+  const store = getDiaryStore(getChatState());
+  const isMainApi = store.settings.apiMode === 'main';
+  return {
+    targetRoleName: roleName,
+    worldInfoMode: isMainApi ? 'cache_only' : 'cache_first',
+    worldInfoMaterialMode: isMainApi ? 'injection_only' : 'injection_first',
+  };
+}
+
 async function generateRoleDiary({ roleName, date }) {
   const fallbackDate = String(date || '').trim() || DIARY_DATE_FALLBACK_LABEL;
-  const context = await resolveDiaryContext({ targetRoleName: roleName });
+  const context = await resolveDiaryContext(getDiaryContextOptions(roleName));
   const prompt = buildRoleDiaryPrompt({
     targetRoleName: roleName,
     diaryDate: date,
@@ -1098,7 +1108,7 @@ async function generateRoleDiary({ roleName, date }) {
 
 async function generateExchangeDiary({ roleName, date, userDiaryContent }) {
   const fallbackDate = String(date || '').trim() || DIARY_DATE_FALLBACK_LABEL;
-  const context = await resolveDiaryContext({ targetRoleName: roleName });
+  const context = await resolveDiaryContext(getDiaryContextOptions(roleName));
   const prompt = buildExchangeDiaryPrompt({
     targetRoleName: roleName,
     diaryDate: date,
@@ -1327,7 +1337,7 @@ async function testDiaryContext(panelRoot) {
   refreshPanel();
 
   try {
-    const context = await resolveDiaryContext({ targetRoleName });
+    const context = await resolveDiaryContext(getDiaryContextOptions(targetRoleName));
     diaryContextTestState = {
       status: 'success',
       result: {
