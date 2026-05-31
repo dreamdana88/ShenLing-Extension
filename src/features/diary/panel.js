@@ -1077,12 +1077,10 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
 }
 
 function getDiaryContextOptions(roleName) {
-  const store = getDiaryStore(getChatState());
-  const isMainApi = store.settings.apiMode === 'main';
   return {
     targetRoleName: roleName,
-    worldInfoMode: isMainApi ? 'cache_only' : 'cache_first',
-    worldInfoMaterialMode: isMainApi ? 'injection_only' : 'injection_first',
+    worldInfoMode: 'cache_first',
+    worldInfoMaterialMode: 'injection_first',
   };
 }
 
