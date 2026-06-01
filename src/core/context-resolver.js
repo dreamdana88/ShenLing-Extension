@@ -114,6 +114,7 @@ function createWorldInfoDiagnostics(overrides = {}) {
     usedCache: false,
     usedDryRun: false,
     materialSource: 'none',
+    injectionSource: 'none',
     cacheHitReason: '',
     fallbackReason: '',
     scanMessageCount: 0,
@@ -506,19 +507,21 @@ function getWorldInfoInjectionFromPayload(payload) {
       worldInfoBefore: '',
       worldInfoAfter: '',
       injectionText: '',
+      injectionSource: 'none',
     };
   }
 
   const worldInfoBefore = cleanText(payload.worldInfoBefore);
   const worldInfoAfter = cleanText(payload.worldInfoAfter);
   const activatedText = cleanText(payload.activated?.text);
-  const injectionText = [worldInfoBefore, worldInfoAfter].filter(Boolean).join('\n\n')
-    || activatedText;
+  const promptInjectionText = [worldInfoBefore, worldInfoAfter].filter(Boolean).join('\n\n');
+  const injectionText = promptInjectionText || activatedText;
 
   return {
     worldInfoBefore,
     worldInfoAfter,
     injectionText,
+    injectionSource: promptInjectionText ? 'world_info_prompt' : (activatedText ? 'activated_text' : 'none'),
   };
 }
 
@@ -684,7 +687,7 @@ export function clearActivatedWorldInfoCache() {
 
 export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT } = {}) {
   const cache = getActivatedWorldInfoCache();
-  const latestInjection = cache.find(record => record.injectionText) || null;
+  const latestPromptInjection = cache.find(record => record.worldInfoBefore || record.worldInfoAfter) || null;
   const entries = cache.flatMap(record => record.entries.map(entry => ({
     ...entry,
     capturedAt: record.capturedAt,
@@ -694,23 +697,24 @@ export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT
   const filtered = filterActivatedWorldInfoEntries(entries, { limit });
   return createWorldInfoContextResult({
     entries: filtered.used,
-    worldInfoBefore: latestInjection?.worldInfoBefore || '',
-    worldInfoAfter: latestInjection?.worldInfoAfter || '',
-    injectionText: latestInjection?.injectionText || '',
+    worldInfoBefore: latestPromptInjection?.worldInfoBefore || '',
+    worldInfoAfter: latestPromptInjection?.worldInfoAfter || '',
+    injectionText: latestPromptInjection?.injectionText || '',
     diagnostics: {
       source: cache.length ? 'event_cache' : 'event_cache_empty',
       mode: 'cache_only',
       cacheCount: cache.length,
       usedCache: cache.length > 0,
       usedDryRun: false,
-      materialSource: latestInjection?.injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none'),
-      cacheHitReason: latestInjection?.injectionText
-        ? 'cache_has_injection'
-        : (filtered.used.length ? 'cache_has_entries' : ''),
+      materialSource: latestPromptInjection?.injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none'),
+      injectionSource: latestPromptInjection?.injectionSource || 'none',
+      cacheHitReason: latestPromptInjection?.injectionText
+        ? 'cache_has_prompt_injection'
+        : (filtered.used.length ? 'cache_has_entries_without_injection' : ''),
       rawSourceCounts: cache[0]?.rawSourceCounts || {},
-      worldInfoBeforeLength: cleanText(latestInjection?.worldInfoBefore).length,
-      worldInfoAfterLength: cleanText(latestInjection?.worldInfoAfter).length,
-      injectionTextLength: cleanText(latestInjection?.injectionText).length,
+      worldInfoBeforeLength: cleanText(latestPromptInjection?.worldInfoBefore).length,
+      worldInfoAfterLength: cleanText(latestPromptInjection?.worldInfoAfter).length,
+      injectionTextLength: cleanText(latestPromptInjection?.injectionText).length,
       activatedCount: entries.length,
       filteredCount: filtered.filtered.length,
       suspiciousCount: filtered.suspicious.length,
@@ -884,6 +888,7 @@ export async function collectDryRunWorldInfoContext({
         usedCache: false,
         usedDryRun: true,
         materialSource: injection.injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none'),
+        injectionSource: injection.injectionSource,
         fallbackReason: 'event_cache_empty',
         scanMessageCount: messagesForScan.filter(message => message?.content).length,
         targetRoleInjected: Boolean(cleanTargetRoleName),
@@ -952,12 +957,31 @@ export async function collectWorldInfoContext({
   const cached = collectCachedWorldInfoContext({ limit });
   cached.diagnostics.mode = mode;
   if (mode === 'cache_only') return cached;
-  if (hasUsableWorldInfoContext(cached)) return cached;
+  if (cached.injectionText) return cached;
 
   const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages, targetRoleName });
   dryRun.diagnostics.mode = mode;
 
-  if (hasUsableWorldInfoContext(dryRun) || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
+  if (hasUsableWorldInfoContext(dryRun)) {
+    dryRun.diagnostics.cacheCount = cached.diagnostics.cacheCount;
+    dryRun.diagnostics.fallbackReason = cached.entries.length
+      ? 'cache_entries_without_injection'
+      : 'event_cache_empty';
+    return dryRun;
+  }
+
+  if (cached.entries.length) {
+    cached.diagnostics.fallbackReason = dryRun.diagnostics.source === 'dry_run_failed'
+      ? 'dry_run_failed'
+      : 'dry_run_no_usable_context';
+    cached.diagnostics.notes = [
+      ...(cached.diagnostics.notes || []),
+      ...(dryRun.diagnostics.notes || []),
+    ];
+    return cached;
+  }
+
+  if (dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
 
   return createWorldInfoContextResult({
     entries: cached.entries,
