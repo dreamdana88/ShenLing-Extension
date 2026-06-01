@@ -1152,6 +1152,52 @@ export function formatWorldInfoMaterialForPrompt(context = {}, { mode = 'injecti
   return injectionMaterial || entriesMaterial;
 }
 
+export function formatShenlingContextForPrompt(context = {}, options = {}) {
+  const {
+    includeCharacterCard = true,
+    includeUserPersona = true,
+    includeWorldInfo = true,
+    includeTimelineArchives = true,
+    includeRecentChat = true,
+    includeEmotionProfiles = true,
+    worldInfoMaterialMode = 'injection_first',
+    sectionSeparator = '\n\n---\n\n',
+    sectionTitles = {},
+  } = options;
+  const titles = {
+    characterCard: '当前角色卡基础信息',
+    userPersona: '用户 Persona',
+    worldInfo: '当前世界信息',
+    timelineArchives: '近期梦境档案',
+    recentChat: '最近主要剧情',
+    emotionProfiles: '情感档案',
+    ...sectionTitles,
+  };
+  const recentChatMaterial = context.recentChat || formatRecentChatForPrompt(context.recentMessages);
+  const sections = [
+    includeCharacterCard
+      ? createPromptSection(titles.characterCard, formatCharacterCardForPrompt(context.characterCard))
+      : '',
+    includeUserPersona
+      ? createPromptSection(titles.userPersona, formatUserPersonaForPrompt(context.userPersona))
+      : '',
+    includeWorldInfo
+      ? createPromptSection(titles.worldInfo, formatWorldInfoMaterialForPrompt(context, { mode: worldInfoMaterialMode }))
+      : '',
+    includeTimelineArchives
+      ? createPromptSection(titles.timelineArchives, formatTimelineArchivesForPrompt(context.memories, context.grandMemories))
+      : '',
+    includeRecentChat
+      ? createPromptSection(titles.recentChat, recentChatMaterial)
+      : '',
+    includeEmotionProfiles
+      ? createPromptSection(titles.emotionProfiles, formatEmotionProfilesForPrompt(context.emotionProfiles))
+      : '',
+  ].filter(Boolean);
+
+  return sections.join(sectionSeparator);
+}
+
 export function buildDiaryContextMaterial(context = {}, options = {}) {
   const sections = [
     createPromptSection('当前角色卡基础信息', formatCharacterCardForPrompt(context.characterCard)),
