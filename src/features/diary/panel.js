@@ -497,8 +497,12 @@ function renderContextTestResult() {
         <span><b>${escapeHtml(result.emotionProfileCount)}</b><small>情感档案</small></span>
       </div>
       <div class="slx-info-line"><span>世界书来源</span><b>${escapeHtml(worldInfo.source || '未记录')}</b></div>
+      <div class="slx-info-line"><span>世界书素材来源</span><b>${escapeHtml(worldInfo.materialSource || 'none')}</b></div>
+      <div class="slx-info-line"><span>世界书注入来源</span><b>${escapeHtml(worldInfo.injectionSource || 'none')}</b></div>
+      <div class="slx-info-line"><span>世界书兜底原因</span><b>${escapeHtml(worldInfo.fallbackReason || '无')}</b></div>
       <div class="slx-info-line"><span>世界书可用条目</span><b>${escapeHtml(worldInfo.usedCount ?? 0)}</b></div>
       <div class="slx-info-line"><span>世界书注入文本</span><b>${escapeHtml(worldInfo.injectionTextLength ?? 0)}</b></div>
+      <div class="slx-info-line"><span>裸 activated.text</span><b>${escapeHtml(worldInfo.activatedTextLength ?? 0)}</b></div>
     </div>
   `;
 }

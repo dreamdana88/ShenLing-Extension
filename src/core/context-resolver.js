@@ -122,6 +122,7 @@ function createWorldInfoDiagnostics(overrides = {}) {
     includeNames: null,
     hasWorldInfoBefore: false,
     hasWorldInfoAfter: false,
+    activatedTextLength: 0,
     worldInfoBeforeLength: 0,
     worldInfoAfterLength: 0,
     injectionTextLength: 0,
@@ -165,8 +166,16 @@ function createWorldInfoContextResult({
   };
 }
 
+function hasPromptWorldInfoInjection(context = {}) {
+  return Boolean(context?.worldInfoBefore || context?.worldInfoAfter || context?.injectionText);
+}
+
+function hasWorldInfoEntries(context = {}) {
+  return Boolean(context?.entries?.length);
+}
+
 function hasUsableWorldInfoContext(context = {}) {
-  return Boolean(context?.entries?.length || context?.injectionText);
+  return hasPromptWorldInfoInjection(context) || hasWorldInfoEntries(context);
 }
 
 function getTavernEventsSafe() {
@@ -508,6 +517,7 @@ function getWorldInfoInjectionFromPayload(payload) {
       worldInfoAfter: '',
       injectionText: '',
       injectionSource: 'none',
+      activatedTextLength: 0,
     };
   }
 
@@ -515,13 +525,13 @@ function getWorldInfoInjectionFromPayload(payload) {
   const worldInfoAfter = cleanText(payload.worldInfoAfter);
   const activatedText = cleanText(payload.activated?.text);
   const promptInjectionText = [worldInfoBefore, worldInfoAfter].filter(Boolean).join('\n\n');
-  const injectionText = promptInjectionText || activatedText;
 
   return {
     worldInfoBefore,
     worldInfoAfter,
-    injectionText,
-    injectionSource: promptInjectionText ? 'world_info_prompt' : (activatedText ? 'activated_text' : 'none'),
+    injectionText: promptInjectionText,
+    injectionSource: promptInjectionText ? 'world_info_prompt' : 'none',
+    activatedTextLength: activatedText.length,
   };
 }
 
@@ -688,6 +698,7 @@ export function clearActivatedWorldInfoCache() {
 export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT } = {}) {
   const cache = getActivatedWorldInfoCache();
   const latestPromptInjection = cache.find(record => record.worldInfoBefore || record.worldInfoAfter) || null;
+  const latestActivatedText = cache.find(record => Number(record.activatedTextLength) > 0) || null;
   const entries = cache.flatMap(record => record.entries.map(entry => ({
     ...entry,
     capturedAt: record.capturedAt,
@@ -708,6 +719,7 @@ export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT
       usedDryRun: false,
       materialSource: latestPromptInjection?.injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none'),
       injectionSource: latestPromptInjection?.injectionSource || 'none',
+      activatedTextLength: Number(latestActivatedText?.activatedTextLength) || 0,
       cacheHitReason: latestPromptInjection?.injectionText
         ? 'cache_has_prompt_injection'
         : (filtered.used.length ? 'cache_has_entries_without_injection' : ''),
@@ -889,6 +901,7 @@ export async function collectDryRunWorldInfoContext({
         usedDryRun: true,
         materialSource: injection.injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none'),
         injectionSource: injection.injectionSource,
+        activatedTextLength: injection.activatedTextLength,
         fallbackReason: 'event_cache_empty',
         scanMessageCount: messagesForScan.filter(message => message?.content).length,
         targetRoleInjected: Boolean(cleanTargetRoleName),
@@ -957,7 +970,9 @@ export async function collectWorldInfoContext({
   const cached = collectCachedWorldInfoContext({ limit });
   cached.diagnostics.mode = mode;
   if (mode === 'cache_only') return cached;
-  if (cached.injectionText) return cached;
+  // Only prompt-ready worldInfoBefore/worldInfoAfter can short-circuit cache_first.
+  // Raw activated.text may contain unfiltered text, so entries-only cache still allows dry run.
+  if (hasPromptWorldInfoInjection(cached)) return cached;
 
   const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages, targetRoleName });
   dryRun.diagnostics.mode = mode;
@@ -970,7 +985,7 @@ export async function collectWorldInfoContext({
     return dryRun;
   }
 
-  if (cached.entries.length) {
+  if (hasWorldInfoEntries(cached)) {
     cached.diagnostics.fallbackReason = dryRun.diagnostics.source === 'dry_run_failed'
       ? 'dry_run_failed'
       : 'dry_run_no_usable_context';

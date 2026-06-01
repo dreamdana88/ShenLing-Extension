@@ -33,6 +33,25 @@ function renderDiagnosticLine(label, value) {
   return `<div class="slx-info-line"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
 }
 
+function renderWorldInfoDecisionDiagnostics(diag = {}, prefix = '') {
+  const labelPrefix = prefix ? `${prefix} ` : '';
+  return [
+    renderDiagnosticLine(`${labelPrefix}来源`, diag.source || '未记录'),
+    renderDiagnosticLine(`${labelPrefix}模式`, diag.mode || '未记录'),
+    renderDiagnosticLine(`${labelPrefix}素材来源`, diag.materialSource || 'none'),
+    renderDiagnosticLine(`${labelPrefix}注入来源`, diag.injectionSource || 'none'),
+    renderDiagnosticLine(`${labelPrefix}缓存命中`, diag.cacheHitReason || '无'),
+    renderDiagnosticLine(`${labelPrefix}兜底原因`, diag.fallbackReason || '无'),
+    renderDiagnosticLine(`${labelPrefix}使用缓存`, diag.usedCache ? '是' : '否'),
+    renderDiagnosticLine(`${labelPrefix}使用 dry run`, diag.usedDryRun ? '是' : '否'),
+    renderDiagnosticLine(`${labelPrefix}扫描楼层`, diag.scanMessageCount ?? 0),
+    renderDiagnosticLine(`${labelPrefix}注入角色名`, diag.targetRoleInjected ? '是' : '否'),
+    renderDiagnosticLine(`${labelPrefix}包含说话人`, diag.includeNames === null ? '未记录' : (diag.includeNames ? '是' : '否')),
+    renderDiagnosticLine(`${labelPrefix}before/after`, `${diag.hasWorldInfoBefore ? 'before' : '-'} / ${diag.hasWorldInfoAfter ? 'after' : '-'}`),
+    renderDiagnosticLine(`${labelPrefix}裸 activated.text`, diag.activatedTextLength ?? 0),
+  ].join('');
+}
+
 function renderWorldInfoEntryList(title, entries = [], { showReason = false } = {}) {
   const items = entries.map(entry => {
     const world = String(entry.world || '').trim();
@@ -85,6 +104,7 @@ export function renderContextDiagnostics() {
   }));
 
   return `
+    ${renderWorldInfoDecisionDiagnostics(diag)}
     ${renderDiagnosticLine('世界书缓存批次', diag.cacheCount ?? 0)}
     ${renderDiagnosticLine('世界书激活条目', diag.activatedCount ?? 0)}
     ${renderDiagnosticLine('世界书过滤条目', diag.filteredCount ?? 0)}
@@ -128,6 +148,7 @@ function renderDryRunDiagnostics() {
   return `
     <div class="slx-worldinfo-dryrun-result">
       <div class="slx-detail-kicker">dry run 测试结果</div>
+      ${renderWorldInfoDecisionDiagnostics(diag, 'dry run')}
       ${renderDiagnosticLine('dry run 激活条目', diag.activatedCount ?? 0)}
       ${renderDiagnosticLine('dry run 过滤条目', diag.filteredCount ?? 0)}
       ${renderDiagnosticLine('dry run 可疑条目', diag.suspiciousCount ?? 0)}
