@@ -1078,10 +1078,6 @@ export function createPromptSection(title, content) {
   return text ? `【${title}】\n${text}` : '';
 }
 
-function createSection(title, content) {
-  return createPromptSection(title, content);
-}
-
 export function formatCharacterCardForPrompt(characterCard) {
   if (!characterCard) return '';
   return [
@@ -1092,20 +1088,12 @@ export function formatCharacterCardForPrompt(characterCard) {
   ].filter(Boolean).join('\n\n');
 }
 
-function formatCharacterCardForDiary(characterCard) {
-  return formatCharacterCardForPrompt(characterCard);
-}
-
 export function formatMemoryItemsForPrompt(items = [], _options = {}) {
   if (!Array.isArray(items) || !items.length) return '';
   return items.map(item => {
     const source = Number.isFinite(Number(item.messageId)) ? `第 ${item.messageId} 楼` : '未记录楼层';
     return `### ${source}\n${cleanText(item.content)}`;
   }).join('\n\n');
-}
-
-function formatMemoryItemsForDiary(items = [], title = '近期梦境档案') {
-  return formatMemoryItemsForPrompt(items, { title });
 }
 
 export function formatEmotionProfilesForPrompt(items = []) {
@@ -1117,10 +1105,6 @@ export function formatEmotionProfilesForPrompt(items = []) {
     item.changeSummary ? `最近变化：${item.changeSummary}` : '',
     item.relationshipToUser ? `与用户关系：${item.relationshipToUser}` : '',
   ].filter(Boolean).join('\n')).join('\n\n');
-}
-
-function formatEmotionProfilesForDiary(items = []) {
-  return formatEmotionProfilesForPrompt(items);
 }
 
 export function formatTimelineArchivesForPrompt(memories = [], grandMemories = []) {
@@ -1136,20 +1120,12 @@ export function formatTimelineArchivesForPrompt(memories = [], grandMemories = [
   }).join('\n\n');
 }
 
-function formatTimelineArchivesForDiary(memories = [], grandMemories = []) {
-  return formatTimelineArchivesForPrompt(memories, grandMemories);
-}
-
 export function formatWorldInfoForPrompt(entries = []) {
   if (!Array.isArray(entries) || !entries.length) return '';
   return entries.map(entry => [
     `### ${entry.title || '未命名条目'}`,
     cleanText(entry.content),
   ].filter(Boolean).join('\n')).join('\n\n');
-}
-
-function formatWorldInfoForDiary(entries = []) {
-  return formatWorldInfoForPrompt(entries);
 }
 
 export function formatWorldInfoInjectionForPrompt(context = {}) {
@@ -1167,10 +1143,6 @@ export function formatWorldInfoInjectionForPrompt(context = {}) {
   return injectionText;
 }
 
-function formatWorldInfoInjectionForDiary(context = {}) {
-  return formatWorldInfoInjectionForPrompt(context);
-}
-
 export function formatWorldInfoMaterialForPrompt(context = {}, { mode = 'injection_first' } = {}) {
   const entriesMaterial = formatWorldInfoForPrompt(context.activatedWorldInfo);
   const injectionMaterial = formatWorldInfoInjectionForPrompt(context);
@@ -1180,20 +1152,16 @@ export function formatWorldInfoMaterialForPrompt(context = {}, { mode = 'injecti
   return injectionMaterial || entriesMaterial;
 }
 
-function formatWorldInfoMaterialForDiary(context = {}, { mode = 'injection_first' } = {}) {
-  return formatWorldInfoMaterialForPrompt(context, { mode });
-}
-
 export function buildDiaryContextMaterial(context = {}, options = {}) {
   const sections = [
-    createSection('当前角色卡基础信息', formatCharacterCardForDiary(context.characterCard)),
-    createSection('用户 Persona', context.userPersona),
-    createSection('当前世界信息', formatWorldInfoMaterialForDiary(context, {
+    createPromptSection('当前角色卡基础信息', formatCharacterCardForPrompt(context.characterCard)),
+    createPromptSection('用户 Persona', formatUserPersonaForPrompt(context.userPersona)),
+    createPromptSection('当前世界信息', formatWorldInfoMaterialForPrompt(context, {
       mode: options.worldInfoMaterialMode,
     })),
-    createSection('近期梦境档案', formatTimelineArchivesForDiary(context.memories, context.grandMemories)),
-    createSection('最近主要剧情', context.recentChat),
-    createSection('情感档案', formatEmotionProfilesForDiary(context.emotionProfiles)),
+    createPromptSection('近期梦境档案', formatTimelineArchivesForPrompt(context.memories, context.grandMemories)),
+    createPromptSection('最近主要剧情', context.recentChat || formatRecentChatForPrompt(context.recentMessages)),
+    createPromptSection('情感档案', formatEmotionProfilesForPrompt(context.emotionProfiles)),
   ].filter(Boolean);
 
   return sections.join('\n\n---\n\n');
