@@ -111,6 +111,16 @@ function createWorldInfoDiagnostics(overrides = {}) {
     mode: '',
     cacheCount: 0,
     rawSourceCounts: {},
+    usedCache: false,
+    usedDryRun: false,
+    materialSource: 'none',
+    cacheHitReason: '',
+    fallbackReason: '',
+    scanMessageCount: 0,
+    targetRoleInjected: false,
+    includeNames: null,
+    hasWorldInfoBefore: false,
+    hasWorldInfoAfter: false,
     worldInfoBeforeLength: 0,
     worldInfoAfterLength: 0,
     injectionTextLength: 0,
@@ -142,6 +152,9 @@ function createWorldInfoContextResult({
     worldInfoAfter: after,
     injectionText: injection,
     diagnostics: createWorldInfoDiagnostics({
+      materialSource: injection ? 'injection' : (safeEntries.length ? 'entries_fallback' : 'none'),
+      hasWorldInfoBefore: Boolean(before),
+      hasWorldInfoAfter: Boolean(after),
       worldInfoBeforeLength: before.length,
       worldInfoAfterLength: after.length,
       injectionTextLength: injection.length,
@@ -149,6 +162,10 @@ function createWorldInfoContextResult({
       ...diagnostics,
     }),
   };
+}
+
+function hasUsableWorldInfoContext(context = {}) {
+  return Boolean(context?.entries?.length || context?.injectionText);
 }
 
 function getTavernEventsSafe() {
@@ -684,6 +701,12 @@ export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT
       source: cache.length ? 'event_cache' : 'event_cache_empty',
       mode: 'cache_only',
       cacheCount: cache.length,
+      usedCache: cache.length > 0,
+      usedDryRun: false,
+      materialSource: latestInjection?.injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none'),
+      cacheHitReason: latestInjection?.injectionText
+        ? 'cache_has_injection'
+        : (filtered.used.length ? 'cache_has_entries' : ''),
       rawSourceCounts: cache[0]?.rawSourceCounts || {},
       worldInfoBeforeLength: cleanText(latestInjection?.worldInfoBefore).length,
       worldInfoAfterLength: cleanText(latestInjection?.worldInfoAfter).length,
@@ -796,11 +819,14 @@ export async function collectDryRunWorldInfoContext({
       throw new Error('当前环境未发现 checkWorldInfo。');
     }
 
+    const messagesForScan = Array.isArray(recentMessages) ? recentMessages : collectRecentChatMessages();
+    const includeNames = shouldIncludeNamesForWorldInfo(worldInfoModule);
+    const cleanTargetRoleName = cleanText(targetRoleName);
     const chatForScan = buildWorldInfoScanChat(
-      Array.isArray(recentMessages) ? recentMessages : collectRecentChatMessages(),
+      messagesForScan,
       {
-        includeNames: shouldIncludeNamesForWorldInfo(worldInfoModule),
-        targetRoleName,
+        includeNames,
+        targetRoleName: cleanTargetRoleName,
       },
     );
     if (!chatForScan.length) {
@@ -813,6 +839,13 @@ export async function collectDryRunWorldInfoContext({
           source: 'dry_run_empty_chat',
           mode: 'dry_run',
           cacheCount: 0,
+          usedCache: false,
+          usedDryRun: true,
+          materialSource: 'none',
+          fallbackReason: 'empty_scan_chat',
+          scanMessageCount: 0,
+          targetRoleInjected: Boolean(cleanTargetRoleName),
+          includeNames,
           activatedCount: 0,
           filteredCount: 0,
           suspiciousCount: 0,
@@ -848,6 +881,13 @@ export async function collectDryRunWorldInfoContext({
         source: 'dry_run',
         mode: 'dry_run',
         cacheCount: 0,
+        usedCache: false,
+        usedDryRun: true,
+        materialSource: injection.injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none'),
+        fallbackReason: 'event_cache_empty',
+        scanMessageCount: messagesForScan.filter(message => message?.content).length,
+        targetRoleInjected: Boolean(cleanTargetRoleName),
+        includeNames,
         rawSourceCounts,
         worldInfoBeforeLength: injection.worldInfoBefore.length,
         worldInfoAfterLength: injection.worldInfoAfter.length,
@@ -866,7 +906,7 @@ export async function collectDryRunWorldInfoContext({
           world: entry.world,
           reason: entry.filterReason,
         })),
-        notes: cleanText(targetRoleName) ? [`dry run 扫描已加入日记角色名关键词：${cleanText(targetRoleName)}`] : [],
+        notes: cleanTargetRoleName ? [`dry run 扫描已加入日记角色名关键词：${cleanTargetRoleName}`] : [],
       },
     });
   } catch (error) {
@@ -879,6 +919,10 @@ export async function collectDryRunWorldInfoContext({
         source: 'dry_run_failed',
         mode: 'dry_run',
         cacheCount: 0,
+        usedCache: false,
+        usedDryRun: true,
+        materialSource: 'none',
+        fallbackReason: 'dry_run_failed',
         activatedCount: 0,
         filteredCount: 0,
         suspiciousCount: 0,
@@ -898,21 +942,22 @@ export async function collectWorldInfoContext({
   if (mode === 'dry_run') {
     const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages, targetRoleName });
     dryRun.diagnostics.mode = mode;
-    if (dryRun.entries.length || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
+    if (hasUsableWorldInfoContext(dryRun) || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
     const cachedFallback = collectCachedWorldInfoContext({ limit });
     cachedFallback.diagnostics.mode = mode;
+    cachedFallback.diagnostics.fallbackReason = 'dry_run_failed';
     return cachedFallback;
   }
 
   const cached = collectCachedWorldInfoContext({ limit });
   cached.diagnostics.mode = mode;
   if (mode === 'cache_only') return cached;
-  if (cached.entries.length || cached.injectionText) return cached;
+  if (hasUsableWorldInfoContext(cached)) return cached;
 
   const dryRun = await collectDryRunWorldInfoContext({ limit, recentMessages, targetRoleName });
   dryRun.diagnostics.mode = mode;
 
-  if (dryRun.entries.length || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
+  if (hasUsableWorldInfoContext(dryRun) || dryRun.diagnostics.source !== 'dry_run_failed') return dryRun;
 
   return createWorldInfoContextResult({
     entries: cached.entries,
@@ -923,6 +968,10 @@ export async function collectWorldInfoContext({
       ...cached.diagnostics,
       source: 'event_cache_empty_dry_run_failed',
       mode,
+      usedCache: false,
+      usedDryRun: true,
+      materialSource: 'none',
+      fallbackReason: 'event_cache_empty_dry_run_failed',
       notes: [
         ...(cached.diagnostics.notes || []),
         ...(dryRun.diagnostics.notes || []),
