@@ -297,6 +297,14 @@ export function formatRecentChatForContext(messages = []) {
     .join('\n\n');
 }
 
+export function formatRecentChatForPrompt(messages = []) {
+  return formatRecentChatForContext(messages);
+}
+
+export function formatUserPersonaForPrompt(persona = '') {
+  return cleanText(persona);
+}
+
 export function collectRecentMemories({
   limit = DEFAULT_MEMORY_LIMIT,
   beforeMessageId = null,
@@ -1065,12 +1073,16 @@ export async function resolveShenlingContext(options = {}) {
   };
 }
 
-function createSection(title, content) {
+export function createPromptSection(title, content) {
   const text = cleanText(content);
   return text ? `【${title}】\n${text}` : '';
 }
 
-function formatCharacterCardForDiary(characterCard) {
+function createSection(title, content) {
+  return createPromptSection(title, content);
+}
+
+export function formatCharacterCardForPrompt(characterCard) {
   if (!characterCard) return '';
   return [
     characterCard.name ? `角色名：${characterCard.name}` : '',
@@ -1080,7 +1092,11 @@ function formatCharacterCardForDiary(characterCard) {
   ].filter(Boolean).join('\n\n');
 }
 
-function formatMemoryItemsForDiary(items = [], title = '近期梦境档案') {
+function formatCharacterCardForDiary(characterCard) {
+  return formatCharacterCardForPrompt(characterCard);
+}
+
+export function formatMemoryItemsForPrompt(items = [], _options = {}) {
   if (!Array.isArray(items) || !items.length) return '';
   return items.map(item => {
     const source = Number.isFinite(Number(item.messageId)) ? `第 ${item.messageId} 楼` : '未记录楼层';
@@ -1088,7 +1104,11 @@ function formatMemoryItemsForDiary(items = [], title = '近期梦境档案') {
   }).join('\n\n');
 }
 
-function formatEmotionProfilesForDiary(items = []) {
+function formatMemoryItemsForDiary(items = [], title = '近期梦境档案') {
+  return formatMemoryItemsForPrompt(items, { title });
+}
+
+export function formatEmotionProfilesForPrompt(items = []) {
   if (!Array.isArray(items) || !items.length) return '';
   return items.map(item => [
     `### ${item.roleName || '未命名角色'}`,
@@ -1099,7 +1119,11 @@ function formatEmotionProfilesForDiary(items = []) {
   ].filter(Boolean).join('\n')).join('\n\n');
 }
 
-function formatTimelineArchivesForDiary(memories = [], grandMemories = []) {
+function formatEmotionProfilesForDiary(items = []) {
+  return formatEmotionProfilesForPrompt(items);
+}
+
+export function formatTimelineArchivesForPrompt(memories = [], grandMemories = []) {
   const items = [
     ...(Array.isArray(grandMemories) ? grandMemories.map(item => ({ ...item, archiveType: 'grand_memory' })) : []),
     ...(Array.isArray(memories) ? memories.map(item => ({ ...item, archiveType: 'memory' })) : []),
@@ -1112,7 +1136,11 @@ function formatTimelineArchivesForDiary(memories = [], grandMemories = []) {
   }).join('\n\n');
 }
 
-function formatWorldInfoForDiary(entries = []) {
+function formatTimelineArchivesForDiary(memories = [], grandMemories = []) {
+  return formatTimelineArchivesForPrompt(memories, grandMemories);
+}
+
+export function formatWorldInfoForPrompt(entries = []) {
   if (!Array.isArray(entries) || !entries.length) return '';
   return entries.map(entry => [
     `### ${entry.title || '未命名条目'}`,
@@ -1120,7 +1148,11 @@ function formatWorldInfoForDiary(entries = []) {
   ].filter(Boolean).join('\n')).join('\n\n');
 }
 
-function formatWorldInfoInjectionForDiary(context = {}) {
+function formatWorldInfoForDiary(entries = []) {
+  return formatWorldInfoForPrompt(entries);
+}
+
+export function formatWorldInfoInjectionForPrompt(context = {}) {
   const before = cleanText(context.worldInfoBefore);
   const after = cleanText(context.worldInfoAfter);
   const injectionText = cleanText(context.worldInfoInjectionText);
@@ -1135,13 +1167,21 @@ function formatWorldInfoInjectionForDiary(context = {}) {
   return injectionText;
 }
 
-function formatWorldInfoMaterialForDiary(context = {}, { mode = 'injection_first' } = {}) {
-  const entriesMaterial = formatWorldInfoForDiary(context.activatedWorldInfo);
-  const injectionMaterial = formatWorldInfoInjectionForDiary(context);
+function formatWorldInfoInjectionForDiary(context = {}) {
+  return formatWorldInfoInjectionForPrompt(context);
+}
+
+export function formatWorldInfoMaterialForPrompt(context = {}, { mode = 'injection_first' } = {}) {
+  const entriesMaterial = formatWorldInfoForPrompt(context.activatedWorldInfo);
+  const injectionMaterial = formatWorldInfoInjectionForPrompt(context);
   if (mode === 'entries_only') return entriesMaterial;
   if (mode === 'injection_only') return injectionMaterial;
   if (mode === 'full') return [entriesMaterial, injectionMaterial].filter(Boolean).join('\n\n');
   return injectionMaterial || entriesMaterial;
+}
+
+function formatWorldInfoMaterialForDiary(context = {}, { mode = 'injection_first' } = {}) {
+  return formatWorldInfoMaterialForPrompt(context, { mode });
 }
 
 export function buildDiaryContextMaterial(context = {}, options = {}) {
