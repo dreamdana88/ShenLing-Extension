@@ -761,9 +761,11 @@ function renderDiaryEntryPage(chatState) {
         </button>
         ${isExchange ? `
           <div class="slx-diary-book-page-title">${escapeHtml(rightTitle)}</div>
+          <div class="slx-diary-book-page-date">${escapeHtml(entryTime || '当前剧情日期')}</div>
           <div class="slx-diary-book-rule"></div>
-          <p class="slx-diary-text-character">${escapeHtml(rightText)}</p>
-          <div class="slx-diary-book-page-num">${escapeHtml(entryTime)}</div>
+          <div class="slx-diary-entry-scroll slx-diary-entry-scroll-right">
+            <p class="slx-diary-text-character">${escapeHtml(rightText)}</p>
+          </div>
         ` : '<div class="slx-diary-blank-page" aria-hidden="true"></div>'}
       </section>
     </div>

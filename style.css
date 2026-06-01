@@ -1944,6 +1944,12 @@ body.slx-panel-open-lock {
   padding-bottom: 74px;
 }
 
+.slx-diary-exchange-spread .slx-diary-book-page-right {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .slx-diary-entry-scroll {
   min-height: 0;
   flex: 1;
@@ -1952,6 +1958,18 @@ body.slx-panel-open-lock {
   padding-right: 40px;
   scrollbar-width: thin;
   scrollbar-color: rgba(122, 84, 44, 0.24) transparent;
+}
+
+.slx-diary-entry-scroll-right {
+  margin-right: 0;
+  margin-left: -40px;
+  padding-right: 0;
+  padding-left: 40px;
+  direction: rtl;
+}
+
+.slx-diary-entry-scroll-right > * {
+  direction: ltr;
 }
 
 .slx-diary-entry-scroll::-webkit-scrollbar {
