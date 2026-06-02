@@ -1,7 +1,7 @@
 export const MODULE_NAME = 'shenling_assistant';
 export const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 export const STORAGE_VERSION = 1;
-export const PLUGIN_VERSION = '0.11.67';
+export const PLUGIN_VERSION = '0.11.68';
 export const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 export const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 export const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -18,7 +18,7 @@ export const MODULES = [
   { id: 'pursuit', icon: '💘', shortTitle: '攻略', title: '逆攻略', desc: '让角色在不崩人设的前提下主动推进关系。' },
   { id: 'parallel', icon: '🌈', shortTitle: '平行', title: '平行事件', desc: '基于时间轴低频续写不在场角色动态。' },
   { id: 'diary', icon: '📓', shortTitle: '日记', title: '日程日记', desc: '七日程表、普通日记与交换日记。' },
-  { id: 'inspire', icon: '✨', shortTitle: '灵感', title: '灵感工具', desc: '小剧场、分支选项、冲突事件与场景推进。' },
+  { id: 'theater', icon: '🎬', shortTitle: '小剧场', title: '小剧场', desc: '番外侧幕、提示词收藏与 AI 即时生成。' },
   { id: 'replace', icon: '🈲', shortTitle: '替换', title: '词汇替换', desc: '用户词库、替换预览与当前楼层重新替换。' },
   { id: 'settings', icon: '⚙️', shortTitle: '设置', title: '设置', desc: '副 API、存储诊断与通讯日志。' },
 ];

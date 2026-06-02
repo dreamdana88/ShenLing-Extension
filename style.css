@@ -4507,3 +4507,267 @@ body.slx-panel-open-lock {
       0 0 0 2px rgba(232, 176, 168, 0.22) !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════
+   小剧场模块 (theater)
+   ═══════════════════════════════════════════════════════ */
+
+.slx-theater-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+}
+
+/* 顶部固定区：角色/聊天 + API 胶囊 */
+.slx-theater-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0 10px;
+  border-bottom: 1px solid var(--slx-border-dim);
+}
+
+.slx-theater-context {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.slx-theater-context-char {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--slx-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slx-theater-context-sep {
+  color: var(--slx-muted);
+  flex-shrink: 0;
+}
+
+.slx-theater-context-chat {
+  font-size: 12px;
+  color: var(--slx-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slx-theater-api-pill {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-radius: 99px;
+  border: 1px solid var(--slx-border-dim);
+  background: var(--slx-bg-btn);
+  color: var(--slx-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.slx-theater-api-pill:hover {
+  border-color: var(--slx-border);
+  color: var(--slx-text);
+}
+
+/* 标签栏 */
+.slx-theater-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--slx-border-dim);
+}
+
+.slx-theater-tab {
+  padding: 7px 13px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--slx-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.slx-theater-tab:hover {
+  color: var(--slx-text);
+}
+
+.slx-theater-tab-active {
+  color: var(--slx-text);
+  font-weight: 600;
+  border-bottom-color: var(--slx-accent, currentColor);
+}
+
+/* 标签内容区 */
+.slx-theater-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 空状态卡片 */
+.slx-theater-empty-state {
+  align-items: center;
+  text-align: center;
+  padding: 24px 16px;
+  gap: 10px;
+}
+
+.slx-theater-empty-icon {
+  font-size: 28px;
+  opacity: 0.5;
+}
+
+/* 提示词 textarea */
+.slx-theater-prompt-textarea {
+  width: 100%;
+  background: var(--slx-bg-input);
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--slx-text);
+  resize: vertical;
+  min-height: 90px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.slx-theater-prompt-textarea:focus {
+  border-color: var(--slx-accent, var(--slx-border));
+  box-shadow: 0 0 0 2px rgba(var(--slx-accent-rgb, 100, 160, 200), 0.12);
+}
+
+.slx-theater-prompt-textarea::placeholder {
+  color: var(--slx-muted);
+}
+
+/* 生成说明文字 */
+.slx-theater-gen-note {
+  font-size: 11px;
+  color: var(--slx-muted);
+  margin: 0;
+  text-align: center;
+}
+
+/* ── 预览弹窗 ── */
+
+/* 遮罩：覆盖插件根容器，沿用日记弹窗验证过的方案 */
+.slx-theater-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 200;
+  border-radius: inherit;
+  /* 入场动效 */
+  animation: slx-theater-overlay-in 0.18s ease-out;
+}
+
+@keyframes slx-theater-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.slx-theater-preview {
+  width: 100%;
+  max-height: 90%;
+  background: var(--slx-bg-panel);
+  border-top: 1px solid var(--slx-border-dim);
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* 入场动效 */
+  animation: slx-theater-preview-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes slx-theater-preview-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.slx-theater-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--slx-border-dim);
+  flex-shrink: 0;
+}
+
+.slx-theater-preview-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--slx-text);
+}
+
+.slx-theater-preview-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 160px;
+}
+
+/* 文字小剧场正文区 */
+.slx-theater-text-body {
+  padding: 20px 24px;
+  line-height: 1.8;
+  font-size: 14px;
+  color: var(--slx-text);
+}
+
+.slx-theater-text-placeholder {
+  color: var(--slx-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+/* HTML 小剧场 iframe 区 */
+.slx-theater-iframe-wrap {
+  min-height: 240px;
+  height: 100%;
+}
+
+.slx-theater-iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  border: none;
+  display: block;
+}
+
+.slx-theater-preview-footer {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--slx-border-dim);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+/* 桌面端：预览弹窗居中显示（非底部 sheet） */
+@media (min-width: 769px) {
+  .slx-theater-overlay {
+    align-items: center;
+  }
+
+  .slx-theater-preview {
+    width: 90%;
+    max-width: 560px;
+    max-height: 80%;
+    border-radius: 14px;
+  }
+}

@@ -79,6 +79,11 @@ import {
   configureContextDiagnosticsPanel,
   renderContextDiagnostics,
 } from './src/features/context-diagnostics/panel.js';
+import {
+  bindMiniTheaterPanelEvents,
+  configureMiniTheaterPanel,
+  renderMiniTheaterPanel,
+} from './src/features/mini-theater/panel.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -609,6 +614,10 @@ function renderModuleDetail(module, settings) {
     return renderDiaryPanel(settings, chatState);
   }
 
+  if (module.id === 'theater') {
+    return renderMiniTheaterPanel();
+  }
+
   if (module.id === 'settings') {
     return `
 
@@ -853,6 +862,7 @@ function renderFloatingPanel(options = {}) {
   bindEmotionProfilePanelEvents(panelRoot, settings);
   bindDiaryPanelEvents(panelRoot);
   bindContextDiagnosticsPanelEvents(panelRoot);
+  bindMiniTheaterPanelEvents(panelRoot);
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
     button.addEventListener('click', () => {
@@ -1112,6 +1122,9 @@ function init() {
     refreshPanel: renderFloatingPanel,
   });
   configureContextDiagnosticsPanel({
+    refreshPanel: renderFloatingPanel,
+  });
+  configureMiniTheaterPanel({
     refreshPanel: renderFloatingPanel,
   });
   configureSummaryWorkflow({

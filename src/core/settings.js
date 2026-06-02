@@ -78,6 +78,11 @@ export const defaultGlobalSettings = Object.freeze({
       hideRawBlocks: false,
       rendererVersion: 1,
     },
+    miniTheater: {
+      apiMode: 'secondary_api',
+      folders: [],
+      prompts: [],
+    },
   },
   communicationLog: {
     maxEntries: 10,
@@ -168,6 +173,10 @@ export const defaultChatState = Object.freeze({
     entries: [],
     lastGeneratedAt: '',
     lastSavedAt: '',
+  },
+  miniTheater: {
+    results: [],
+    lastGeneratedAt: '',
   },
   diagnostics: {
     chatProbe: '',
