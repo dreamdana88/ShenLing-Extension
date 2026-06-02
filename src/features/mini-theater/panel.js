@@ -3,6 +3,8 @@ import {
 } from '../../utils/text.js';
 import {
   getContextInfo,
+  getGlobalSettings,
+  saveGlobalSettings,
 } from '../../core/settings.js';
 
 let panelOptions = {
@@ -13,7 +15,7 @@ let panelOptions = {
 let panelState = {
   activeTab: 'prompts',  // 'prompts' | 'generate' | 'saves'
   previewOpen: false,
-  generateMode: 'text',  // 'text' | 'html'
+  promptText: '',
 };
 
 export function configureMiniTheaterPanel(options = {}) {
@@ -26,10 +28,22 @@ function refreshPanel() {
   }
 }
 
+function getMiniTheaterSettings() {
+  const settings = getGlobalSettings();
+  settings.modules = settings.modules || {};
+  settings.modules.miniTheater = settings.modules.miniTheater || {};
+  if (!['main_api', 'secondary_api'].includes(settings.modules.miniTheater.apiMode)) {
+    settings.modules.miniTheater.apiMode = 'secondary_api';
+  }
+  return settings.modules.miniTheater;
+}
+
 // ── 顶部固定区：角色/聊天信息 + API 模式胶囊 ──────────────────────────
 
 function renderTopBar() {
   const info = getContextInfo();
+  const settings = getMiniTheaterSettings();
+  const apiMode = settings.apiMode || 'secondary_api';
   return `
     <div class="slx-theater-topbar">
       <div class="slx-theater-context">
@@ -37,9 +51,18 @@ function renderTopBar() {
         <span class="slx-theater-context-sep">·</span>
         <span class="slx-theater-context-chat">${escapeHtml(info.chatName)}</span>
       </div>
-      <button class="slx-theater-api-pill" type="button" data-theater-api-pill title="API 模式（0.2 版接入）">
-        副 API
-      </button>
+      <div class="slx-theater-api-toggle" role="group" aria-label="小剧场生成 API">
+        <button
+          class="${apiMode === 'main_api' ? 'is-active' : ''}"
+          type="button"
+          data-theater-api-mode="main_api"
+        >主 API</button>
+        <button
+          class="${apiMode === 'secondary_api' ? 'is-active' : ''}"
+          type="button"
+          data-theater-api-mode="secondary_api"
+        >副 API</button>
+      </div>
     </div>
   `;
 }
@@ -86,9 +109,6 @@ function renderPromptsTab() {
 // ── Tab 2：发送与生成 ─────────────────────────────────────────────────
 
 function renderGenerateTab() {
-  const modeBtnLabel = panelState.generateMode === 'html' ? '切换为文字' : '切换为 HTML 美化';
-  const modeDisplay = panelState.generateMode === 'html' ? 'HTML 美化' : '文字';
-
   return `
     <div class="slx-theater-tab-content" role="tabpanel">
       <div class="slx-detail-card">
@@ -99,23 +119,11 @@ function renderGenerateTab() {
           rows="5"
           placeholder="输入小剧场提示词，或从提示词库中选择…"
           data-theater-prompt-text
-        ></textarea>
+        >${escapeHtml(panelState.promptText)}</textarea>
         <div class="slx-action-row">
           <button class="slx-soft-btn" type="button" data-theater-pick-prompt>
             从提示词库选择
           </button>
-        </div>
-      </div>
-
-      <div class="slx-detail-card">
-        <div class="slx-switch-row">
-          <span class="slx-detail-title">输出模式</span>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span class="slx-detail-kicker">${escapeHtml(modeDisplay)}</span>
-            <button class="slx-soft-btn" type="button" data-theater-toggle-mode>
-              ${escapeHtml(modeBtnLabel)}
-            </button>
-          </div>
         </div>
       </div>
 
@@ -147,31 +155,18 @@ function renderSavesTab() {
 function renderPreviewOverlay() {
   if (!panelState.previewOpen) return '';
 
-  const isHtml = panelState.generateMode === 'html';
-  const modeLabel = isHtml ? 'HTML 美化' : '文字';
-
   return `
     <div class="slx-theater-overlay" data-theater-overlay role="dialog" aria-modal="true" aria-label="小剧场预览">
       <div class="slx-theater-preview">
         <div class="slx-theater-preview-header">
-          <span class="slx-theater-preview-title">预览 · ${escapeHtml(modeLabel)}</span>
+          <span class="slx-theater-preview-title">小剧场预览</span>
           <button class="slx-icon-btn" type="button" data-theater-close-preview aria-label="关闭预览">×</button>
         </div>
 
         <div class="slx-theater-preview-body">
-          ${isHtml
-            ? `<div class="slx-theater-iframe-wrap">
-                 <iframe
-                   class="slx-theater-iframe"
-                   sandbox=""
-                   title="小剧场 HTML 预览"
-                   srcdoc="<p style='font-family:sans-serif;padding:20px;color:#888'>HTML 小剧场内容将在这里渲染（0.1 占位）</p>"
-                 ></iframe>
-               </div>`
-            : `<div class="slx-theater-text-body">
-                 <p class="slx-theater-text-placeholder">文字小剧场内容将在这里展示（0.1 占位）</p>
-               </div>`
-          }
+          <div class="slx-theater-text-body">
+            <p class="slx-theater-text-placeholder">小剧场内容将在这里展示。后续生成结果如果包含 HTML，会自动进入安全预览；纯文字会按正文展示。</p>
+          </div>
         </div>
 
         <div class="slx-theater-preview-footer">
@@ -220,15 +215,15 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
     });
   });
 
-  // 输出模式切换
-  root.querySelector('[data-theater-toggle-mode]')?.addEventListener('click', () => {
-    panelState.generateMode = panelState.generateMode === 'text' ? 'html' : 'text';
-    refreshPanel();
-  });
-
-  // API 胶囊（0.2 接入，暂占位）
-  root.querySelector('[data-theater-api-pill]')?.addEventListener('click', () => {
-    // 待 0.2 接入
+  root.querySelectorAll('[data-theater-api-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.theaterApiMode;
+      if (!['main_api', 'secondary_api'].includes(mode)) return;
+      const settings = getMiniTheaterSettings();
+      settings.apiMode = mode;
+      saveGlobalSettings();
+      refreshPanel();
+    });
   });
 
   // 新建提示词（0.2 接入）
@@ -239,6 +234,10 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   // 从库选择（0.2 接入）
   root.querySelector('[data-theater-pick-prompt]')?.addEventListener('click', () => {
     // 待 0.2 接入
+  });
+
+  root.querySelector('[data-theater-prompt-text]')?.addEventListener('input', e => {
+    panelState.promptText = e.target.value;
   });
 
   // 生成按钮：0.1 仅打开预览弹窗壳子测试动效

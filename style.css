@@ -4516,7 +4516,6 @@ body.slx-panel-open-lock {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  position: relative;
 }
 
 /* 顶部固定区：角色/聊天 + API 胶囊 */
@@ -4560,21 +4559,39 @@ body.slx-panel-open-lock {
   text-overflow: ellipsis;
 }
 
-.slx-theater-api-pill {
+.slx-theater-api-toggle {
   flex-shrink: 0;
-  padding: 4px 12px;
-  border-radius: 99px;
   border: 1px solid var(--slx-border-dim);
-  background: var(--slx-bg-btn);
-  color: var(--slx-muted);
-  font-size: 11px;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
 }
 
-.slx-theater-api-pill:hover {
-  border-color: var(--slx-border);
+.slx-theater-api-toggle button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--slx-muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 7px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.slx-theater-api-toggle button:hover {
   color: var(--slx-text);
+}
+
+.slx-theater-api-toggle button.is-active {
+  background: var(--slx-accent);
+  color: var(--slx-accent-ink);
 }
 
 /* 标签栏 */
@@ -4631,22 +4648,29 @@ body.slx-panel-open-lock {
 /* 提示词 textarea */
 .slx-theater-prompt-textarea {
   width: 100%;
-  background: var(--slx-bg-input);
-  border: 1px solid var(--slx-border-dim);
+  background: rgba(255, 250, 242, 0.74);
+  border: 1px solid rgba(139, 75, 67, 0.22);
   border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 12.5px;
+  box-shadow: inset 0 1px 7px rgba(112, 66, 48, 0.08);
+  box-sizing: border-box;
+  padding: 11px 12px;
+  font-size: 13px;
   font-family: inherit;
-  color: var(--slx-text);
+  line-height: 1.7;
+  color: var(--slx-input-text, var(--slx-text));
   resize: vertical;
-  min-height: 90px;
+  min-height: 132px;
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  appearance: none;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 .slx-theater-prompt-textarea:focus {
-  border-color: var(--slx-accent, var(--slx-border));
-  box-shadow: 0 0 0 2px rgba(var(--slx-accent-rgb, 100, 160, 200), 0.12);
+  background: rgba(255, 252, 247, 0.9);
+  border-color: rgba(139, 75, 67, 0.38);
+  box-shadow:
+    inset 0 1px 7px rgba(112, 66, 48, 0.06),
+    0 0 0 2px rgba(139, 75, 67, 0.08);
 }
 
 .slx-theater-prompt-textarea::placeholder {
@@ -4667,12 +4691,14 @@ body.slx-panel-open-lock {
 .slx-theater-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(54, 38, 31, 0.48);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
+  padding: clamp(14px, 4vw, 36px);
   z-index: 200;
   border-radius: inherit;
+  backdrop-filter: blur(3px);
   /* 入场动效 */
   animation: slx-theater-overlay-in 0.18s ease-out;
 }
@@ -4683,11 +4709,14 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-preview {
-  width: 100%;
-  max-height: 90%;
-  background: var(--slx-bg-panel);
-  border-top: 1px solid var(--slx-border-dim);
-  border-radius: 16px 16px 0 0;
+  width: min(920px, 100%);
+  max-height: min(720px, 100%);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 248, 0.96), rgba(253, 244, 236, 0.96)),
+    var(--slx-bg-panel);
+  border: 1px solid rgba(139, 75, 67, 0.22);
+  border-radius: 12px;
+  box-shadow: 0 22px 55px rgba(38, 22, 18, 0.22);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -4704,28 +4733,28 @@ body.slx-panel-open-lock {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px 10px;
+  padding: 16px 18px 13px;
   border-bottom: 1px solid var(--slx-border-dim);
   flex-shrink: 0;
 }
 
 .slx-theater-preview-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 800;
   color: var(--slx-text);
 }
 
 .slx-theater-preview-body {
   flex: 1;
   overflow: auto;
-  min-height: 160px;
+  min-height: 320px;
 }
 
 /* 文字小剧场正文区 */
 .slx-theater-text-body {
-  padding: 20px 24px;
-  line-height: 1.8;
-  font-size: 14px;
+  padding: clamp(22px, 4vw, 42px);
+  line-height: 1.9;
+  font-size: 15px;
   color: var(--slx-text);
 }
 
@@ -4752,22 +4781,19 @@ body.slx-panel-open-lock {
 .slx-theater-preview-footer {
   display: flex;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 13px 18px;
   border-top: 1px solid var(--slx-border-dim);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
 
-/* 桌面端：预览弹窗居中显示（非底部 sheet） */
-@media (min-width: 769px) {
-  .slx-theater-overlay {
-    align-items: center;
+@media (max-width: 640px) {
+  .slx-theater-preview {
+    max-height: 92%;
+    border-radius: 10px;
   }
 
-  .slx-theater-preview {
-    width: 90%;
-    max-width: 560px;
-    max-height: 80%;
-    border-radius: 14px;
+  .slx-theater-preview-body {
+    min-height: 220px;
   }
 }
