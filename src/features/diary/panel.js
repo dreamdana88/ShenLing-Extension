@@ -9,6 +9,7 @@ import {
 import {
   getChatState,
   getGlobalSettings,
+  getWordReplaceSettings,
   saveChatState,
 } from '../../core/settings.js';
 import {
@@ -26,6 +27,9 @@ import {
 import {
   SUMMARY_SUPPORT_MESSAGES,
 } from '../../prompts.js';
+import {
+  applyWordReplacementToGeneratedContent,
+} from '../word-replace/generated.js';
 
 const DIARY_TABS = [
   { id: 'notebooks', label: '日记本', icon: 'fa-book-open' },
@@ -229,6 +233,38 @@ function parseDiaryGenerationResult(raw, fallbackDate) {
     }
     throw new Error(`日记生成结果不是可解析 JSON：${error.message || error}`);
   }
+}
+
+function applyWordReplacementToDiaryResult(result) {
+  const wordReplaceSettings = getWordReplaceSettings(getGlobalSettings());
+  const fields = ['title', 'content'];
+  const nextResult = { ...result };
+  const replacement = {
+    changed: false,
+    replacements: 0,
+    errors: [],
+    fields: {},
+  };
+
+  fields.forEach((field) => {
+    const fieldResult = applyWordReplacementToGeneratedContent(nextResult[field], wordReplaceSettings, {
+      mode: 'text',
+    });
+    replacement.fields[field] = {
+      changed: fieldResult.changed,
+      replacements: fieldResult.replacements,
+    };
+    replacement.changed = replacement.changed || fieldResult.changed;
+    replacement.replacements += fieldResult.replacements;
+    replacement.errors.push(...fieldResult.errors);
+    nextResult[field] = fieldResult.text;
+  });
+
+  if (replacement.errors.length > 0) {
+    throw new Error(`词汇替换规则错误：${replacement.errors.join('；')}`);
+  }
+
+  return { result: nextResult, replacement };
 }
 
 function normalizeDiarySettings(settings = {}) {
@@ -976,7 +1012,9 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
         throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
       }
       const responseText = await generateRaw(requestBody);
-      const parsedResult = parseDiaryGenerationResult(responseText, fallbackDate);
+      const rawParsedResult = parseDiaryGenerationResult(responseText, fallbackDate);
+      const { result: parsedResult, replacement: wordReplacement } =
+        applyWordReplacementToDiaryResult(rawParsedResult);
       addCommunicationLog?.({
         moduleName: '日程日记 / 主 API',
         taskType,
@@ -989,7 +1027,9 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
         messages,
         requestBody,
         responseText,
+        rawParsedResult,
         parsedResult,
+        wordReplacement,
       });
       return parsedResult;
     } catch (error) {
@@ -1047,7 +1087,9 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
     if (!content) {
       throw new Error(`接口返回成功，但没有读取到回复正文：${responseText}`);
     }
-    const parsedResult = parseDiaryGenerationResult(content, fallbackDate);
+    const rawParsedResult = parseDiaryGenerationResult(content, fallbackDate);
+    const { result: parsedResult, replacement: wordReplacement } =
+      applyWordReplacementToDiaryResult(rawParsedResult);
     addCommunicationLog?.({
       moduleName: '日程日记 / 副 API',
       taskType,
@@ -1061,7 +1103,9 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
       messages,
       requestBody,
       responseText,
+      rawParsedResult,
       parsedResult,
+      wordReplacement,
     });
     return parsedResult;
   } catch (error) {

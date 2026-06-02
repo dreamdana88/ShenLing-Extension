@@ -7,11 +7,13 @@ import { replacePromptMessageMacros } from "../../core/macros.js";
 import {
   getContextInfo,
   getGlobalSettings,
+  getWordReplaceSettings,
   saveGlobalSettings,
 } from "../../core/settings.js";
 import { getOpenAiResponseContent } from "../../core/summary.js";
 import { SUMMARY_SUPPORT_MESSAGES } from "../../prompts.js";
 import { escapeHtml, formatTimestamp } from "../../utils/text.js";
+import { applyWordReplacementToGeneratedContent } from "../word-replace/generated.js";
 
 let panelOptions = {
   addCommunicationLog: null,
@@ -412,12 +414,20 @@ async function runMiniTheaterGeneration() {
     const content = stripMarkdownFence(rawContent);
     if (!content) throw new Error("小剧场生成结果为空。");
     const resultType = detectTheaterResultType(content);
+    const wordReplacement = applyWordReplacementToGeneratedContent(
+      content,
+      getWordReplaceSettings(getGlobalSettings()),
+      { mode: resultType },
+    );
+    if (wordReplacement.errors.length > 0) {
+      throw new Error(`词汇替换规则错误：${wordReplacement.errors.join("；")}`);
+    }
     const result = {
       id: genId(),
       promptName: panelState.promptSource?.name || "自定义小剧场",
       promptContent: userPrompt,
       resultType,
-      resultContent: content,
+      resultContent: wordReplacement.text,
       characterName: info.characterName,
       chatName: info.chatName,
       apiMode,
@@ -439,7 +449,9 @@ async function runMiniTheaterGeneration() {
       messages,
       requestBody: { ...requestBody, contextDiagnostics },
       responseText: apiResult.responseText,
+      rawResultContent: content,
       parsedResult: result,
+      wordReplacement,
     });
 
     return result;
@@ -688,7 +700,7 @@ function renderGenerateTab() {
         </div>
       </div>
 
-      <div class="slx-action-row">
+      <div class="slx-action-row slx-theater-generate-actions">
         <button class="${buttonClass}" type="button" data-theater-generate ${isRunning ? 'disabled aria-busy="true"' : ""}>
           ${escapeHtml(buttonLabel)}
         </button>
