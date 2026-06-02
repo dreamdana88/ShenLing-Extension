@@ -11,6 +11,9 @@ let panelOptions = {
   refreshPanel: null,
 };
 
+let promptSearchRefreshTimer = null;
+let pickSearchRefreshTimer = null;
+
 // 跨渲染持久化的面板本地状态
 let panelState = {
   activeTab: 'prompts',    // 'prompts' | 'generate' | 'saves'
@@ -39,6 +42,17 @@ export function configureMiniTheaterPanel(options = {}) {
 function refreshPanel() {
   if (typeof panelOptions.refreshPanel === 'function') {
     panelOptions.refreshPanel();
+  }
+}
+
+function refreshPanelDebounced(kind, delay = 450) {
+  const key = kind === 'pick' ? 'pickSearchRefreshTimer' : 'promptSearchRefreshTimer';
+  if (key === 'pickSearchRefreshTimer') {
+    clearTimeout(pickSearchRefreshTimer);
+    pickSearchRefreshTimer = setTimeout(refreshPanel, delay);
+  } else {
+    clearTimeout(promptSearchRefreshTimer);
+    promptSearchRefreshTimer = setTimeout(refreshPanel, delay);
   }
 }
 
@@ -132,6 +146,7 @@ function renderTabBar() {
 function renderFolderChips(folders) {
   const active = panelState.promptFolderFilter;
   const chips = [{ id: null, label: '全部' }, ...folders.map(f => ({ id: f.id, label: f.name }))];
+  const activeFolder = active ? folders.find(f => f.id === active) : null;
   return `
     <div class="slx-theater-folder-chips" role="group" aria-label="按文件夹筛选">
       ${chips.map(c => `
@@ -142,6 +157,13 @@ function renderFolderChips(folders) {
         >${escapeHtml(c.label)}</button>
       `).join('')}
       <button class="slx-theater-folder-chip slx-theater-folder-chip-add" type="button" data-theater-new-folder>＋ 文件夹</button>
+      ${activeFolder ? `
+        <button
+          class="slx-theater-folder-chip slx-theater-folder-chip-delete"
+          type="button"
+          data-theater-delete-folder="${escapeHtml(activeFolder.id)}"
+        >删除当前文件夹</button>
+      ` : ''}
     </div>
   `;
 }
@@ -194,7 +216,7 @@ function renderPromptsTab() {
         <button class="slx-soft-btn" type="button" data-theater-new-prompt>＋ 新建</button>
       </div>
 
-      ${folders.length > 0 ? renderFolderChips(folders) : ''}
+      ${renderFolderChips(folders)}
 
       ${filtered.length === 0
     ? `<div class="slx-detail-card slx-theater-empty-state">
@@ -482,7 +504,7 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   // ── 提示词库：搜索 / 排序 / 文件夹筛选 ──
   root.querySelector('[data-theater-prompt-search]')?.addEventListener('input', e => {
     panelState.promptSearch = e.target.value;
-    refreshPanel();
+    refreshPanelDebounced('prompt');
   });
 
   root.querySelector('[data-theater-sort]')?.addEventListener('change', e => {
@@ -509,6 +531,14 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   // ── 新建文件夹 ──
   root.querySelector('[data-theater-new-folder]')?.addEventListener('click', () => {
     panelState.modal = { type: 'folder-form', fields: { name: '' } };
+    refreshPanel();
+  });
+
+  root.querySelector('[data-theater-delete-folder]')?.addEventListener('click', btn => {
+    const mt = getMiniTheaterSettings();
+    const folder = mt.folders.find(f => f.id === btn.currentTarget.dataset.theaterDeleteFolder);
+    if (!folder) return;
+    panelState.modal = { type: 'delete-confirm', target: 'folder', id: folder.id, name: folder.name || '未命名文件夹' };
     refreshPanel();
   });
 
@@ -703,7 +733,7 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   // ── 从库选择弹窗 ──
   root.querySelector('[data-theater-pick-search]')?.addEventListener('input', e => {
     panelState.pickSearch = e.target.value;
-    refreshPanel();
+    refreshPanelDebounced('pick');
   });
 
   root.querySelectorAll('[data-theater-pick-item]').forEach(btn => {

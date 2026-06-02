@@ -4569,13 +4569,15 @@ body.slx-panel-open-lock {
    ═══════════════════════════════════════════════════════ */
 
 .slx-theater-root {
-  --slx-theater-control-bg: rgba(255, 250, 244, 0.66);
-  --slx-theater-control-bg-focus: rgba(255, 253, 248, 0.9);
-  --slx-theater-control-border: rgba(139, 75, 67, 0.18);
+  --slx-theater-control-bg: rgba(255, 250, 244, 0.94);
+  --slx-theater-control-bg-focus: rgba(255, 253, 248, 0.98);
+  --slx-theater-control-border: rgba(139, 75, 67, 0.16);
   --slx-theater-control-border-focus: rgba(139, 75, 67, 0.34);
   --slx-theater-control-text: #4f3926;
   --slx-theater-control-placeholder: rgba(91, 61, 49, 0.48);
-  --slx-theater-control-shadow: inset 0 1px 8px rgba(112, 66, 48, 0.05);
+  --slx-theater-control-shadow:
+    inset 0 1px 8px rgba(112, 66, 48, 0.04),
+    0 1px 0 rgba(255, 255, 255, 0.46);
   --slx-theater-control-ring: 0 0 0 2px rgba(139, 75, 67, 0.08);
   display: flex;
   flex-direction: column;
@@ -4589,7 +4591,9 @@ body.slx-panel-open-lock {
   --slx-theater-control-border-focus: rgba(100, 180, 210, 0.34);
   --slx-theater-control-text: rgba(222, 244, 250, 0.96);
   --slx-theater-control-placeholder: rgba(150, 198, 220, 0.5);
-  --slx-theater-control-shadow: inset 0 1px 8px rgba(2, 10, 20, 0.18);
+  --slx-theater-control-shadow:
+    inset 0 1px 8px rgba(2, 10, 20, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.03);
   --slx-theater-control-ring: 0 0 0 2px rgba(100, 180, 210, 0.12);
 }
 
@@ -4725,7 +4729,7 @@ body.slx-panel-open-lock {
   width: 100%;
   background: var(--slx-theater-control-bg);
   border: 1px solid var(--slx-theater-control-border);
-  border-radius: 12px;
+  border-radius: 14px;
   box-shadow: var(--slx-theater-control-shadow);
   box-sizing: border-box;
   padding: 12px 14px;
@@ -4966,6 +4970,8 @@ body.slx-panel-open-lock {
   caret-color: var(--slx-theater-control-text);
   outline: none;
   appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .slx-theater-search-input:focus {
@@ -4981,6 +4987,7 @@ body.slx-panel-open-lock {
 
 .slx-theater-sort-select {
   height: 32px;
+  min-width: 92px;
   padding: 0 30px 0 10px;
   background-color: var(--slx-theater-control-bg);
   background-image:
@@ -5000,6 +5007,9 @@ body.slx-panel-open-lock {
   outline: none;
   cursor: pointer;
   appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  line-height: 30px;
   flex-shrink: 0;
 }
 
@@ -5051,6 +5061,17 @@ body.slx-panel-open-lock {
 }
 .slx-theater-folder-chip-add:hover {
   opacity: 1;
+}
+
+.slx-theater-folder-chip-delete {
+  border-color: rgba(192, 57, 43, 0.18);
+  color: rgba(192, 57, 43, 0.78);
+}
+
+.slx-theater-folder-chip-delete:hover {
+  border-color: rgba(192, 57, 43, 0.32);
+  background: rgba(192, 57, 43, 0.08);
+  color: #c0392b;
 }
 
 /* ── 提示词卡片列表 ── */
@@ -5234,6 +5255,8 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-modal-prompt-form .slx-theater-modal-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -5286,6 +5309,8 @@ body.slx-panel-open-lock {
   caret-color: var(--slx-theater-control-text);
   outline: none;
   appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .slx-theater-text-input:focus {
@@ -5321,6 +5346,9 @@ body.slx-panel-open-lock {
   outline: none;
   cursor: pointer;
   appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  line-height: 32px;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
@@ -5338,7 +5366,8 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-modal-textarea {
-  min-height: clamp(300px, 48vh, 520px);
+  min-height: 0;
+  height: 100%;
   flex: 1;
   resize: vertical;
 }
@@ -5349,7 +5378,8 @@ body.slx-panel-open-lock {
   }
 
   .slx-theater-modal-textarea {
-    min-height: clamp(240px, 42vh, 420px);
+    min-height: 220px;
+    height: auto;
   }
 }
 
