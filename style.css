@@ -3745,6 +3745,50 @@ body.slx-panel-open-lock {
   color: #8b5a4e;
 }
 
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field input:not([type='checkbox']),
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field select,
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field textarea {
+  border-color: rgba(193, 139, 120, 0.32);
+  background: rgba(255, 252, 244, 0.76) !important;
+  color: #5c3d31 !important;
+  box-shadow: inset 0 1px 6px rgba(126, 78, 58, 0.06);
+}
+
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field input:not([type='checkbox']):focus,
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field select:focus,
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field textarea:focus {
+  border-color: rgba(170, 98, 82, 0.46);
+  background: rgba(255, 254, 249, 0.94) !important;
+  box-shadow:
+    inset 0 1px 6px rgba(126, 78, 58, 0.05),
+    0 0 0 2px rgba(232, 160, 148, 0.14);
+}
+
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field input::placeholder,
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field textarea::placeholder {
+  color: rgba(130, 92, 78, 0.52) !important;
+}
+
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field select option {
+  background: #fff8ee;
+  color: #5c3d31;
+}
+
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field input[type='color'] {
+  height: 42px;
+  padding: 5px;
+  cursor: pointer;
+}
+
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+#shenling-assistant-panel-root .slx-diary-tcho-settings .slx-field input[type='color']::-webkit-color-swatch {
+  border: 1px solid rgba(108, 70, 54, 0.18);
+  border-radius: 6px;
+}
+
 .slx-diary-tcho-settings .slx-diary-upload-box {
   border-color: #e0b8a8;
   background: rgba(255, 246, 242, 0.55);
@@ -3752,6 +3796,26 @@ body.slx-panel-open-lock {
 
 .slx-diary-tcho-settings .slx-diary-upload-box span {
   color: #7a4a3a;
+}
+
+.slx-diary-tcho-settings .slx-diary-upload-box input {
+  color: #8b5a4e;
+}
+
+.slx-diary-tcho-settings .slx-diary-upload-box input::file-selector-button {
+  margin-right: 8px;
+  border: 1px solid rgba(193, 139, 120, 0.36);
+  border-radius: 8px;
+  background: rgba(255, 252, 244, 0.82);
+  color: #7a4a3a;
+  font: inherit;
+  font-size: 11px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.slx-diary-tcho-settings .slx-diary-upload-box small {
+  color: rgba(139, 90, 78, 0.58);
 }
 
 .slx-diary-tcho-settings .slx-soft-btn {
