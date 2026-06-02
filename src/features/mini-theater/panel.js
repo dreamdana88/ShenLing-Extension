@@ -128,7 +128,7 @@ function renderGenerateTab() {
       </div>
 
       <div class="slx-action-row">
-        <button class="slx-primary-btn" type="button" data-theater-generate>
+        <button class="slx-soft-btn slx-primary-btn slx-theater-generate-btn" type="button" data-theater-generate>
           生成小剧场 ▶
         </button>
       </div>
