@@ -281,7 +281,7 @@ function renderModalContent() {
         </div>
         <div class="slx-theater-form-field">
           <label for="slx-theater-modal-content">内容</label>
-          <textarea id="slx-theater-modal-content" class="slx-theater-prompt-textarea" rows="6"
+          <textarea id="slx-theater-modal-content" class="slx-theater-prompt-textarea slx-theater-modal-textarea" rows="12"
             placeholder="提示词正文…"
             data-theater-modal-field="content"
           >${escapeHtml(m.fields.content)}</textarea>
@@ -302,7 +302,7 @@ function renderModalContent() {
     : '<span></span>'}
         <div style="display:flex;gap:8px">
           <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
-          <button class="slx-primary-btn" type="button" data-theater-modal-save>保存</button>
+          <button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>保存</button>
         </div>
       </div>
     `;
@@ -326,7 +326,7 @@ function renderModalContent() {
         <span></span>
         <div style="display:flex;gap:8px">
           <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
-          <button class="slx-primary-btn" type="button" data-theater-modal-save>创建</button>
+          <button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>创建</button>
         </div>
       </div>
     `;
@@ -390,9 +390,13 @@ function renderModalContent() {
 
 function renderModal() {
   if (!panelState.modal) return '';
+  const modalClass = [
+    'slx-theater-modal',
+    panelState.modal.type === 'prompt-form' ? 'slx-theater-modal-prompt-form' : '',
+  ].filter(Boolean).join(' ');
   return `
     <div class="slx-theater-overlay slx-theater-modal-overlay" data-theater-modal-overlay role="dialog" aria-modal="true">
-      <div class="slx-theater-modal">
+      <div class="${modalClass}">
         ${renderModalContent()}
       </div>
     </div>
