@@ -4729,6 +4729,18 @@ body.slx-panel-open-lock {
   border-color: rgba(178, 80, 72, 0.34);
 }
 
+.slx-theater-open-preview-btn {
+  border-color: rgba(82, 150, 112, 0.38);
+  background: rgba(225, 244, 231, 0.9);
+  color: #3d7656;
+}
+
+.slx-theater-open-preview-btn:hover:not(:disabled) {
+  border-color: rgba(82, 150, 112, 0.5);
+  background: rgba(211, 238, 220, 0.96);
+  color: #2f6548;
+}
+
 @keyframes slx-theater-spin {
   to {
     transform: rotate(360deg);
@@ -4746,6 +4758,18 @@ body.slx-panel-open-lock {
   border-color: rgba(120, 184, 210, 0.48);
   background: rgba(54, 91, 112, 0.76);
   color: #f3fbfd;
+}
+
+.slx-panel[data-theme='dark'] .slx-theater-open-preview-btn {
+  border-color: rgba(124, 196, 168, 0.34);
+  background: rgba(42, 87, 76, 0.68);
+  color: rgba(221, 249, 239, 0.95);
+}
+
+.slx-panel[data-theme='dark'] .slx-theater-open-preview-btn:hover:not(:disabled) {
+  border-color: rgba(124, 196, 168, 0.52);
+  background: rgba(50, 103, 88, 0.78);
+  color: #f2fff9;
 }
 
 /* ── 预览弹窗 ── */

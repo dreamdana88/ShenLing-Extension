@@ -649,18 +649,17 @@ function renderPromptsTab() {
 
 function renderGenerateTab() {
   const isRunning = panelState.generationStatus === "running";
-  const isSuccess = panelState.generationStatus === "success";
   const isFailed = panelState.generationStatus === "failed";
+  const hasResult = Boolean(panelState.result);
   const buttonLabel = isRunning
     ? "生成中…"
-    : isSuccess
-      ? "查看预览 ✓"
+    : hasResult
+      ? "生成新版 ▶"
       : "生成小剧场 ▶";
   const buttonClass = [
     "slx-soft-btn",
     "slx-theater-generate-btn",
     isRunning ? "is-running" : "",
-    isSuccess ? "is-success" : "",
     isFailed ? "is-failed" : "",
   ]
     .filter(Boolean)
@@ -690,9 +689,10 @@ function renderGenerateTab() {
       </div>
 
       <div class="slx-action-row">
-        <button class="${buttonClass}" type="button" ${isSuccess ? "data-theater-open-preview" : "data-theater-generate"} ${isRunning ? 'disabled aria-busy="true"' : ""}>
+        <button class="${buttonClass}" type="button" data-theater-generate ${isRunning ? 'disabled aria-busy="true"' : ""}>
           ${escapeHtml(buttonLabel)}
         </button>
+        ${hasResult ? '<button class="slx-soft-btn slx-theater-open-preview-btn" type="button" data-theater-open-preview>查看预览 ✓</button>' : ""}
         ${isFailed ? '<button class="slx-soft-btn" type="button" data-theater-generate>重试</button>' : ""}
       </div>
     </div>
