@@ -924,7 +924,7 @@ export async function collectDryRunWorldInfoContext({
           world: entry.world,
           reason: entry.filterReason,
         })),
-        notes: cleanTargetRoleName ? [`dry run 扫描已加入日记角色名关键词：${cleanTargetRoleName}`] : [],
+        notes: cleanTargetRoleName ? [`dry run 扫描已加入目标角色名关键词：${cleanTargetRoleName}`] : [],
       },
     });
   } catch (error) {
