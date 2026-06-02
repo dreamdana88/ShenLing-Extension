@@ -4574,49 +4574,19 @@ body.slx-panel-open-lock {
   gap: 10px;
 }
 
-/* 顶部固定区：角色/聊天 + API 胶囊 */
-.slx-theater-topbar {
+/* 标签栏 + API 胶囊 */
+.slx-theater-tabbar-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 6px 0 10px;
-  border-bottom: 1px solid var(--slx-border-dim);
-}
-
-.slx-theater-context {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  gap: 12px;
   min-width: 0;
-  flex: 1;
-  overflow: hidden;
-}
-
-.slx-theater-context-char {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--slx-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.slx-theater-context-sep {
-  color: var(--slx-muted);
-  flex-shrink: 0;
-}
-
-.slx-theater-context-chat {
-  font-size: 12px;
-  color: var(--slx-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--slx-border-dim);
 }
 
 .slx-theater-api-toggle {
   flex-shrink: 0;
+  margin-left: auto;
   border: 1px solid var(--slx-border-dim);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -4650,11 +4620,16 @@ body.slx-panel-open-lock {
   color: var(--slx-accent-ink);
 }
 
-/* 标签栏 */
 .slx-theater-tabs {
   display: flex;
+  min-width: 0;
+  overflow-x: auto;
   gap: 2px;
-  border-bottom: 1px solid var(--slx-border-dim);
+  scrollbar-width: none;
+}
+
+.slx-theater-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .slx-theater-tab {
@@ -4760,18 +4735,6 @@ body.slx-panel-open-lock {
   }
 }
 
-/* 生成说明文字 */
-.slx-theater-gen-note {
-  font-size: 11px;
-  color: rgba(128, 95, 86, 0.56);
-  margin: 0;
-  text-align: center;
-}
-
-.slx-theater-gen-note.is-error {
-  color: #a34a43;
-}
-
 .slx-panel[data-theme='dark'] .slx-theater-generate-btn {
   border-color: rgba(120, 184, 210, 0.3);
   background: rgba(45, 77, 96, 0.62);
@@ -4783,14 +4746,6 @@ body.slx-panel-open-lock {
   border-color: rgba(120, 184, 210, 0.48);
   background: rgba(54, 91, 112, 0.76);
   color: #f3fbfd;
-}
-
-.slx-panel[data-theme='dark'] .slx-theater-gen-note {
-  color: rgba(180, 214, 224, 0.72);
-}
-
-.slx-panel[data-theme='dark'] .slx-theater-gen-note.is-error {
-  color: rgba(246, 170, 162, 0.94);
 }
 
 /* ── 预览弹窗 ── */

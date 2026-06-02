@@ -502,28 +502,18 @@ async function copyTheaterResult() {
   textarea.remove();
 }
 
-// ── 顶部固定区 ────────────────────────────────────────────────────────
+// ── API 切换 / 标签栏 ─────────────────────────────────────────────────
 
-function renderTopBar() {
-  const info = getContextInfo();
+function renderApiToggle() {
   const mt = getMiniTheaterSettings();
   const apiMode = mt.apiMode;
   return `
-    <div class="slx-theater-topbar">
-      <div class="slx-theater-context">
-        <span class="slx-theater-context-char">${escapeHtml(info.characterName)}</span>
-        <span class="slx-theater-context-sep">·</span>
-        <span class="slx-theater-context-chat">${escapeHtml(info.chatName)}</span>
-      </div>
-      <div class="slx-theater-api-toggle" role="group" aria-label="小剧场生成 API">
-        <button class="${apiMode === "main_api" ? "is-active" : ""}" type="button" data-theater-api-mode="main_api">主 API</button>
-        <button class="${apiMode === "secondary_api" ? "is-active" : ""}" type="button" data-theater-api-mode="secondary_api">副 API</button>
-      </div>
+    <div class="slx-theater-api-toggle" role="group" aria-label="小剧场生成 API">
+      <button class="${apiMode === "main_api" ? "is-active" : ""}" type="button" data-theater-api-mode="main_api">主 API</button>
+      <button class="${apiMode === "secondary_api" ? "is-active" : ""}" type="button" data-theater-api-mode="secondary_api">副 API</button>
     </div>
   `;
 }
-
-// ── 标签栏 ────────────────────────────────────────────────────────────
 
 function renderTabBar() {
   const tabs = [
@@ -532,19 +522,22 @@ function renderTabBar() {
     { id: "saves", label: "已收藏回看" },
   ];
   return `
-    <div class="slx-theater-tabs" role="tablist">
-      ${tabs
-        .map(
-          (tab) => `
-        <button
-          class="slx-theater-tab${panelState.activeTab === tab.id ? " slx-theater-tab-active" : ""}"
-          type="button" role="tab"
-          aria-selected="${panelState.activeTab === tab.id}"
-          data-theater-tab="${escapeHtml(tab.id)}"
-        >${escapeHtml(tab.label)}</button>
-      `,
-        )
-        .join("")}
+    <div class="slx-theater-tabbar-row">
+      <div class="slx-theater-tabs" role="tablist">
+        ${tabs
+          .map(
+            (tab) => `
+          <button
+            class="slx-theater-tab${panelState.activeTab === tab.id ? " slx-theater-tab-active" : ""}"
+            type="button" role="tab"
+            aria-selected="${panelState.activeTab === tab.id}"
+            data-theater-tab="${escapeHtml(tab.id)}"
+          >${escapeHtml(tab.label)}</button>
+        `,
+          )
+          .join("")}
+      </div>
+      ${renderApiToggle()}
     </div>
   `;
 }
@@ -672,13 +665,6 @@ function renderGenerateTab() {
   ]
     .filter(Boolean)
     .join(" ");
-  const note = isRunning
-    ? "正在读取上下文并生成，不会写入聊天楼层。"
-    : isFailed
-      ? panelState.generationError || "小剧场生成失败。"
-      : panelState.result
-        ? `${panelState.result.resultType === "html" ? "HTML" : "文字"}小剧场已生成，可在预览弹窗查看。`
-        : "生成会静默读取角色卡、Persona、剧情档案、情感档案与世界信息。";
   return `
     <div class="slx-theater-tab-content" role="tabpanel">
       <div class="slx-detail-card">
@@ -709,7 +695,6 @@ function renderGenerateTab() {
         </button>
         ${isFailed ? '<button class="slx-soft-btn" type="button" data-theater-generate>重试</button>' : ""}
       </div>
-      <p class="slx-theater-gen-note${isFailed ? " is-error" : ""}">${escapeHtml(note)}</p>
     </div>
   `;
 }
@@ -945,7 +930,6 @@ function renderPreviewOverlay() {
 export function renderMiniTheaterPanel() {
   return `
     <div class="slx-theater-root" data-theater-root>
-      ${renderTopBar()}
       ${renderTabBar()}
       ${renderActiveTab()}
       ${renderPreviewOverlay()}
