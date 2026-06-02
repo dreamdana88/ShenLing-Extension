@@ -4713,7 +4713,8 @@ body.slx-panel-open-lock {
   font-size: 13px;
   font-family: inherit;
   line-height: 1.7;
-  color: var(--slx-input-text, var(--slx-text));
+  color: #4f3926;
+  caret-color: #8b4b43;
   resize: vertical;
   min-height: 132px;
   outline: none;
@@ -4730,13 +4731,29 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-prompt-textarea::placeholder {
-  color: var(--slx-muted);
+  color: rgba(91, 61, 49, 0.5);
+}
+
+.slx-theater-prompt-textarea::selection {
+  background: rgba(232, 160, 148, 0.34);
+  color: #3f291f;
+}
+
+.slx-theater-root .slx-primary-btn {
+  border-color: rgba(139, 75, 67, 0.34);
+  background: rgba(255, 252, 244, 0.88);
+  color: #6b4033;
+}
+
+.slx-theater-root .slx-primary-btn:hover:not(:disabled) {
+  border-color: rgba(139, 75, 67, 0.48);
+  background: rgba(255, 248, 236, 0.96);
 }
 
 /* 生成说明文字 */
 .slx-theater-gen-note {
   font-size: 11px;
-  color: var(--slx-muted);
+  color: rgba(180, 214, 224, 0.72);
   margin: 0;
   text-align: center;
 }
@@ -4790,14 +4807,14 @@ body.slx-panel-open-lock {
   align-items: center;
   justify-content: space-between;
   padding: 16px 18px 13px;
-  border-bottom: 1px solid var(--slx-border-dim);
+  border-bottom: 1px solid rgba(139, 75, 67, 0.16);
   flex-shrink: 0;
 }
 
 .slx-theater-preview-title {
   font-size: 15px;
   font-weight: 800;
-  color: var(--slx-text);
+  color: #6b3a2e;
 }
 
 .slx-theater-preview-body {
@@ -4811,11 +4828,11 @@ body.slx-panel-open-lock {
   padding: clamp(22px, 4vw, 42px);
   line-height: 1.9;
   font-size: 15px;
-  color: var(--slx-text);
+  color: #4f3926;
 }
 
 .slx-theater-text-placeholder {
-  color: var(--slx-muted);
+  color: rgba(91, 61, 49, 0.58);
   font-size: 13px;
   margin: 0;
 }
