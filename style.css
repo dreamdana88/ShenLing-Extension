@@ -4811,14 +4811,24 @@ body.slx-panel-open-lock {
   animation: slx-theater-overlay-in 0.18s ease-out;
 }
 
+.slx-theater-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  border-radius: 0;
+  padding: clamp(10px, 2vw, 24px);
+  background: rgba(22, 16, 18, 0.62);
+}
+
 @keyframes slx-theater-overlay-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
 .slx-theater-preview {
-  width: min(920px, 100%);
-  max-height: min(720px, 100%);
+  width: min(1180px, calc(100vw - 28px));
+  height: min(860px, calc(100dvh - 28px));
+  max-height: calc(var(--slx-viewport-height, 100dvh) - var(--slx-safe-top, 0px) - var(--slx-safe-bottom, 0px) - 28px);
   background:
     linear-gradient(180deg, rgba(255, 253, 248, 0.96), rgba(253, 244, 236, 0.96)),
     var(--slx-bg-panel);
@@ -4883,6 +4893,16 @@ body.slx-panel-open-lock {
   flex: 1;
   overflow: auto;
   min-height: 320px;
+  min-width: 0;
+}
+
+.slx-theater-preview-body-html {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.slx-theater-preview-body-text {
+  overflow: auto;
 }
 
 /* 文字小剧场正文区 */
@@ -4894,7 +4914,67 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-generated-text {
-  white-space: pre-wrap;
+  white-space: normal;
+}
+
+.slx-theater-generated-text p {
+  margin: 0 0 0.95em;
+}
+
+.slx-theater-generated-text h1,
+.slx-theater-generated-text h2,
+.slx-theater-generated-text h3,
+.slx-theater-generated-text h4,
+.slx-theater-generated-text h5,
+.slx-theater-generated-text h6 {
+  color: #5d392f;
+  font-weight: 800;
+  line-height: 1.35;
+  margin: 0 0 0.75em;
+}
+
+.slx-theater-generated-text h1 { font-size: 22px; }
+.slx-theater-generated-text h2 { font-size: 19px; }
+.slx-theater-generated-text h3 { font-size: 17px; }
+.slx-theater-generated-text h4,
+.slx-theater-generated-text h5,
+.slx-theater-generated-text h6 { font-size: 15px; }
+
+.slx-theater-generated-text ul,
+.slx-theater-generated-text ol {
+  margin: 0 0 1em 1.35em;
+  padding: 0;
+}
+
+.slx-theater-generated-text li {
+  margin: 0.25em 0;
+}
+
+.slx-theater-generated-text blockquote {
+  margin: 0 0 1em;
+  padding: 0.7em 1em;
+  border-left: 3px solid rgba(139, 75, 67, 0.34);
+  background: rgba(139, 75, 67, 0.08);
+  color: #5f4539;
+}
+
+.slx-theater-generated-text code {
+  padding: 0.08em 0.35em;
+  border-radius: 5px;
+  background: rgba(139, 75, 67, 0.1);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.slx-theater-generated-text hr {
+  margin: 1.4em 0;
+  border: 0;
+  border-top: 1px solid rgba(139, 75, 67, 0.2);
+}
+
+.slx-theater-generated-text a {
+  color: #8b4b43;
+  text-decoration: underline;
 }
 
 .slx-theater-text-placeholder {
@@ -4905,14 +4985,14 @@ body.slx-panel-open-lock {
 
 /* HTML 小剧场 iframe 区 */
 .slx-theater-iframe-wrap {
-  min-height: 420px;
+  min-height: 0;
   height: 100%;
 }
 
 .slx-theater-iframe {
   width: 100%;
   height: 100%;
-  min-height: 420px;
+  min-height: 0;
   border: none;
   display: block;
   background: #fff;
@@ -4947,7 +5027,9 @@ body.slx-panel-open-lock {
 
 @media (max-width: 640px) {
   .slx-theater-preview {
-    max-height: 92%;
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
     border-radius: 10px;
   }
 

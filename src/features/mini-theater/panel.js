@@ -148,6 +148,91 @@ function detectTheaterResultType(content) {
     : "text";
 }
 
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/`/g, "&#96;");
+}
+
+function renderMarkdownInline(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+  html = html.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
+  html = html.replace(/_([^_\n]+)_/g, "<em>$1</em>");
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  return html;
+}
+
+function renderMarkdownText(markdown) {
+  const lines = String(markdown || "").replace(/\r\n/g, "\n").split("\n");
+  const output = [];
+  let listType = "";
+
+  const closeList = () => {
+    if (!listType) return;
+    output.push(`</${listType}>`);
+    listType = "";
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeList();
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      closeList();
+      const level = Math.min(6, heading[1].length);
+      output.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    if (/^([-*_])(?:\s*\1){2,}$/.test(trimmed)) {
+      closeList();
+      output.push("<hr>");
+      continue;
+    }
+
+    const quote = trimmed.match(/^>\s?(.*)$/);
+    if (quote) {
+      closeList();
+      output.push(`<blockquote>${renderMarkdownInline(quote[1])}</blockquote>`);
+      continue;
+    }
+
+    const unordered = trimmed.match(/^[-*]\s+(.+)$/);
+    if (unordered) {
+      if (listType !== "ul") {
+        closeList();
+        output.push("<ul>");
+        listType = "ul";
+      }
+      output.push(`<li>${renderMarkdownInline(unordered[1])}</li>`);
+      continue;
+    }
+
+    const ordered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    if (ordered) {
+      if (listType !== "ol") {
+        closeList();
+        output.push("<ol>");
+        listType = "ol";
+      }
+      output.push(`<li>${renderMarkdownInline(ordered[1])}</li>`);
+      continue;
+    }
+
+    closeList();
+    output.push(`<p>${renderMarkdownInline(trimmed)}</p>`);
+  }
+
+  closeList();
+  return output.join("\n");
+}
+
 function buildMiniTheaterPrompt({ userPrompt, contextMaterial }) {
   return [
     "当前蜃灵已进入小剧场专属梦境，小剧场内容须严格尊重梦境素材中的角色设定、关系、世界信息、近期剧情与情感档案。",
@@ -822,11 +907,17 @@ function renderPreviewOverlay() {
        </div>`
     : result.resultType === "html"
       ? `<div class="slx-theater-iframe-wrap">
-           <iframe class="slx-theater-iframe" sandbox="" srcdoc="${escapeHtml(result.resultContent)}"></iframe>
+           <iframe class="slx-theater-iframe" sandbox="" srcdoc="${escapeAttribute(result.resultContent)}"></iframe>
          </div>`
-      : `<div class="slx-theater-text-body slx-theater-generated-text">${escapeHtml(result.resultContent)}</div>`;
+      : `<div class="slx-theater-text-body slx-theater-generated-text">${renderMarkdownText(result.resultContent)}</div>`;
+  const bodyClass = [
+    "slx-theater-preview-body",
+    result?.resultType === "html"
+      ? "slx-theater-preview-body-html"
+      : "slx-theater-preview-body-text",
+  ].join(" ");
   return `
-    <div class="slx-theater-overlay" data-theater-overlay role="dialog" aria-modal="true" aria-label="小剧场预览">
+    <div class="slx-theater-overlay slx-theater-preview-overlay" data-theater-overlay role="dialog" aria-modal="true" aria-label="小剧场预览">
       <div class="slx-theater-preview">
         <div class="slx-theater-preview-header">
           <div class="slx-theater-preview-title-wrap">
@@ -835,7 +926,7 @@ function renderPreviewOverlay() {
           </div>
           <button class="slx-icon-btn" type="button" data-theater-close-preview aria-label="关闭预览">×</button>
         </div>
-        <div class="slx-theater-preview-body">
+        <div class="${bodyClass}">
           ${body}
         </div>
         <div class="slx-theater-preview-footer">
