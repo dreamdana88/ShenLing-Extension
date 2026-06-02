@@ -4569,9 +4569,28 @@ body.slx-panel-open-lock {
    ═══════════════════════════════════════════════════════ */
 
 .slx-theater-root {
+  --slx-theater-control-bg: rgba(255, 250, 244, 0.66);
+  --slx-theater-control-bg-focus: rgba(255, 253, 248, 0.9);
+  --slx-theater-control-border: rgba(139, 75, 67, 0.18);
+  --slx-theater-control-border-focus: rgba(139, 75, 67, 0.34);
+  --slx-theater-control-text: #4f3926;
+  --slx-theater-control-placeholder: rgba(91, 61, 49, 0.48);
+  --slx-theater-control-shadow: inset 0 1px 8px rgba(112, 66, 48, 0.05);
+  --slx-theater-control-ring: 0 0 0 2px rgba(139, 75, 67, 0.08);
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.slx-panel[data-theme='dark'] .slx-theater-root {
+  --slx-theater-control-bg: rgba(14, 34, 53, 0.72);
+  --slx-theater-control-bg-focus: rgba(18, 44, 68, 0.9);
+  --slx-theater-control-border: rgba(100, 180, 210, 0.16);
+  --slx-theater-control-border-focus: rgba(100, 180, 210, 0.34);
+  --slx-theater-control-text: rgba(222, 244, 250, 0.96);
+  --slx-theater-control-placeholder: rgba(150, 198, 220, 0.5);
+  --slx-theater-control-shadow: inset 0 1px 8px rgba(2, 10, 20, 0.18);
+  --slx-theater-control-ring: 0 0 0 2px rgba(100, 180, 210, 0.12);
 }
 
 /* 顶部固定区：角色/聊天 + API 胶囊 */
@@ -4704,17 +4723,17 @@ body.slx-panel-open-lock {
 /* 提示词 textarea */
 .slx-theater-prompt-textarea {
   width: 100%;
-  background: #fff8ee;
-  border: 1px solid rgba(139, 75, 67, 0.22);
-  border-radius: 8px;
-  box-shadow: inset 0 1px 7px rgba(112, 66, 48, 0.06);
+  background: var(--slx-theater-control-bg);
+  border: 1px solid var(--slx-theater-control-border);
+  border-radius: 12px;
+  box-shadow: var(--slx-theater-control-shadow);
   box-sizing: border-box;
-  padding: 11px 12px;
+  padding: 12px 14px;
   font-size: 13px;
   font-family: inherit;
   line-height: 1.7;
-  color: #4f3926;
-  caret-color: #8b4b43;
+  color: var(--slx-theater-control-text);
+  caret-color: var(--slx-theater-control-text);
   resize: vertical;
   min-height: 132px;
   outline: none;
@@ -4723,15 +4742,15 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-prompt-textarea:focus {
-  background: #fffdf8;
-  border-color: rgba(139, 75, 67, 0.38);
+  background: var(--slx-theater-control-bg-focus);
+  border-color: var(--slx-theater-control-border-focus);
   box-shadow:
-    inset 0 1px 7px rgba(112, 66, 48, 0.06),
-    0 0 0 2px rgba(139, 75, 67, 0.08);
+    var(--slx-theater-control-shadow),
+    var(--slx-theater-control-ring);
 }
 
 .slx-theater-prompt-textarea::placeholder {
-  color: rgba(91, 61, 49, 0.5);
+  color: var(--slx-theater-control-placeholder);
 }
 
 .slx-theater-prompt-textarea::selection {
@@ -4759,20 +4778,6 @@ body.slx-panel-open-lock {
   color: rgba(128, 95, 86, 0.56);
   margin: 0;
   text-align: center;
-}
-
-.slx-panel[data-theme='dark'] .slx-theater-prompt-textarea {
-  background: rgba(255, 250, 242, 0.92);
-  border-color: rgba(120, 184, 210, 0.2);
-  box-shadow: inset 0 1px 7px rgba(6, 18, 30, 0.12);
-}
-
-.slx-panel[data-theme='dark'] .slx-theater-prompt-textarea:focus {
-  background: rgba(255, 252, 247, 0.96);
-  border-color: rgba(120, 184, 210, 0.38);
-  box-shadow:
-    inset 0 1px 7px rgba(6, 18, 30, 0.1),
-    0 0 0 2px rgba(100, 180, 210, 0.12);
 }
 
 .slx-panel[data-theme='dark'] .slx-theater-generate-btn {
@@ -4950,35 +4955,65 @@ body.slx-panel-open-lock {
   flex: 1;
   min-width: 0;
   height: 32px;
-  padding: 0 10px;
-  background: var(--slx-bg-input);
-  border: 1px solid var(--slx-border-dim);
-  border-radius: 7px;
+  padding: 0 12px;
+  background: var(--slx-theater-control-bg);
+  border: 1px solid var(--slx-theater-control-border);
+  border-radius: 12px;
+  box-shadow: var(--slx-theater-control-shadow);
   font: inherit;
   font-size: 12px;
-  color: var(--slx-text);
+  color: var(--slx-theater-control-text);
+  caret-color: var(--slx-theater-control-text);
   outline: none;
-  transition: border-color 0.15s;
+  appearance: none;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .slx-theater-search-input:focus {
-  border-color: var(--slx-border);
+  background: var(--slx-theater-control-bg-focus);
+  border-color: var(--slx-theater-control-border-focus);
+  box-shadow:
+    var(--slx-theater-control-shadow),
+    var(--slx-theater-control-ring);
 }
 .slx-theater-search-input::placeholder {
-  color: var(--slx-muted);
+  color: var(--slx-theater-control-placeholder);
 }
 
 .slx-theater-sort-select {
   height: 32px;
-  padding: 0 8px;
-  background: var(--slx-bg-input);
-  border: 1px solid var(--slx-border-dim);
-  border-radius: 7px;
+  padding: 0 30px 0 10px;
+  background-color: var(--slx-theater-control-bg);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  border: 1px solid var(--slx-theater-control-border);
+  border-radius: 12px;
+  box-shadow: var(--slx-theater-control-shadow);
   font: inherit;
   font-size: 12px;
-  color: var(--slx-text);
+  color: var(--slx-theater-control-text);
   outline: none;
   cursor: pointer;
+  appearance: none;
   flex-shrink: 0;
+}
+
+.slx-theater-sort-select:focus {
+  background-color: var(--slx-theater-control-bg-focus);
+  border-color: var(--slx-theater-control-border-focus);
+  box-shadow:
+    var(--slx-theater-control-shadow),
+    var(--slx-theater-control-ring);
+}
+
+.slx-theater-sort-select option {
+  background: var(--slx-theater-control-bg-focus);
+  color: var(--slx-theater-control-text);
 }
 
 /* ── 文件夹 chip 筛选栏 ── */
@@ -5219,6 +5254,18 @@ body.slx-panel-open-lock {
   gap: 5px;
 }
 
+.slx-theater-modal-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.slx-theater-modal-prompt-form .slx-theater-modal-body > .slx-theater-form-field {
+  min-height: 0;
+  flex: 1;
+}
+
 .slx-theater-form-field label {
   font-size: 12px;
   font-weight: 600;
@@ -5228,55 +5275,82 @@ body.slx-panel-open-lock {
 .slx-theater-text-input {
   width: 100%;
   height: 34px;
-  padding: 0 10px;
-  background: #fff8ee;
-  border: 1px solid rgba(139, 75, 67, 0.22);
-  border-radius: 7px;
+  padding: 0 12px;
+  background: var(--slx-theater-control-bg);
+  border: 1px solid var(--slx-theater-control-border);
+  border-radius: 12px;
+  box-shadow: var(--slx-theater-control-shadow);
   font: inherit;
   font-size: 12.5px;
-  color: #4f3926;
-  caret-color: #8b4b43;
+  color: var(--slx-theater-control-text);
+  caret-color: var(--slx-theater-control-text);
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  appearance: none;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .slx-theater-text-input:focus {
-  background: #fffdf8;
-  border-color: rgba(139, 75, 67, 0.38);
-  box-shadow: 0 0 0 2px rgba(139, 75, 67, 0.08);
+  background: var(--slx-theater-control-bg-focus);
+  border-color: var(--slx-theater-control-border-focus);
+  box-shadow:
+    var(--slx-theater-control-shadow),
+    var(--slx-theater-control-ring);
 }
 .slx-theater-text-input::placeholder {
-  color: rgba(91, 61, 49, 0.5);
+  color: var(--slx-theater-control-placeholder);
 }
 
 .slx-theater-select {
   width: 100%;
   height: 34px;
-  padding: 0 10px;
-  background: #fff8ee;
-  border: 1px solid rgba(139, 75, 67, 0.22);
-  border-radius: 7px;
+  padding: 0 32px 0 12px;
+  background-color: var(--slx-theater-control-bg);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 50%,
+    calc(100% - 12px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  border: 1px solid var(--slx-theater-control-border);
+  border-radius: 12px;
+  box-shadow: var(--slx-theater-control-shadow);
   font: inherit;
   font-size: 12.5px;
-  color: #4f3926;
+  color: var(--slx-theater-control-text);
   outline: none;
   cursor: pointer;
+  appearance: none;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 .slx-theater-select:focus {
-  background: #fffdf8;
-  border-color: rgba(139, 75, 67, 0.38);
-  box-shadow: 0 0 0 2px rgba(139, 75, 67, 0.08);
+  background-color: var(--slx-theater-control-bg-focus);
+  border-color: var(--slx-theater-control-border-focus);
+  box-shadow:
+    var(--slx-theater-control-shadow),
+    var(--slx-theater-control-ring);
 }
 
 .slx-theater-select option {
-  background: #fff8ee;
-  color: #4f3926;
+  background: var(--slx-theater-control-bg-focus);
+  color: var(--slx-theater-control-text);
 }
 
 .slx-theater-modal-textarea {
   min-height: clamp(300px, 48vh, 520px);
   flex: 1;
   resize: vertical;
+}
+
+@media (max-width: 640px) {
+  .slx-theater-modal-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .slx-theater-modal-textarea {
+    min-height: clamp(240px, 42vh, 420px);
+  }
 }
 
 .slx-theater-modal-header .slx-icon-btn,
@@ -5321,30 +5395,6 @@ body.slx-panel-open-lock {
 .slx-panel[data-theme='dark'] .slx-theater-modal-title,
 .slx-panel[data-theme='dark'] .slx-theater-form-field label {
   color: rgba(222, 244, 250, 0.94);
-}
-
-.slx-panel[data-theme='dark'] .slx-theater-text-input,
-.slx-panel[data-theme='dark'] .slx-theater-select {
-  background: rgba(12, 31, 50, 0.86);
-  border-color: rgba(100, 180, 210, 0.16);
-  color: rgba(222, 244, 250, 0.96);
-  caret-color: rgba(222, 244, 250, 0.96);
-}
-
-.slx-panel[data-theme='dark'] .slx-theater-text-input:focus,
-.slx-panel[data-theme='dark'] .slx-theater-select:focus {
-  background: rgba(16, 42, 66, 0.94);
-  border-color: rgba(100, 180, 210, 0.34);
-  box-shadow: 0 0 0 2px rgba(100, 180, 210, 0.12);
-}
-
-.slx-panel[data-theme='dark'] .slx-theater-text-input::placeholder {
-  color: rgba(150, 198, 220, 0.52);
-}
-
-.slx-panel[data-theme='dark'] .slx-theater-select option {
-  background: #102a42;
-  color: rgba(222, 244, 250, 0.96);
 }
 
 .slx-panel[data-theme='dark'] .slx-theater-modal-header .slx-icon-btn,

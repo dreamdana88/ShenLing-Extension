@@ -273,11 +273,22 @@ function renderModalContent() {
         <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
       </div>
       <div class="slx-theater-modal-body">
-        <div class="slx-theater-form-field">
-          <label for="slx-theater-modal-name">名称</label>
-          <input id="slx-theater-modal-name" type="text" class="slx-theater-text-input"
-            value="${escapeHtml(m.fields.name)}" placeholder="给提示词起个名字…"
-            data-theater-modal-field="name" maxlength="60" autocomplete="off">
+        <div class="slx-theater-modal-form-row">
+          <div class="slx-theater-form-field">
+            <label for="slx-theater-modal-name">名称</label>
+            <input id="slx-theater-modal-name" type="text" class="slx-theater-text-input"
+              value="${escapeHtml(m.fields.name)}" placeholder="给提示词起个名字…"
+              data-theater-modal-field="name" maxlength="60" autocomplete="off">
+          </div>
+          <div class="slx-theater-form-field slx-theater-folder-field">
+            <label for="slx-theater-modal-folder">文件夹</label>
+            <select id="slx-theater-modal-folder" class="slx-theater-select" data-theater-modal-field="folderId">
+              <option value="" ${!m.fields.folderId ? 'selected' : ''}>未分类</option>
+              ${mt.folders.map(f => `
+                <option value="${escapeHtml(f.id)}" ${m.fields.folderId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>
+              `).join('')}
+            </select>
+          </div>
         </div>
         <div class="slx-theater-form-field">
           <label for="slx-theater-modal-content">内容</label>
@@ -285,15 +296,6 @@ function renderModalContent() {
             placeholder="提示词正文…"
             data-theater-modal-field="content"
           >${escapeHtml(m.fields.content)}</textarea>
-        </div>
-        <div class="slx-theater-form-field">
-          <label for="slx-theater-modal-folder">文件夹</label>
-          <select id="slx-theater-modal-folder" class="slx-theater-select" data-theater-modal-field="folderId">
-            <option value="" ${!m.fields.folderId ? 'selected' : ''}>未分类</option>
-            ${mt.folders.map(f => `
-              <option value="${escapeHtml(f.id)}" ${m.fields.folderId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>
-            `).join('')}
-          </select>
         </div>
       </div>
       <div class="slx-theater-modal-footer">
