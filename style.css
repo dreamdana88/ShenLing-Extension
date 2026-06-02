@@ -4569,16 +4569,16 @@ body.slx-panel-open-lock {
    ═══════════════════════════════════════════════════════ */
 
 .slx-theater-root {
-  --slx-theater-control-bg: rgba(255, 250, 244, 0.94);
-  --slx-theater-control-bg-focus: rgba(255, 253, 248, 0.98);
-  --slx-theater-control-border: rgba(139, 75, 67, 0.16);
-  --slx-theater-control-border-focus: rgba(139, 75, 67, 0.34);
+  --slx-theater-control-bg: #fff0df;
+  --slx-theater-control-bg-focus: #fff7eb;
+  --slx-theater-control-border: rgba(176, 116, 92, 0.24);
+  --slx-theater-control-border-focus: rgba(156, 88, 68, 0.42);
   --slx-theater-control-text: #4f3926;
-  --slx-theater-control-placeholder: rgba(91, 61, 49, 0.48);
+  --slx-theater-control-placeholder: rgba(112, 78, 66, 0.56);
   --slx-theater-control-shadow:
-    inset 0 1px 8px rgba(112, 66, 48, 0.04),
-    0 1px 0 rgba(255, 255, 255, 0.46);
-  --slx-theater-control-ring: 0 0 0 2px rgba(139, 75, 67, 0.08);
+    inset 0 1px 8px rgba(112, 66, 48, 0.06),
+    0 1px 0 rgba(255, 255, 255, 0.5);
+  --slx-theater-control-ring: 0 0 0 2px rgba(156, 88, 68, 0.1);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -4595,6 +4595,14 @@ body.slx-panel-open-lock {
     inset 0 1px 8px rgba(2, 10, 20, 0.18),
     0 1px 0 rgba(255, 255, 255, 0.03);
   --slx-theater-control-ring: 0 0 0 2px rgba(100, 180, 210, 0.12);
+}
+
+.slx-panel[data-theme='dark'] .slx-theater-prompt-textarea,
+.slx-panel[data-theme='dark'] .slx-theater-search-input,
+.slx-panel[data-theme='dark'] .slx-theater-sort-select,
+.slx-panel[data-theme='dark'] .slx-theater-text-input,
+.slx-panel[data-theme='dark'] .slx-theater-select {
+  color-scheme: dark;
 }
 
 /* 顶部固定区：角色/聊天 + API 胶囊 */
@@ -4727,7 +4735,7 @@ body.slx-panel-open-lock {
 /* 提示词 textarea */
 .slx-theater-prompt-textarea {
   width: 100%;
-  background: var(--slx-theater-control-bg);
+  background: var(--slx-theater-control-bg) !important;
   border: 1px solid var(--slx-theater-control-border);
   border-radius: 14px;
   box-shadow: var(--slx-theater-control-shadow);
@@ -4742,11 +4750,12 @@ body.slx-panel-open-lock {
   min-height: 132px;
   outline: none;
   appearance: none;
+  color-scheme: light;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 .slx-theater-prompt-textarea:focus {
-  background: var(--slx-theater-control-bg-focus);
+  background: var(--slx-theater-control-bg-focus) !important;
   border-color: var(--slx-theater-control-border-focus);
   box-shadow:
     var(--slx-theater-control-shadow),
@@ -4960,7 +4969,7 @@ body.slx-panel-open-lock {
   min-width: 0;
   height: 32px;
   padding: 0 12px;
-  background: var(--slx-theater-control-bg);
+  background: var(--slx-theater-control-bg) !important;
   border: 1px solid var(--slx-theater-control-border);
   border-radius: 12px;
   box-shadow: var(--slx-theater-control-shadow);
@@ -4971,11 +4980,12 @@ body.slx-panel-open-lock {
   outline: none;
   appearance: none;
   -webkit-appearance: none;
+  color-scheme: light;
   box-sizing: border-box;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .slx-theater-search-input:focus {
-  background: var(--slx-theater-control-bg-focus);
+  background: var(--slx-theater-control-bg-focus) !important;
   border-color: var(--slx-theater-control-border-focus);
   box-shadow:
     var(--slx-theater-control-shadow),
@@ -4989,7 +4999,7 @@ body.slx-panel-open-lock {
   height: 32px;
   min-width: 92px;
   padding: 0 30px 0 10px;
-  background-color: var(--slx-theater-control-bg);
+  background-color: var(--slx-theater-control-bg) !important;
   background-image:
     linear-gradient(45deg, transparent 50%, currentColor 50%),
     linear-gradient(135deg, currentColor 50%, transparent 50%);
@@ -5008,13 +5018,14 @@ body.slx-panel-open-lock {
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
+  color-scheme: light;
   box-sizing: border-box;
   line-height: 30px;
   flex-shrink: 0;
 }
 
 .slx-theater-sort-select:focus {
-  background-color: var(--slx-theater-control-bg-focus);
+  background-color: var(--slx-theater-control-bg-focus) !important;
   border-color: var(--slx-theater-control-border-focus);
   box-shadow:
     var(--slx-theater-control-shadow),
@@ -5299,7 +5310,7 @@ body.slx-panel-open-lock {
   width: 100%;
   height: 34px;
   padding: 0 12px;
-  background: var(--slx-theater-control-bg);
+  background: var(--slx-theater-control-bg) !important;
   border: 1px solid var(--slx-theater-control-border);
   border-radius: 12px;
   box-shadow: var(--slx-theater-control-shadow);
@@ -5310,11 +5321,12 @@ body.slx-panel-open-lock {
   outline: none;
   appearance: none;
   -webkit-appearance: none;
+  color-scheme: light;
   box-sizing: border-box;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .slx-theater-text-input:focus {
-  background: var(--slx-theater-control-bg-focus);
+  background: var(--slx-theater-control-bg-focus) !important;
   border-color: var(--slx-theater-control-border-focus);
   box-shadow:
     var(--slx-theater-control-shadow),
@@ -5328,7 +5340,7 @@ body.slx-panel-open-lock {
   width: 100%;
   height: 34px;
   padding: 0 32px 0 12px;
-  background-color: var(--slx-theater-control-bg);
+  background-color: var(--slx-theater-control-bg) !important;
   background-image:
     linear-gradient(45deg, transparent 50%, currentColor 50%),
     linear-gradient(135deg, currentColor 50%, transparent 50%);
@@ -5347,13 +5359,14 @@ body.slx-panel-open-lock {
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
+  color-scheme: light;
   box-sizing: border-box;
   line-height: 32px;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 .slx-theater-select:focus {
-  background-color: var(--slx-theater-control-bg-focus);
+  background-color: var(--slx-theater-control-bg-focus) !important;
   border-color: var(--slx-theater-control-border-focus);
   box-shadow:
     var(--slx-theater-control-shadow),
