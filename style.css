@@ -4704,10 +4704,10 @@ body.slx-panel-open-lock {
 /* 提示词 textarea */
 .slx-theater-prompt-textarea {
   width: 100%;
-  background: rgba(255, 250, 242, 0.74);
+  background: #fff8ee;
   border: 1px solid rgba(139, 75, 67, 0.22);
   border-radius: 8px;
-  box-shadow: inset 0 1px 7px rgba(112, 66, 48, 0.08);
+  box-shadow: inset 0 1px 7px rgba(112, 66, 48, 0.06);
   box-sizing: border-box;
   padding: 11px 12px;
   font-size: 13px;
@@ -4723,7 +4723,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-prompt-textarea:focus {
-  background: rgba(255, 252, 247, 0.9);
+  background: #fffdf8;
   border-color: rgba(139, 75, 67, 0.38);
   box-shadow:
     inset 0 1px 7px rgba(112, 66, 48, 0.06),
@@ -4741,24 +4741,55 @@ body.slx-panel-open-lock {
 
 .slx-theater-generate-btn {
   min-width: 292px;
+  border-color: rgba(186, 148, 133, 0.28);
+  background: rgba(255, 246, 238, 0.78);
+  color: #7a4a3a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.slx-theater-generate-btn:hover:not(:disabled) {
+  border-color: rgba(186, 148, 133, 0.44);
+  background: rgba(255, 238, 228, 0.92);
+  color: #5f382e;
+}
+
+/* 生成说明文字 */
+.slx-theater-gen-note {
+  font-size: 11px;
+  color: rgba(128, 95, 86, 0.56);
+  margin: 0;
+  text-align: center;
+}
+
+.slx-panel[data-theme='dark'] .slx-theater-prompt-textarea {
+  background: rgba(255, 250, 242, 0.92);
+  border-color: rgba(120, 184, 210, 0.2);
+  box-shadow: inset 0 1px 7px rgba(6, 18, 30, 0.12);
+}
+
+.slx-panel[data-theme='dark'] .slx-theater-prompt-textarea:focus {
+  background: rgba(255, 252, 247, 0.96);
+  border-color: rgba(120, 184, 210, 0.38);
+  box-shadow:
+    inset 0 1px 7px rgba(6, 18, 30, 0.1),
+    0 0 0 2px rgba(100, 180, 210, 0.12);
+}
+
+.slx-panel[data-theme='dark'] .slx-theater-generate-btn {
   border-color: rgba(120, 184, 210, 0.3);
   background: rgba(45, 77, 96, 0.62);
   color: rgba(222, 244, 250, 0.94);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-.slx-theater-generate-btn:hover:not(:disabled) {
+.slx-panel[data-theme='dark'] .slx-theater-generate-btn:hover:not(:disabled) {
   border-color: rgba(120, 184, 210, 0.48);
   background: rgba(54, 91, 112, 0.76);
   color: #f3fbfd;
 }
 
-/* 生成说明文字 */
-.slx-theater-gen-note {
-  font-size: 11px;
+.slx-panel[data-theme='dark'] .slx-theater-gen-note {
   color: rgba(180, 214, 224, 0.72);
-  margin: 0;
-  text-align: center;
 }
 
 /* ── 预览弹窗 ── */
