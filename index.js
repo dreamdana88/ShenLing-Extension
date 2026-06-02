@@ -454,7 +454,6 @@ function createModuleButton(module, settings) {
     <span class="slx-module-short">${escapeHtml(module.shortTitle || module.title)}</span>
     <span class="slx-module-text">
       <b>${escapeHtml(module.title)}</b>
-      <small>${escapeHtml(module.desc)}</small>
     </span>
   `;
   return button;

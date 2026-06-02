@@ -437,8 +437,8 @@ body.slx-panel-open-lock {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.25fr);
-  gap: 10px;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px;
   padding: 10px;
 }
 
@@ -464,29 +464,28 @@ body.slx-panel-open-lock {
 .slx-module-grid {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding-right: 2px;
+  gap: 4px;
+  padding-right: 4px;
 }
 
 .slx-module-btn {
   width: 100%;
-  min-height: 58px;
+  min-height: 44px;
   border: 1px solid transparent;
-  border-radius: 12px;
-  background: var(--slx-bg-card);
+  border-radius: 8px;
+  background: transparent;
   color: var(--slx-text);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
+  gap: 9px;
+  padding: 8px 9px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.2s, border-color 0.2s, transform 0.2s;
+  transition: background 0.16s, border-color 0.16s, color 0.16s;
 }
 
 .slx-module-btn:hover {
-  background: var(--slx-bg-card-hover);
-  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .slx-module-btn-active {
@@ -495,8 +494,8 @@ body.slx-panel-open-lock {
 }
 
 .slx-module-icon {
-  font-size: 18px;
-  width: 24px;
+  font-size: 17px;
+  width: 22px;
   flex-shrink: 0;
   text-align: center;
 }
@@ -509,20 +508,13 @@ body.slx-panel-open-lock {
   min-width: 0;
 }
 
-.slx-module-text b,
-.slx-module-text small {
-  display: block;
-}
-
 .slx-module-text b {
+  display: block;
   font-size: 13px;
-}
-
-.slx-module-text small {
-  color: var(--slx-muted);
-  font-size: 11px;
-  line-height: 1.35;
-  margin-top: 2px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .slx-detail {
