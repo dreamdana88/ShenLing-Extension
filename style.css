@@ -4727,12 +4727,49 @@ body.slx-panel-open-lock {
   color: #5f382e;
 }
 
+.slx-theater-generate-btn.is-running {
+  cursor: wait;
+}
+
+.slx-theater-generate-btn.is-running::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: slx-theater-spin 0.8s linear infinite;
+}
+
+.slx-theater-generate-btn.is-success {
+  border-color: rgba(82, 150, 112, 0.38);
+  background: rgba(225, 244, 231, 0.9);
+  color: #3d7656;
+}
+
+.slx-theater-generate-btn.is-failed {
+  border-color: rgba(178, 80, 72, 0.34);
+}
+
+@keyframes slx-theater-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* 生成说明文字 */
 .slx-theater-gen-note {
   font-size: 11px;
   color: rgba(128, 95, 86, 0.56);
   margin: 0;
   text-align: center;
+}
+
+.slx-theater-gen-note.is-error {
+  color: #a34a43;
 }
 
 .slx-panel[data-theme='dark'] .slx-theater-generate-btn {
@@ -4750,6 +4787,10 @@ body.slx-panel-open-lock {
 
 .slx-panel[data-theme='dark'] .slx-theater-gen-note {
   color: rgba(180, 214, 224, 0.72);
+}
+
+.slx-panel[data-theme='dark'] .slx-theater-gen-note.is-error {
+  color: rgba(246, 170, 162, 0.94);
 }
 
 /* ── 预览弹窗 ── */
@@ -4811,6 +4852,21 @@ body.slx-panel-open-lock {
   color: #6b3a2e;
 }
 
+.slx-theater-preview-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.slx-theater-preview-meta {
+  color: rgba(128, 95, 86, 0.62);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .slx-theater-preview-header .slx-icon-btn {
   background: rgba(255, 246, 238, 0.82);
   border-color: rgba(139, 75, 67, 0.14);
@@ -4837,6 +4893,10 @@ body.slx-panel-open-lock {
   color: #4f3926;
 }
 
+.slx-theater-generated-text {
+  white-space: pre-wrap;
+}
+
 .slx-theater-text-placeholder {
   color: rgba(91, 61, 49, 0.58);
   font-size: 13px;
@@ -4845,16 +4905,17 @@ body.slx-panel-open-lock {
 
 /* HTML 小剧场 iframe 区 */
 .slx-theater-iframe-wrap {
-  min-height: 240px;
+  min-height: 420px;
   height: 100%;
 }
 
 .slx-theater-iframe {
   width: 100%;
   height: 100%;
-  min-height: 240px;
+  min-height: 420px;
   border: none;
   display: block;
+  background: #fff;
 }
 
 .slx-theater-preview-footer {
@@ -5345,6 +5406,22 @@ body.slx-panel-open-lock {
 #shenling-assistant-panel-root .slx-theater-sort-select option {
   background: var(--slx-bg-panel);
   color: var(--slx-input-text);
+}
+
+#shenling-assistant-panel-root .slx-theater-select option:checked,
+#shenling-assistant-panel-root .slx-theater-sort-select option:checked {
+  background: color-mix(in srgb, var(--slx-accent) 38%, var(--slx-input-bg));
+  color: var(--slx-input-text);
+}
+
+.slx-panel[data-theme='light'] .slx-theater-select,
+.slx-panel[data-theme='light'] .slx-theater-sort-select {
+  color-scheme: light;
+}
+
+.slx-panel[data-theme='dark'] .slx-theater-select,
+.slx-panel[data-theme='dark'] .slx-theater-sort-select {
+  color-scheme: dark;
 }
 
 /* ── 从库选择弹窗 ── */

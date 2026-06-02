@@ -1124,6 +1124,9 @@ function init() {
     refreshPanel: renderFloatingPanel,
   });
   configureMiniTheaterPanel({
+    addCommunicationLog,
+    getActiveApiProfile,
+    getGenerateRawFunction,
     refreshPanel: renderFloatingPanel,
   });
   configureSummaryWorkflow({

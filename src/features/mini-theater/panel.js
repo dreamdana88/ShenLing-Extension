@@ -1,18 +1,40 @@
 import {
   escapeHtml,
+  formatTimestamp,
 } from '../../utils/text.js';
+import {
+  buildApiUrl,
+} from '../../core/api.js';
+import {
+  resolveShenlingContext,
+  formatShenlingContextForPrompt,
+} from '../../core/context-resolver.js';
+import {
+  replacePromptMessageMacros,
+} from '../../core/macros.js';
 import {
   getContextInfo,
   getGlobalSettings,
   saveGlobalSettings,
 } from '../../core/settings.js';
+import {
+  getOpenAiResponseContent,
+} from '../../core/summary.js';
+import {
+  SUMMARY_SUPPORT_MESSAGES,
+} from '../../prompts.js';
 
 let panelOptions = {
+  addCommunicationLog: null,
+  getActiveApiProfile: null,
+  getGenerateRawFunction: null,
   refreshPanel: null,
 };
 
 let promptSearchRefreshTimer = null;
 let pickSearchRefreshTimer = null;
+
+const THEATER_GENERATION_TIMEOUT_MS = 120000;
 
 // 跨渲染持久化的面板本地状态
 let panelState = {
@@ -20,6 +42,9 @@ let panelState = {
   previewOpen: false,
   promptText: '',
   promptSource: null,      // { id, name } | null
+  generationStatus: 'idle',// 'idle' | 'running' | 'success' | 'failed'
+  generationError: '',
+  result: null,
   promptSearch: '',
   promptSortBy: 'newest',  // 'newest' | 'name'
   promptFolderFilter: null,// folderId | null（null = 全部）
@@ -43,6 +68,11 @@ function refreshPanel() {
   if (typeof panelOptions.refreshPanel === 'function') {
     panelOptions.refreshPanel();
   }
+}
+
+function getPanelOption(name) {
+  const value = panelOptions[name];
+  return typeof value === 'function' ? value : null;
 }
 
 function refreshPanelDebounced(kind, delay = 450) {
@@ -96,6 +126,254 @@ function getFilteredSortedPrompts(prompts, { search, folderId, sortBy }) {
     result.sort((a, b) => ((b.createdAt || '') > (a.createdAt || '') ? 1 : -1));
   }
   return result;
+}
+
+function withTimeout(promise, timeoutMs = THEATER_GENERATION_TIMEOUT_MS) {
+  let timer = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('小剧场生成超时，请稍后重试。')), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
+function stripMarkdownFence(text) {
+  const raw = String(text || '').trim();
+  const matched = raw.match(/^```(?:html|HTML|text|txt)?\s*([\s\S]*?)\s*```$/);
+  return (matched?.[1] || raw).trim();
+}
+
+function detectTheaterResultType(content) {
+  const text = String(content || '').trim();
+  return /(?:<!doctype\s+html|<html[\s>]|<head[\s>]|<body[\s>]|<style[\s>]|<section[\s>]|<article[\s>]|<main[\s>]|<div[\s>])/i.test(text)
+    ? 'html'
+    : 'text';
+}
+
+function buildMiniTheaterPrompt({ userPrompt, contextMaterial, info }) {
+  return [
+    '你正在生成“蜃灵助手 / 小剧场模式”的番外侧幕。',
+    '小剧场不写入主线聊天楼层，但必须严格尊重后台上下文中的角色设定、关系、世界信息、近期剧情与情感档案。',
+    '请只输出小剧场正文或完整静态 HTML，不要解释你的创作过程，不要输出上下文分析，不要要求用户补充。',
+    '如果用户提示词要求 HTML，请输出可直接渲染的静态 HTML/CSS。不要包含 <script>，不要依赖外部资源。',
+    '如果用户没有要求 HTML，请输出自然的文字小剧场正文。',
+    '',
+    `【当前角色】${info.characterName}`,
+    `【当前聊天】${info.chatName}`,
+    '',
+    `【后台上下文】\n${contextMaterial || '（未读取到额外上下文）'}`,
+    '',
+    `【用户小剧场提示词】\n${userPrompt}`,
+  ].join('\n');
+}
+
+function buildMiniTheaterMessages({ userPrompt, contextMaterial, info }) {
+  return replacePromptMessageMacros([
+    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+    {
+      role: 'user',
+      content: buildMiniTheaterPrompt({ userPrompt, contextMaterial, info }),
+    },
+  ]);
+}
+
+function buildTheaterContextDiagnostics(context = {}) {
+  return {
+    purpose: context.purpose,
+    targetRoleName: context.targetRoleName,
+    recentMessageCount: context.diagnostics?.recentMessageCount ?? 0,
+    memoryCount: context.diagnostics?.memoryCount ?? 0,
+    grandMemoryCount: context.diagnostics?.grandMemoryCount ?? 0,
+    emotionProfileCount: context.diagnostics?.emotionProfileCount ?? 0,
+    worldInfo: context.diagnostics?.worldInfo || {},
+  };
+}
+
+async function requestMiniTheaterMainApi({ messages }) {
+  const generateRaw = getPanelOption('getGenerateRawFunction')?.();
+  if (typeof generateRaw !== 'function') {
+    throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
+  }
+  const requestBody = { prompt: messages };
+  const responseText = await withTimeout(Promise.resolve().then(() => generateRaw(requestBody)));
+  return {
+    profileName: '酒馆当前连接',
+    model: '酒馆主 API',
+    url: '酒馆当前连接',
+    requestBody,
+    responseText: String(responseText || ''),
+  };
+}
+
+async function requestMiniTheaterSecondaryApi({ messages }) {
+  const profile = getPanelOption('getActiveApiProfile')?.(getGlobalSettings());
+  if (!profile) throw new Error('当前环境未提供副 API 配置。');
+  if (!String(profile.model || '').trim()) {
+    throw new Error('请先在设置页选择小剧场生成模型。');
+  }
+  const url = buildApiUrl(profile);
+  const requestBody = {
+    model: String(profile.model).trim(),
+    messages,
+    stream: false,
+  };
+  const headers = { 'Content-Type': 'application/json' };
+  if (String(profile.apiKey || '').trim()) {
+    headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
+  }
+  const response = await withTimeout(fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(requestBody),
+  }));
+  const responseText = await response.text();
+  let responseJson = null;
+  try {
+    responseJson = responseText ? JSON.parse(responseText) : null;
+  } catch {
+    responseJson = null;
+  }
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} ${response.statusText}: ${responseText}`);
+  }
+  return {
+    profileName: profile.name || '未命名副 API',
+    model: profile.model,
+    url,
+    httpStatus: `${response.status} ${response.statusText}`,
+    requestBody,
+    responseText,
+    responseJson,
+  };
+}
+
+async function runMiniTheaterGeneration() {
+  const userPrompt = String(panelState.promptText || '').trim();
+  if (!userPrompt) {
+    throw new Error('请先输入小剧场提示词，或从提示词库选择一条。');
+  }
+
+  const info = getContextInfo();
+  const mt = getMiniTheaterSettings();
+  const apiMode = mt.apiMode;
+  const startedAt = formatTimestamp();
+  const startedMs = performance.now();
+  let messages = [];
+  let requestBody = null;
+  let apiResult = null;
+  let contextDiagnostics = null;
+
+  try {
+    const context = await resolveShenlingContext({
+      purpose: 'miniTheater',
+      targetRoleName: info.characterName,
+      recentMessageLimit: 8,
+      memoryLimit: 4,
+      grandMemoryLimit: 1,
+      includeRecentChat: true,
+      includeMemories: true,
+      includeGrandMemories: true,
+      includeEmotionProfile: true,
+      includeWorldInfo: true,
+      worldInfoMode: 'cache_first',
+    });
+    contextDiagnostics = buildTheaterContextDiagnostics(context);
+    const contextMaterial = formatShenlingContextForPrompt(context, {
+      worldInfoMaterialMode: 'injection_first',
+    });
+    messages = buildMiniTheaterMessages({ userPrompt, contextMaterial, info });
+    apiResult = apiMode === 'main_api'
+      ? await requestMiniTheaterMainApi({ messages })
+      : await requestMiniTheaterSecondaryApi({ messages });
+    requestBody = apiResult.requestBody;
+
+    const rawContent = apiResult.responseJson
+      ? getOpenAiResponseContent(apiResult.responseJson)
+      : apiResult.responseText;
+    const content = stripMarkdownFence(rawContent);
+    if (!content) throw new Error('小剧场生成结果为空。');
+    const resultType = detectTheaterResultType(content);
+    const result = {
+      id: genId(),
+      promptName: panelState.promptSource?.name || '自定义小剧场',
+      promptContent: userPrompt,
+      resultType,
+      resultContent: content,
+      characterName: info.characterName,
+      chatName: info.chatName,
+      apiMode,
+      createdAt: formatTimestamp(),
+      contextDiagnostics,
+    };
+
+    getPanelOption('addCommunicationLog')?.({
+      moduleName: apiMode === 'main_api' ? '小剧场 / 主 API' : '小剧场 / 副 API',
+      taskType: '小剧场生成',
+      status: 'success',
+      startedAt,
+      durationMs: Math.round(performance.now() - startedMs),
+      profileName: apiResult.profileName,
+      model: apiResult.model,
+      url: apiResult.url,
+      httpStatus: apiResult.httpStatus || '',
+      messages,
+      requestBody: { ...requestBody, contextDiagnostics },
+      responseText: apiResult.responseText,
+      parsedResult: result,
+    });
+
+    return result;
+  } catch (error) {
+    getPanelOption('addCommunicationLog')?.({
+      moduleName: apiMode === 'main_api' ? '小剧场 / 主 API' : '小剧场 / 副 API',
+      taskType: '小剧场生成',
+      status: 'failure',
+      startedAt,
+      durationMs: Math.round(performance.now() - startedMs),
+      profileName: apiResult?.profileName || (apiMode === 'main_api' ? '酒馆当前连接' : ''),
+      model: apiResult?.model || (apiMode === 'main_api' ? '酒馆主 API' : ''),
+      url: apiResult?.url || (apiMode === 'main_api' ? '酒馆当前连接' : ''),
+      httpStatus: apiResult?.httpStatus || '',
+      messages,
+      requestBody: requestBody ? { ...requestBody, contextDiagnostics } : { contextDiagnostics },
+      responseText: apiResult?.responseText || '',
+      errorStack: error.stack || error.message || error,
+    });
+    throw error;
+  }
+}
+
+async function generateMiniTheater() {
+  if (panelState.generationStatus === 'running') return;
+  panelState.generationStatus = 'running';
+  panelState.generationError = '';
+  refreshPanel();
+  try {
+    panelState.result = await runMiniTheaterGeneration();
+    panelState.generationStatus = 'success';
+    panelState.previewOpen = true;
+  } catch (error) {
+    panelState.generationStatus = 'failed';
+    panelState.generationError = error.message || String(error);
+  }
+  refreshPanel();
+}
+
+async function copyTheaterResult() {
+  const content = String(panelState.result?.resultContent || '');
+  if (!content) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(content);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = content;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
 }
 
 // ── 顶部固定区 ────────────────────────────────────────────────────────
@@ -235,6 +513,24 @@ function renderPromptsTab() {
 // ── Tab 2：发送与生成 ─────────────────────────────────────────────────
 
 function renderGenerateTab() {
+  const isRunning = panelState.generationStatus === 'running';
+  const isSuccess = panelState.generationStatus === 'success';
+  const isFailed = panelState.generationStatus === 'failed';
+  const buttonLabel = isRunning ? '生成中…' : (isSuccess ? '已生成 ✓' : '生成小剧场 ▶');
+  const buttonClass = [
+    'slx-soft-btn',
+    'slx-theater-generate-btn',
+    isRunning ? 'is-running' : '',
+    isSuccess ? 'is-success' : '',
+    isFailed ? 'is-failed' : '',
+  ].filter(Boolean).join(' ');
+  const note = isRunning
+    ? '正在读取上下文并生成，不会写入聊天楼层。'
+    : (isFailed
+      ? panelState.generationError || '小剧场生成失败。'
+      : (panelState.result
+        ? `${panelState.result.resultType === 'html' ? 'HTML' : '文字'}小剧场已生成，可在预览弹窗查看。`
+        : '生成会静默读取角色卡、Persona、剧情档案、情感档案与世界信息。'));
   return `
     <div class="slx-theater-tab-content" role="tabpanel">
       <div class="slx-detail-card">
@@ -258,11 +554,12 @@ function renderGenerateTab() {
       </div>
 
       <div class="slx-action-row">
-        <button class="slx-soft-btn slx-theater-generate-btn" type="button" data-theater-generate>
-          生成小剧场 ▶
+        <button class="${buttonClass}" type="button" data-theater-generate ${isRunning ? 'disabled aria-busy="true"' : ''}>
+          ${escapeHtml(buttonLabel)}
         </button>
+        ${isFailed ? '<button class="slx-soft-btn" type="button" data-theater-generate>重试</button>' : ''}
       </div>
-      <p class="slx-theater-gen-note">0.1 版本：生成功能待接入，点击可预览弹窗效果</p>
+      <p class="slx-theater-gen-note${isFailed ? ' is-error' : ''}">${escapeHtml(note)}</p>
     </div>
   `;
 }
@@ -431,23 +728,39 @@ function renderModal() {
 
 function renderPreviewOverlay() {
   if (!panelState.previewOpen) return '';
+  const result = panelState.result;
+  const info = getContextInfo();
+  const title = result?.promptName || '小剧场预览';
+  const meta = result
+    ? `${result.characterName || info.characterName} · ${result.chatName || info.chatName} · ${result.createdAt || ''}`
+    : `${info.characterName} · ${info.chatName}`;
+  const body = !result
+    ? `<div class="slx-theater-text-body">
+         <p class="slx-theater-text-placeholder">小剧场内容将在这里展示。生成结果如果包含 HTML，会自动进入安全预览；纯文字会按正文展示。</p>
+       </div>`
+    : (result.resultType === 'html'
+      ? `<div class="slx-theater-iframe-wrap">
+           <iframe class="slx-theater-iframe" sandbox="" srcdoc="${escapeHtml(result.resultContent)}"></iframe>
+         </div>`
+      : `<div class="slx-theater-text-body slx-theater-generated-text">${escapeHtml(result.resultContent)}</div>`);
   return `
     <div class="slx-theater-overlay" data-theater-overlay role="dialog" aria-modal="true" aria-label="小剧场预览">
       <div class="slx-theater-preview">
         <div class="slx-theater-preview-header">
-          <span class="slx-theater-preview-title">小剧场预览</span>
+          <div class="slx-theater-preview-title-wrap">
+            <span class="slx-theater-preview-title">${escapeHtml(title)}</span>
+            <span class="slx-theater-preview-meta">${escapeHtml(meta)}</span>
+          </div>
           <button class="slx-icon-btn" type="button" data-theater-close-preview aria-label="关闭预览">×</button>
         </div>
         <div class="slx-theater-preview-body">
-          <div class="slx-theater-text-body">
-            <p class="slx-theater-text-placeholder">小剧场内容将在这里展示。后续生成结果如果包含 HTML，会自动进入安全预览；纯文字会按正文展示。</p>
-          </div>
+          ${body}
         </div>
         <div class="slx-theater-preview-footer">
           <button class="slx-soft-btn" type="button" data-theater-close-preview>关闭</button>
-          <button class="slx-soft-btn" type="button" disabled title="0.3 版本接入">收藏</button>
-          <button class="slx-soft-btn" type="button" disabled title="0.3 版本接入">复制</button>
-          <button class="slx-soft-btn" type="button" disabled title="0.3 版本接入">重新生成</button>
+          <button class="slx-soft-btn" type="button" disabled title="0.4 版本接入">收藏</button>
+          <button class="slx-soft-btn" type="button" data-theater-copy-result ${result ? '' : 'disabled'}>${result?.resultType === 'html' ? '复制 HTML' : '复制'}</button>
+          <button class="slx-soft-btn" type="button" data-theater-regenerate ${panelState.generationStatus === 'running' ? 'disabled' : ''}>重新生成</button>
         </div>
       </div>
     </div>
@@ -615,9 +928,10 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
     refreshPanel();
   });
 
-  root.querySelector('[data-theater-generate]')?.addEventListener('click', () => {
-    panelState.previewOpen = true;
-    refreshPanel();
+  root.querySelectorAll('[data-theater-generate]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      generateMiniTheater();
+    });
   });
 
   // ── 预览弹窗 ──
@@ -632,6 +946,19 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
       panelState.previewOpen = false;
       refreshPanel();
     }
+  });
+  root.querySelector('[data-theater-copy-result]')?.addEventListener('click', async function () {
+    try {
+      await copyTheaterResult();
+      const orig = this.textContent;
+      this.textContent = '已复制 ✓';
+      setTimeout(() => { this.textContent = orig; }, 1400);
+    } catch {
+      this.textContent = '复制失败';
+    }
+  });
+  root.querySelector('[data-theater-regenerate]')?.addEventListener('click', () => {
+    generateMiniTheater();
   });
 
   // ── 模态弹窗通用 ──
