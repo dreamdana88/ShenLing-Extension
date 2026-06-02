@@ -654,7 +654,7 @@ function renderGenerateTab() {
   const buttonLabel = isRunning
     ? "生成中…"
     : isSuccess
-      ? "已生成 ✓"
+      ? "查看预览 ✓"
       : "生成小剧场 ▶";
   const buttonClass = [
     "slx-soft-btn",
@@ -690,7 +690,7 @@ function renderGenerateTab() {
       </div>
 
       <div class="slx-action-row">
-        <button class="${buttonClass}" type="button" data-theater-generate ${isRunning ? 'disabled aria-busy="true"' : ""}>
+        <button class="${buttonClass}" type="button" ${isSuccess ? "data-theater-open-preview" : "data-theater-generate"} ${isRunning ? 'disabled aria-busy="true"' : ""}>
           ${escapeHtml(buttonLabel)}
         </button>
         ${isFailed ? '<button class="slx-soft-btn" type="button" data-theater-generate>重试</button>' : ""}
@@ -1136,6 +1136,13 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   root.querySelectorAll("[data-theater-generate]").forEach((btn) => {
     btn.addEventListener("click", () => {
       generateMiniTheater();
+    });
+  });
+  root.querySelectorAll("[data-theater-open-preview]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!panelState.result) return;
+      panelState.previewOpen = true;
+      refreshPanel();
     });
   });
 
