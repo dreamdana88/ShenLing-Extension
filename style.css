@@ -5464,6 +5464,80 @@ body.slx-panel-open-lock {
   color: #f3fbfd;
 }
 
+#shenling-assistant-panel-root .slx-theater-search-input,
+#shenling-assistant-panel-root .slx-theater-prompt-textarea,
+#shenling-assistant-panel-root .slx-theater-text-input,
+#shenling-assistant-panel-root .slx-theater-select,
+#shenling-assistant-panel-root .slx-theater-sort-select {
+  box-sizing: border-box;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background-color: var(--slx-input-bg) !important;
+  color: var(--slx-input-text) !important;
+  caret-color: var(--slx-input-text);
+  box-shadow: none;
+  font: inherit;
+  outline: none;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+#shenling-assistant-panel-root .slx-theater-search-input,
+#shenling-assistant-panel-root .slx-theater-text-input,
+#shenling-assistant-panel-root .slx-theater-select,
+#shenling-assistant-panel-root .slx-theater-sort-select {
+  min-height: 34px;
+  font-size: 12px;
+}
+
+#shenling-assistant-panel-root .slx-theater-search-input,
+#shenling-assistant-panel-root .slx-theater-text-input {
+  padding: 7px 9px;
+}
+
+#shenling-assistant-panel-root .slx-theater-prompt-textarea {
+  padding: 9px 10px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+#shenling-assistant-panel-root .slx-theater-select,
+#shenling-assistant-panel-root .slx-theater-sort-select {
+  padding: 7px 30px 7px 9px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#shenling-assistant-panel-root .slx-theater-search-input:focus,
+#shenling-assistant-panel-root .slx-theater-prompt-textarea:focus,
+#shenling-assistant-panel-root .slx-theater-text-input:focus,
+#shenling-assistant-panel-root .slx-theater-select:focus,
+#shenling-assistant-panel-root .slx-theater-sort-select:focus {
+  border-color: var(--slx-accent);
+  background-color: var(--slx-input-bg-focus) !important;
+  box-shadow: none;
+}
+
+#shenling-assistant-panel-root .slx-theater-search-input::placeholder,
+#shenling-assistant-panel-root .slx-theater-prompt-textarea::placeholder,
+#shenling-assistant-panel-root .slx-theater-text-input::placeholder {
+  color: var(--slx-input-placeholder) !important;
+  opacity: 1;
+}
+
+#shenling-assistant-panel-root .slx-theater-select option,
+#shenling-assistant-panel-root .slx-theater-sort-select option {
+  background: var(--slx-bg-panel);
+  color: var(--slx-input-text);
+}
+
 /* ── 从库选择弹窗 ── */
 .slx-theater-pick-body {
   gap: 10px;
