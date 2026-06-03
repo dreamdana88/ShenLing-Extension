@@ -1791,6 +1791,15 @@ body.slx-panel-open-lock {
   width: min(600px, 100%);
 }
 
+.slx-diary-editor-modal {
+  z-index: 70;
+}
+
+.slx-diary-editor-modal .slx-diary-editor-card {
+  max-height: calc(var(--slx-viewport-height, 100dvh) - var(--slx-safe-top, 0px) - var(--slx-safe-bottom, 0px) - 36px);
+  overflow: auto;
+}
+
 .slx-diary-editor-textarea {
   min-height: 220px;
 }
@@ -4579,6 +4588,7 @@ body.slx-panel-open-lock {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   min-width: 0;
   border-bottom: 1px solid var(--slx-border-dim);
@@ -4622,6 +4632,7 @@ body.slx-panel-open-lock {
 
 .slx-theater-tabs {
   display: flex;
+  flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
   gap: 2px;
@@ -4654,6 +4665,32 @@ body.slx-panel-open-lock {
   color: var(--slx-text);
   font-weight: 600;
   border-bottom-color: var(--slx-accent, currentColor);
+}
+
+@media (max-width: 640px) {
+  .slx-theater-tabbar-row {
+    gap: 8px;
+  }
+
+  .slx-theater-tabs {
+    flex: 1 1 min(100%, 168px);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .slx-theater-tab {
+    padding: 8px 6px;
+    text-align: center;
+  }
+
+  .slx-theater-api-toggle {
+    margin-left: auto;
+  }
+
+  .slx-theater-api-toggle button {
+    padding: 7px 8px;
+    font-size: 11px;
+  }
 }
 
 /* 标签内容区 */
@@ -4698,14 +4735,14 @@ body.slx-panel-open-lock {
 
 .slx-theater-generate-actions .slx-soft-btn {
   width: auto;
-  min-width: 116px;
+  min-width: 76px;
   min-height: 34px;
   padding: 7px 14px;
   flex: 0 0 auto;
 }
 
 .slx-theater-generate-btn {
-  min-width: 126px;
+  min-width: 76px;
   border-color: rgba(186, 148, 133, 0.28);
   background: rgba(255, 246, 238, 0.78);
   color: #7a4a3a;

@@ -529,9 +529,9 @@ function renderApiToggle() {
 
 function renderTabBar() {
   const tabs = [
-    { id: "prompts", label: "提示词库" },
-    { id: "generate", label: "发送与生成" },
-    { id: "saves", label: "已收藏回看" },
+    { id: "prompts", label: "收藏" },
+    { id: "generate", label: "生成" },
+    { id: "saves", label: "回看" },
   ];
   return `
     <div class="slx-theater-tabbar-row">
@@ -665,9 +665,7 @@ function renderGenerateTab() {
   const hasResult = Boolean(panelState.result);
   const buttonLabel = isRunning
     ? "生成中…"
-    : hasResult
-      ? "生成新版 ▶"
-      : "生成小剧场 ▶";
+    : "生成";
   const buttonClass = [
     "slx-soft-btn",
     "slx-theater-generate-btn",
@@ -704,7 +702,7 @@ function renderGenerateTab() {
         <button class="${buttonClass}" type="button" data-theater-generate ${isRunning ? 'disabled aria-busy="true"' : ""}>
           ${escapeHtml(buttonLabel)}
         </button>
-        ${hasResult ? '<button class="slx-soft-btn slx-theater-open-preview-btn" type="button" data-theater-open-preview>查看预览 ✓</button>' : ""}
+        ${hasResult ? '<button class="slx-soft-btn slx-theater-open-preview-btn" type="button" data-theater-open-preview>预览</button>' : ""}
         ${isFailed ? '<button class="slx-soft-btn" type="button" data-theater-generate>重试</button>' : ""}
       </div>
     </div>

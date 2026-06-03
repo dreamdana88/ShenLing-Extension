@@ -884,7 +884,7 @@ function renderDiaryEditor(chatState) {
   const isExchange = entry.type === 'exchange_diary';
 
   return `
-    <div class="slx-rule-modal" data-slx-close-diary-editor>
+    <div class="slx-rule-modal slx-diary-editor-modal" data-slx-close-diary-editor>
       <div class="slx-rule-modal-card slx-diary-editor-card" data-slx-diary-editor-card>
         <div class="slx-summary-card-head">
           <div>
