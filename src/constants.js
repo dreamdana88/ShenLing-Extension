@@ -1,7 +1,7 @@
 export const MODULE_NAME = 'shenling_assistant';
 export const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 export const STORAGE_VERSION = 1;
-export const PLUGIN_VERSION = '0.12.12';
+export const PLUGIN_VERSION = '0.12.13';
 export const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 export const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 export const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;

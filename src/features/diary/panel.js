@@ -25,6 +25,8 @@ import {
   getOpenAiResponseContent,
 } from '../../core/summary.js';
 import {
+  EXCHANGE_DIARY_PROMPT_TEMPLATE,
+  ROLE_DIARY_PROMPT_TEMPLATE,
   SUMMARY_SUPPORT_MESSAGES,
 } from '../../prompts.js';
 import {
@@ -77,58 +79,6 @@ const DIARY_SHOUHUI_PAGE_MOBILE_SRC = `${DIARY_ASSET_BASE}shouhui-page-mobile.pn
 const DIARY_FUGU_COVER_SRC = `${DIARY_ASSET_BASE}fugu-cover.png`;
 const DIARY_FUGU_PAGE_SRC = `${DIARY_ASSET_BASE}fugu-page.png`;
 const DIARY_DATE_FALLBACK_LABEL = '当前剧情日期';
-const ROLE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
-
-请根据下方梦境上下文素材，以【\${targetRoleName}】的第一人称视角与口吻，写一则日期为【\${diaryDate}】的角色日记。
-
-以下是本次日记可参考的梦境上下文素材：
-\${diaryContextMaterial}
-
-日记要求：
-- 日记正文控制在 300-500 字。
-- 语气、用词、关注重点必须符合【\${targetRoleName}】的角色设定。
-- 是角色的私密日记，应展示其真实内心且富有生活气息，像真正的私人手帐/日记一样自然。
-- 只写【\${targetRoleName}】本人能知道、能感受到、会在意的事情，避免全知视角。
-- 不要写未来剧情，只内化已发生的事。
-- 如果角色设定语言不是中文，content 字段内先写角色设定语言版本，再写中文翻译版。
-- 必须只输出合法 JSON，不要输出 Markdown 代码块，不要输出解释文字。
-
-输出格式：
-{
-  "title": "标题",
-  "time": "\${diaryDate}",
-  "content": "正文"
-}`;
-
-const EXCHANGE_DIARY_PROMPT_TEMPLATE = `蜃灵当前处于日记编织状态。
-
-请根据下方梦境上下文素材，以【\${targetRoleName}】的第一人称视角与口吻，写一则日期为【\${diaryDate}】、写给{{user}}看的交换日记回复。
-
-以下是本次日记可参考的梦境上下文素材：
-\${diaryContextMaterial}
-
-以下是本次{{user}}已经写下的日记内容：
-\${userDiaryContent}
-
-交换日记要求：
-- 【\${targetRoleName}】与{{user}}在同一本日记上书写，{{user}}已经先写了她的部分，现在轮到【\${targetRoleName}】写下回应。
-
-
-- 语气、用词、关注重点必须符合【\${targetRoleName}】的角色设定。
-- 应展示真实内心且富有生活气息，像真正的私人手帐/日记一样自然。
-- 内容要回应{{user}}写的内容，可以补充【\${targetRoleName}】的视角、感受、或分享这边发生的事。
-- 只写【\${targetRoleName}】本人能知道、能感受到、会在意的事情，避免全知视角。
-- 不要写未来剧情，只内化已发生的事。
-- 如果角色设定语言不是中文，content 字段内先写角色设定语言版本，再写中文翻译版。
-- 必须只输出合法 JSON，不要输出 Markdown 代码块，不要输出解释文字。
-
-输出格式：
-{
-  "title": "角色回复标题",
-  "time": "\${diaryDate}",
-  "content": "回复日记内容"
-}`;
-
 let panelOptions = {
   addCommunicationLog: null,
   getActiveApiProfile: null,

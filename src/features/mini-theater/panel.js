@@ -13,7 +13,10 @@ import {
   saveGlobalSettings,
 } from "../../core/settings.js";
 import { getOpenAiResponseContent } from "../../core/summary.js";
-import { SUMMARY_SUPPORT_MESSAGES } from "../../prompts.js";
+import {
+  buildMiniTheaterPrompt,
+  SUMMARY_SUPPORT_MESSAGES,
+} from "../../prompts.js";
 import { escapeHtml, formatTimestamp } from "../../utils/text.js";
 import { applyWordReplacementToGeneratedContent } from "../word-replace/generated.js";
 
@@ -376,56 +379,6 @@ function renderMarkdownText(markdown) {
 
   closeList();
   return output.join("\n");
-}
-
-function buildMiniTheaterPrompt({ userPrompt, styleContent, contextMaterial }) {
-  const styleSection = String(styleContent || "").trim()
-    ? ["", `【文风要求】\n${String(styleContent || "").trim()}`]
-    : [];
-  return [
-    "当前蜃灵已进入小剧场专属梦境，小剧场内容须严格尊重梦境素材中的角色设定、关系、世界信息、近期剧情与情感档案。",
-    "请只输出小剧场正文或完整静态 HTML，不要解释你的创作过程，不要输出上下文分析，不要要求用户补充。",
-    "如果用户要求美化小剧场，请输出可直接渲染的 HTML/CSS。不要包含 <script>，不要依赖外部资源。",
-    "如果用户没有要求 HTML，请输出自然的文字小剧场正文。",
-    "",
-    "以下是本次小剧场番外可参考的梦境上下文素材：",
-    "",
-    contextMaterial || "（未读取到额外上下文）",
-    "",
-    `【梦境小剧场要求】\n${userPrompt}`,
-    ...styleSection,
-    "",
-    "【小剧场构筑清单】",
-    "以下步骤仅用于小剧场构筑与校准，不要输出分析、清单或思考过程；完成校准后，只输出完整小剧场正文。",
-    "",
-    "### 背景回响",
-    "- a. 分析【梦境小剧场要求】的内容与意图",
-    "- b. 判断小剧场类型（文字故事类 / 美化页面类）",
-    "- c. 判断梦境素材中的世界设定与禁忌",
-    "- d. 梳理过往故事发展情节",
-    "",
-    "### 角色回响",
-    "- a. 逐个分析主要角色信息：",
-    "  - 0. 启用语言 / 角色母语",
-    "  - 1. 糅合角色信息与性格人设",
-    "  - 2. 根据小剧场需求创造合理化身份",
-    "  - 3. 应规避的 OOC 方向",
-    "",
-    "### 织境定格",
-    "综合以上角色与背景信息，确定小剧场所处时间、季节、天气等外部信息。",
-    "",
-    "### 编织梦境大纲",
-    "- 美化页面类：梳理内容构架与视觉规范",
-    "  - 应适配手机与电脑双端；字体颜色与背景保持足够对比度，确保清晰可读护眼",
-    "  - 美化风格应契合世界观与故事背景",
-    "- 文字故事类：设计起承转合与结尾收束方式",
-    "",
-    "### 检验与校正",
-    "- a. 是否遵循女性凝视、女本位、去男权化",
-    "- b. NPC 是否避免性别刻板",
-    "",
-    "对校准后大纲进行以上自检并优化调整，之后输出完整小剧场正文。",
-  ].join("\n");
 }
 
 function buildMiniTheaterMessages({ userPrompt, styleContent, contextMaterial }) {
