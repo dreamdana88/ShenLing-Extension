@@ -32,6 +32,7 @@ let promptSearchRefreshTimer = null;
 let pickSearchRefreshTimer = null;
 
 const THEATER_GENERATION_TIMEOUT_MS = 120000;
+const THEATER_RESULT_WARN_LIMIT = 50;
 
 // 跨渲染持久化的面板本地状态
 let panelState = {
@@ -217,6 +218,28 @@ function deleteSavedTheaterResult(resultId) {
     }
     saveChatState();
   }
+}
+
+function exportTheaterResults() {
+  const chatState = getChatState();
+  const results = getSavedTheaterResults();
+  if (!results.length) return;
+
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    identity: chatState.identity,
+    results,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  const chatName = String(chatState.identity?.chatName || "shenling-theater").replace(/[\\/:*?"<>|]+/g, "_");
+  anchor.href = url;
+  anchor.download = `${chatName}-mini-theater.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 function genId() {
@@ -1001,10 +1024,32 @@ function renderSavedResultCard(result) {
   `;
 }
 
+function renderTheaterCapacityWarning(results) {
+  if (results.length < THEATER_RESULT_WARN_LIMIT) return "";
+  const htmlCount = results.filter((item) => item.resultType === "html").length;
+  return `
+    <div class="slx-storage-warning">
+      <div>
+        <b>小剧场收藏已达到 ${THEATER_RESULT_WARN_LIMIT} 条，建议导出后清理旧结果。</b>
+        <span>${escapeHtml(`当前 ${results.length} 条，其中 HTML ${htmlCount} 条`)}</span>
+      </div>
+      <button class="slx-soft-btn" type="button" data-theater-export-saved>
+        <i class="fa-solid fa-file-export"></i> 导出小剧场
+      </button>
+    </div>
+  `;
+}
+
 function renderSavesTab() {
   const results = getSavedTheaterResults();
   return `
     <div class="slx-theater-tab-content" role="tabpanel">
+      <div class="slx-action-row">
+        <button class="slx-soft-btn" type="button" data-theater-export-saved ${results.length ? "" : "disabled"}>
+          <i class="fa-solid fa-file-export"></i> 导出小剧场
+        </button>
+      </div>
+      ${renderTheaterCapacityWarning(results)}
       ${
         results.length === 0
           ? `<div class="slx-detail-card slx-theater-empty-state">
@@ -1483,6 +1528,10 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
       panelState.activeTab = btn.dataset.theaterTab;
       refreshPanel();
     });
+  });
+
+  root.querySelectorAll("[data-theater-export-saved]").forEach((btn) => {
+    btn.addEventListener("click", exportTheaterResults);
   });
 
   // ── API 模式 ──

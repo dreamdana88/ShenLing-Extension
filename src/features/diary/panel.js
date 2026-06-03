@@ -79,6 +79,7 @@ const DIARY_SHOUHUI_PAGE_MOBILE_SRC = `${DIARY_ASSET_BASE}shouhui-page-mobile.pn
 const DIARY_FUGU_COVER_SRC = `${DIARY_ASSET_BASE}fugu-cover.png`;
 const DIARY_FUGU_PAGE_SRC = `${DIARY_ASSET_BASE}fugu-page.png`;
 const DIARY_DATE_FALLBACK_LABEL = '当前剧情日期';
+const DIARY_ENTRY_WARN_LIMIT = 100;
 let panelOptions = {
   addCommunicationLog: null,
   getActiveApiProfile: null,
@@ -479,6 +480,30 @@ function renderDiaryEmpty(title = '日记') {
   `;
 }
 
+function renderDiaryCapacityWarning(notebooks, totalEntries) {
+  if (!totalEntries) return '';
+  const crowdedBooks = notebooks
+    .filter(book => Number(book.entryCount) >= DIARY_ENTRY_WARN_LIMIT)
+    .sort((a, b) => Number(b.entryCount) - Number(a.entryCount));
+  if (!crowdedBooks.length) return '';
+  const topBooks = crowdedBooks
+    .slice(0, 3)
+    .map(book => `${book.roleName} ${book.entryCount} 篇`)
+    .join('、');
+
+  return `
+    <div class="slx-storage-warning">
+      <div>
+        <b>有日记本已达到 ${DIARY_ENTRY_WARN_LIMIT} 篇，建议导出后清理旧日记。</b>
+        <span>${escapeHtml(topBooks)}</span>
+      </div>
+      <button class="slx-soft-btn" type="button" data-slx-export-diary>
+        <i class="fa-solid fa-file-export"></i> 导出日记
+      </button>
+    </div>
+  `;
+}
+
 function renderContextTestResult() {
   if (diaryContextTestState.status !== 'success' || !diaryContextTestState.result) return '';
   const result = diaryContextTestState.result;
@@ -539,6 +564,8 @@ function renderDiaryLibrary(chatState) {
           <i class="fa-solid fa-file-export"></i> 导出
         </button>
       </div>
+
+      ${renderDiaryCapacityWarning(notebooks, totalEntries)}
 
       <div class="slx-diary-tcho-create-section">
         <div class="slx-diary-tcho-create-label">
@@ -1452,7 +1479,9 @@ export function bindDiaryPanelEvents(panelRoot) {
     });
   });
 
-  panelRoot.querySelector('[data-slx-export-diary]')?.addEventListener('click', exportDiaryBook);
+  panelRoot.querySelectorAll('[data-slx-export-diary]').forEach(button => {
+    button.addEventListener('click', exportDiaryBook);
+  });
 
   panelRoot.querySelector('[data-slx-create-diary-book]')?.addEventListener('click', () => {
     const roleName = ensureNotebook(panelRoot.querySelector('[data-slx-diary-new-book-role]')?.value);
