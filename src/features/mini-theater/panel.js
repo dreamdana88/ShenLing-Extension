@@ -22,6 +22,7 @@ import { applyWordReplacementToGeneratedContent } from "../word-replace/generate
 
 let panelOptions = {
   addCommunicationLog: null,
+  closePanel: null,
   getActiveApiProfile: null,
   getGenerateRawFunction: null,
   refreshPanel: null,
@@ -640,6 +641,30 @@ async function copyTheaterResult() {
   await copyTextToClipboard(String(panelState.result?.resultContent || ""));
 }
 
+function putTextIntoSillyTavernChatInput(content) {
+  const text = String(content || "").trim();
+  if (!text) {
+    notifyMiniTheater("warning", "这条小剧场提示词是空的。", "投到聊天");
+    return false;
+  }
+  const textarea = document.querySelector("#send_textarea");
+  if (!textarea) {
+    notifyMiniTheater("error", "没有找到酒馆聊天输入框。", "投到聊天");
+    return false;
+  }
+  const current = String(textarea.value || "").trimEnd();
+  textarea.value = current ? `${current}\n\n${text}` : text;
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  textarea.dispatchEvent(new Event("change", { bubbles: true }));
+  getPanelOption("closePanel")?.();
+  setTimeout(() => {
+    textarea.focus?.();
+    textarea.setSelectionRange?.(textarea.value.length, textarea.value.length);
+  }, 0);
+  notifyMiniTheater("success", "已放入酒馆聊天输入框。", "投到聊天");
+  return true;
+}
+
 function startPreviewEditing(result = panelState.result) {
   if (!result) return;
   panelState.previewEditing = true;
@@ -786,7 +811,8 @@ function renderPromptCard(prompt, folders) {
       </div>
       <div class="slx-theater-prompt-card-actions">
         <button class="slx-soft-btn" type="button" data-theater-copy-prompt="${escapeHtml(prompt.id)}">复制</button>
-        <button class="slx-soft-btn" type="button" data-theater-send-prompt="${escapeHtml(prompt.id)}">发送到生成</button>
+        <button class="slx-soft-btn" type="button" data-theater-send-prompt="${escapeHtml(prompt.id)}">生成</button>
+        <button class="slx-soft-btn slx-theater-icon-action" type="button" data-theater-chat-prompt="${escapeHtml(prompt.id)}" title="发送到聊天输入框" aria-label="发送到聊天输入框">✈</button>
         <button class="slx-soft-btn" type="button" data-theater-edit-prompt="${escapeHtml(prompt.id)}">编辑</button>
         <button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-delete-prompt="${escapeHtml(prompt.id)}">删除</button>
       </div>
@@ -1580,6 +1606,17 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
       };
       panelState.activeTab = "generate";
       refreshPanel();
+    });
+  });
+
+  root.querySelectorAll("[data-theater-chat-prompt]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mt = getMiniTheaterSettings();
+      const prompt = mt.prompts.find(
+        (p) => p.id === btn.dataset.theaterChatPrompt,
+      );
+      if (!prompt) return;
+      putTextIntoSillyTavernChatInput(prompt.content || "");
     });
   });
 

@@ -5349,9 +5349,10 @@ body.slx-panel-open-lock {
 
 /* ── 提示词卡片列表 ── */
 .slx-theater-prompt-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 8px;
+  align-items: stretch;
 }
 
 .slx-theater-prompt-card {
@@ -5360,6 +5361,10 @@ body.slx-panel-open-lock {
   background: var(--slx-bg-card);
   overflow: hidden;
   transition: border-color 0.15s, background 0.15s;
+  min-width: 0;
+  min-height: 128px;
+  display: flex;
+  flex-direction: column;
 }
 .slx-theater-prompt-card:hover {
   border-color: var(--slx-border);
@@ -5371,6 +5376,8 @@ body.slx-panel-open-lock {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  flex: 1;
+  min-height: 0;
 }
 
 .slx-theater-prompt-card-name {
@@ -5378,6 +5385,9 @@ body.slx-panel-open-lock {
   font-weight: 600;
   color: var(--slx-text);
   line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .slx-theater-prompt-card-preview {
@@ -5386,8 +5396,8 @@ body.slx-panel-open-lock {
   line-height: 1.5;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
   -webkit-box-orient: vertical;
 }
 
@@ -5408,21 +5418,25 @@ body.slx-panel-open-lock {
   gap: 5px;
   padding: 0 8px 8px;
   flex-wrap: wrap;
-
-  /* 桌面端 hover 展开 */
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: max-height 0.18s ease, opacity 0.15s ease, padding 0.15s;
-  padding-top: 0;
-  padding-bottom: 0;
+  border-top: 1px solid var(--slx-border-dim);
+  margin-top: 4px;
+  padding-top: 8px;
 }
-.slx-theater-prompt-card:hover .slx-theater-prompt-card-actions,
-.slx-theater-prompt-card:focus-within .slx-theater-prompt-card-actions {
-  max-height: 60px;
-  opacity: 1;
-  padding-top: 0;
-  padding-bottom: 8px;
+
+.slx-theater-prompt-card-actions .slx-soft-btn {
+  min-height: 28px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+.slx-theater-prompt-card-actions .slx-theater-icon-action {
+  width: 30px;
+  min-width: 30px;
+  padding: 5px 0;
+  font-size: 13px;
+  line-height: 1;
 }
 
 /* ── 回看列表 ── */
@@ -5485,12 +5499,15 @@ body.slx-panel-open-lock {
 
 /* 手机端始终展示操作区 */
 @media (max-width: 768px) {
+  .slx-theater-prompt-list {
+    grid-template-columns: 1fr;
+  }
+
   .slx-theater-prompt-card-actions {
-    max-height: none;
-    opacity: 1;
     padding: 0 8px 8px;
     border-top: 1px solid var(--slx-border-dim);
     margin-top: 4px;
+    padding-top: 8px;
   }
 
   .slx-theater-saved-card-actions .slx-soft-btn {

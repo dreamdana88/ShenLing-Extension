@@ -1128,6 +1128,7 @@ function init() {
   });
   configureMiniTheaterPanel({
     addCommunicationLog,
+    closePanel: closeFloatingPanel,
     getActiveApiProfile,
     getGenerateRawFunction,
     refreshPanel: renderFloatingPanel,
