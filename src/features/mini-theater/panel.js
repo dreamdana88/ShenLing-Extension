@@ -6,8 +6,10 @@ import {
 import { replacePromptMessageMacros } from "../../core/macros.js";
 import {
   getContextInfo,
+  getChatState,
   getGlobalSettings,
   getWordReplaceSettings,
+  saveChatState,
   saveGlobalSettings,
 } from "../../core/settings.js";
 import { getOpenAiResponseContent } from "../../core/summary.js";
@@ -36,6 +38,8 @@ let panelState = {
   generationStatus: "idle", // 'idle' | 'running' | 'success' | 'failed'
   generationError: "",
   result: null,
+  previewEditing: false,
+  previewDraft: null,
   promptSearch: "",
   promptSortBy: "newest", // 'newest' | 'name'
   promptFolderFilter: null, // folderId | null（null = 全部）
@@ -47,7 +51,7 @@ let panelState = {
   modal 类型：
   { type: 'prompt-form', promptId: null|string, fields: { name, content, folderId } }
   { type: 'folder-form', fields: { name } }
-  { type: 'delete-confirm', target: 'prompt'|'folder', id, name }
+  { type: 'delete-confirm', target: 'prompt'|'folder'|'saved', id, name }
   { type: 'pick-prompt' }
 */
 
@@ -90,6 +94,108 @@ function getMiniTheaterSettings() {
   if (!Array.isArray(mt.folders)) mt.folders = [];
   if (!Array.isArray(mt.prompts)) mt.prompts = [];
   return mt;
+}
+
+function getMiniTheaterStore() {
+  const chatState = getChatState();
+  chatState.miniTheater = chatState.miniTheater || {};
+  if (!Array.isArray(chatState.miniTheater.results)) {
+    chatState.miniTheater.results = [];
+  }
+  if (typeof chatState.miniTheater.lastGeneratedAt !== "string") {
+    chatState.miniTheater.lastGeneratedAt = "";
+  }
+  return chatState.miniTheater;
+}
+
+function cloneTheaterResult(result) {
+  if (!result) return null;
+  return {
+    id: result.id || genId(),
+    promptName: result.promptName || "自定义小剧场",
+    promptContent: result.promptContent || "",
+    resultType: result.resultType === "html" ? "html" : "text",
+    resultContent: result.resultContent || "",
+    characterName: result.characterName || "",
+    chatName: result.chatName || "",
+    apiMode: result.apiMode || "",
+    createdAt: result.createdAt || "",
+    updatedAt: result.updatedAt || "",
+    savedAt: result.savedAt || "",
+    contextDiagnostics: result.contextDiagnostics || null,
+  };
+}
+
+function getSavedTheaterResults() {
+  const store = getMiniTheaterStore();
+  return [...store.results]
+    .map(cloneTheaterResult)
+    .filter(Boolean)
+    .sort((a, b) =>
+      String(b.updatedAt || b.savedAt || b.createdAt).localeCompare(
+        String(a.updatedAt || a.savedAt || a.createdAt),
+      ),
+    );
+}
+
+function isTheaterResultSaved(resultId) {
+  if (!resultId) return false;
+  return getMiniTheaterStore().results.some((item) => item.id === resultId);
+}
+
+function saveTheaterResultToStore(result) {
+  const store = getMiniTheaterStore();
+  const now = formatTimestamp();
+  const next = {
+    ...cloneTheaterResult(result),
+    savedAt: result.savedAt || now,
+    updatedAt: now,
+  };
+  const index = store.results.findIndex((item) => item.id === next.id);
+  if (index >= 0) {
+    store.results[index] = {
+      ...store.results[index],
+      ...next,
+      savedAt: store.results[index].savedAt || next.savedAt,
+    };
+  } else {
+    store.results.unshift(next);
+  }
+  store.lastGeneratedAt = now;
+  saveChatState();
+  return cloneTheaterResult(index >= 0 ? store.results[index] : next);
+}
+
+function updateSavedTheaterResult(result) {
+  if (!result?.id) return false;
+  const store = getMiniTheaterStore();
+  const index = store.results.findIndex((item) => item.id === result.id);
+  if (index < 0) return false;
+  store.results[index] = {
+    ...store.results[index],
+    ...cloneTheaterResult(result),
+    savedAt: store.results[index].savedAt || result.savedAt || formatTimestamp(),
+    updatedAt: result.updatedAt || formatTimestamp(),
+  };
+  store.lastGeneratedAt = store.results[index].updatedAt;
+  saveChatState();
+  return true;
+}
+
+function deleteSavedTheaterResult(resultId) {
+  const store = getMiniTheaterStore();
+  const before = store.results.length;
+  store.results = store.results.filter((item) => item.id !== resultId);
+  if (store.results.length !== before) {
+    if (panelState.result?.id === resultId) {
+      panelState.result = {
+        ...panelState.result,
+        savedAt: "",
+        updatedAt: panelState.result.updatedAt || "",
+      };
+    }
+    saveChatState();
+  }
 }
 
 function genId() {
@@ -484,6 +590,8 @@ async function generateMiniTheater() {
   if (panelState.generationStatus === "running") return;
   panelState.generationStatus = "running";
   panelState.generationError = "";
+  panelState.previewEditing = false;
+  panelState.previewDraft = null;
   refreshPanel();
   try {
     panelState.result = await runMiniTheaterGeneration();
@@ -496,8 +604,7 @@ async function generateMiniTheater() {
   refreshPanel();
 }
 
-async function copyTheaterResult() {
-  const content = String(panelState.result?.resultContent || "");
+async function copyTextToClipboard(content) {
   if (!content) return;
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(content);
@@ -512,6 +619,44 @@ async function copyTheaterResult() {
   textarea.select();
   document.execCommand("copy");
   textarea.remove();
+}
+
+async function copyTheaterResult() {
+  await copyTextToClipboard(String(panelState.result?.resultContent || ""));
+}
+
+function startPreviewEditing(result = panelState.result) {
+  if (!result) return;
+  panelState.previewEditing = true;
+  panelState.previewDraft = {
+    title: result.promptName || "自定义小剧场",
+    content: result.resultContent || "",
+  };
+}
+
+function cancelPreviewEditing() {
+  panelState.previewEditing = false;
+  panelState.previewDraft = null;
+}
+
+function savePreviewEdit() {
+  if (!panelState.result || !panelState.previewDraft) return;
+  const title = String(panelState.previewDraft.title || "").trim() || "自定义小剧场";
+  const content = String(panelState.previewDraft.content || "").trim();
+  if (!content) return;
+  const updated = {
+    ...panelState.result,
+    promptName: title,
+    resultContent: content,
+    resultType: detectTheaterResultType(content),
+    updatedAt: formatTimestamp(),
+  };
+  panelState.result = updated;
+  if (isTheaterResultSaved(updated.id)) {
+    const saved = saveTheaterResultToStore(updated);
+    panelState.result = { ...updated, savedAt: saved.savedAt };
+  }
+  cancelPreviewEditing();
 }
 
 // ── API 切换 / 标签栏 ─────────────────────────────────────────────────
@@ -711,13 +856,47 @@ function renderGenerateTab() {
 
 // ── Tab 3：已收藏回看 ─────────────────────────────────────────────────
 
+function renderSavedResultCard(result) {
+  const preview = String(result.resultContent || "").slice(0, 110).replace(/[\r\n]+/g, " ");
+  const hasMore = String(result.resultContent || "").length > 110;
+  const meta = [
+    result.resultType === "html" ? "HTML" : "文字",
+    result.characterName || "",
+    result.savedAt || result.updatedAt || result.createdAt || "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <div class="slx-theater-saved-card">
+      <div class="slx-theater-saved-card-body">
+        <div class="slx-theater-saved-card-name">${escapeHtml(result.promptName || "未命名小剧场")}</div>
+        <div class="slx-theater-saved-card-meta">${escapeHtml(meta)}</div>
+        ${preview ? `<div class="slx-theater-saved-card-preview">${escapeHtml(preview)}${hasMore ? "…" : ""}</div>` : ""}
+      </div>
+      <div class="slx-theater-saved-card-actions">
+        <button class="slx-soft-btn" type="button" data-theater-open-saved="${escapeHtml(result.id)}">打开</button>
+        <button class="slx-soft-btn" type="button" data-theater-edit-saved="${escapeHtml(result.id)}">编辑</button>
+        <button class="slx-soft-btn" type="button" data-theater-copy-saved="${escapeHtml(result.id)}">复制</button>
+        <button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-delete-saved="${escapeHtml(result.id)}">删除</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderSavesTab() {
+  const results = getSavedTheaterResults();
   return `
     <div class="slx-theater-tab-content" role="tabpanel">
-      <div class="slx-detail-card slx-theater-empty-state">
-        <div class="slx-theater-empty-icon">🎬</div>
-        <p>生成后的小剧场将在这里留档</p>
-      </div>
+      ${
+        results.length === 0
+          ? `<div class="slx-detail-card slx-theater-empty-state">
+               <div class="slx-theater-empty-icon">🎬</div>
+               <p>还没有收藏的小剧场</p>
+             </div>`
+          : `<div class="slx-theater-saved-list">
+               ${results.map(renderSavedResultCard).join("")}
+             </div>`
+      }
     </div>
   `;
 }
@@ -892,6 +1071,12 @@ function renderPreviewOverlay() {
   if (!panelState.previewOpen) return "";
   const result = panelState.result;
   const info = getContextInfo();
+  const isEditing = Boolean(result && panelState.previewEditing);
+  const draft = panelState.previewDraft || {
+    title: result?.promptName || "自定义小剧场",
+    content: result?.resultContent || "",
+  };
+  const isSaved = Boolean(result && isTheaterResultSaved(result.id));
   const title = result?.promptName || "小剧场预览";
   const meta = result
     ? `${result.characterName || info.characterName} · ${result.chatName || info.chatName} · ${result.createdAt || ""}`
@@ -900,14 +1085,27 @@ function renderPreviewOverlay() {
     ? `<div class="slx-theater-text-body">
          <p class="slx-theater-text-placeholder">小剧场内容将在这里展示。生成结果如果包含 HTML，会自动进入安全预览；纯文字会按正文展示。</p>
        </div>`
-    : result.resultType === "html"
-      ? `<div class="slx-theater-iframe-wrap">
+    : isEditing
+      ? `<div class="slx-theater-preview-edit-form">
+           <label class="slx-theater-form-field">
+             <span>标题</span>
+             <input class="slx-theater-text-input" type="text" value="${escapeHtml(draft.title)}" data-theater-preview-edit-field="title" maxlength="80">
+           </label>
+           <label class="slx-theater-form-field slx-theater-preview-edit-content">
+             <span>内容</span>
+             <textarea class="slx-theater-prompt-textarea slx-theater-preview-edit-textarea" data-theater-preview-edit-field="content">${escapeHtml(draft.content)}</textarea>
+           </label>
+         </div>`
+      : result.resultType === "html"
+        ? `<div class="slx-theater-iframe-wrap">
            <iframe class="slx-theater-iframe" sandbox="" srcdoc="${escapeAttribute(result.resultContent)}"></iframe>
          </div>`
-      : `<div class="slx-theater-text-body slx-theater-generated-text">${renderMarkdownText(result.resultContent)}</div>`;
+        : `<div class="slx-theater-text-body slx-theater-generated-text">${renderMarkdownText(result.resultContent)}</div>`;
   const bodyClass = [
     "slx-theater-preview-body",
-    result?.resultType === "html"
+    isEditing
+      ? "slx-theater-preview-body-edit"
+      : result?.resultType === "html"
       ? "slx-theater-preview-body-html"
       : "slx-theater-preview-body-text",
   ].join(" ");
@@ -925,10 +1123,16 @@ function renderPreviewOverlay() {
           ${body}
         </div>
         <div class="slx-theater-preview-footer">
-          <button class="slx-soft-btn" type="button" data-theater-close-preview>关闭</button>
-          <button class="slx-soft-btn" type="button" disabled title="0.4 版本接入">收藏</button>
-          <button class="slx-soft-btn" type="button" data-theater-copy-result ${result ? "" : "disabled"}>${result?.resultType === "html" ? "复制 HTML" : "复制"}</button>
-          <button class="slx-soft-btn" type="button" data-theater-regenerate ${panelState.generationStatus === "running" ? "disabled" : ""}>重新生成</button>
+          ${
+            isEditing
+              ? `<button class="slx-soft-btn" type="button" data-theater-cancel-preview-edit>取消</button>
+                 <button class="slx-soft-btn slx-primary-btn" type="button" data-theater-save-preview-edit>保存编辑</button>`
+              : `<button class="slx-soft-btn" type="button" data-theater-close-preview>关闭</button>
+                 <button class="slx-soft-btn" type="button" data-theater-edit-preview ${result ? "" : "disabled"}>编辑</button>
+                 <button class="slx-soft-btn" type="button" data-theater-save-result ${result ? "" : "disabled"}>${isSaved ? "已收藏" : "收藏"}</button>
+                 <button class="slx-soft-btn" type="button" data-theater-copy-result ${result ? "" : "disabled"}>${result?.resultType === "html" ? "复制 HTML" : "复制"}</button>
+                 <button class="slx-soft-btn" type="button" data-theater-regenerate ${panelState.generationStatus === "running" ? "disabled" : ""}>重新生成</button>`
+          }
         </div>
       </div>
     </div>
@@ -1157,9 +1361,54 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   });
 
   // ── 预览弹窗 ──
+  root.querySelectorAll("[data-theater-preview-edit-field]").forEach((el) => {
+    const event = el.tagName === "TEXTAREA" ? "input" : "input";
+    el.addEventListener(event, (e) => {
+      if (!panelState.previewDraft) return;
+      const field = el.dataset.theaterPreviewEditField;
+      panelState.previewDraft[field] = e.target.value;
+    });
+  });
+
+  root
+    .querySelector("[data-theater-edit-preview]")
+    ?.addEventListener("click", () => {
+      startPreviewEditing();
+      refreshPanel();
+    });
+
+  root
+    .querySelector("[data-theater-cancel-preview-edit]")
+    ?.addEventListener("click", () => {
+      cancelPreviewEditing();
+      refreshPanel();
+    });
+
+  root
+    .querySelector("[data-theater-save-preview-edit]")
+    ?.addEventListener("click", () => {
+      savePreviewEdit();
+      refreshPanel();
+    });
+
+  root
+    .querySelector("[data-theater-save-result]")
+    ?.addEventListener("click", function () {
+      if (!panelState.result) return;
+      const saved = saveTheaterResultToStore(panelState.result);
+      panelState.result = {
+        ...panelState.result,
+        savedAt: saved.savedAt,
+        updatedAt: saved.updatedAt,
+      };
+      this.textContent = "已收藏";
+      refreshPanel();
+    });
+
   root.querySelectorAll("[data-theater-close-preview]").forEach((btn) => {
     btn.addEventListener("click", () => {
       panelState.previewOpen = false;
+      cancelPreviewEditing();
       refreshPanel();
     });
   });
@@ -1168,6 +1417,7 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
     ?.addEventListener("click", (e) => {
       if (e.target === e.currentTarget) {
         panelState.previewOpen = false;
+        cancelPreviewEditing();
         refreshPanel();
       }
     });
@@ -1188,8 +1438,74 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   root
     .querySelector("[data-theater-regenerate]")
     ?.addEventListener("click", () => {
+      cancelPreviewEditing();
       generateMiniTheater();
     });
+
+  // ── 回看操作 ──
+  root.querySelectorAll("[data-theater-open-saved]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const result = getSavedTheaterResults().find(
+        (item) => item.id === btn.dataset.theaterOpenSaved,
+      );
+      if (!result) return;
+      panelState.result = result;
+      panelState.generationStatus = "success";
+      panelState.previewEditing = false;
+      panelState.previewDraft = null;
+      panelState.previewOpen = true;
+      refreshPanel();
+    });
+  });
+
+  root.querySelectorAll("[data-theater-edit-saved]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const result = getSavedTheaterResults().find(
+        (item) => item.id === btn.dataset.theaterEditSaved,
+      );
+      if (!result) return;
+      panelState.result = result;
+      panelState.generationStatus = "success";
+      panelState.previewOpen = true;
+      startPreviewEditing(result);
+      refreshPanel();
+    });
+  });
+
+  root.querySelectorAll("[data-theater-copy-saved]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const result = getSavedTheaterResults().find(
+        (item) => item.id === btn.dataset.theaterCopySaved,
+      );
+      if (!result) return;
+      try {
+        await copyTextToClipboard(result.resultContent || "");
+        const orig = btn.textContent;
+        btn.textContent = "已复制 ✓";
+        setTimeout(() => {
+          btn.textContent = orig;
+        }, 1400);
+      } catch {
+        btn.textContent = "复制失败";
+      }
+    });
+  });
+
+  root.querySelectorAll("[data-theater-delete-saved]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const result = getSavedTheaterResults().find(
+        (item) => item.id === btn.dataset.theaterDeleteSaved,
+      );
+      if (!result) return;
+      panelState.modal = {
+        type: "delete-confirm",
+        target: "saved",
+        id: result.id,
+        name: result.promptName || "未命名小剧场",
+      };
+      refreshPanel();
+    });
+  });
 
   // ── 模态弹窗通用 ──
   root.querySelectorAll("[data-theater-modal-close]").forEach((btn) => {
@@ -1299,7 +1615,11 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
         if (panelState.promptFolderFilter === m.id)
           panelState.promptFolderFilter = null;
       }
-      saveGlobalSettings();
+      if (m.target === "saved") {
+        deleteSavedTheaterResult(m.id);
+      } else {
+        saveGlobalSettings();
+      }
       panelState.modal = null;
       refreshPanel();
     });
