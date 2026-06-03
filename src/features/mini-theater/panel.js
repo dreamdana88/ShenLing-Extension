@@ -796,7 +796,7 @@ function renderPromptCard(prompt, folders) {
 
 function renderCollectionModeSwitch() {
   const modes = [
-    { id: "prompts", label: "提示词" },
+    { id: "prompts", label: "小剧场" },
     { id: "styles", label: "文风" },
   ];
   return `
@@ -928,7 +928,7 @@ function renderGenerateTab() {
           data-theater-prompt-text
         >${escapeHtml(panelState.promptText)}</textarea>
         <div class="slx-action-row">
-          <button class="slx-soft-btn" type="button" data-theater-pick-prompt>从提示词库选择</button>
+          <button class="slx-soft-btn" type="button" data-theater-pick-prompt>收藏夹</button>
           <button class="slx-soft-btn" type="button" data-theater-pick-style>${escapeHtml(styleButtonLabel)}</button>
         </div>
       </div>
