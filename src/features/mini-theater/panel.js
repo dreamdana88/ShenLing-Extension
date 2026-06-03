@@ -248,7 +248,7 @@ function buildMiniTheaterPrompt({ userPrompt, contextMaterial }) {
     "",
     `【梦境小剧场要求】\n${userPrompt}`,
     "",
-    "【小剧场筑部清单】",
+    "【小剧场构筑清单】",
     "以下步骤仅用于小剧场构筑与校准，不要输出分析、清单或思考过程；完成校准后，只输出完整小剧场正文。",
     "",
     "### 背景回响",
