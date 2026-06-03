@@ -2235,10 +2235,22 @@ body.slx-panel-open-lock {
 
 .slx-rule-modal.slx-diary-editor-modal {
   z-index: 80;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  padding:
+    max(12px, var(--slx-safe-top))
+    max(12px, var(--slx-safe-right))
+    max(12px, var(--slx-safe-bottom))
+    max(12px, var(--slx-safe-left));
 }
 
 .slx-rule-modal-card {
   width: min(520px, 100%);
+  box-sizing: border-box;
   border: 1px solid var(--slx-border);
   border-radius: 14px;
   background: var(--slx-bg-panel);
@@ -2247,6 +2259,29 @@ body.slx-panel-open-lock {
   flex-direction: column;
   gap: 12px;
   padding: 14px;
+}
+
+.slx-rule-modal.slx-diary-editor-modal .slx-diary-editor-card {
+  width: min(600px, 100%);
+  max-height: calc(100% - 12px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.slx-diary-editor-card .slx-summary-card-head {
+  flex-shrink: 0;
+}
+
+.slx-diary-editor-card .slx-form-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+.slx-diary-editor-card [data-slx-save-diary-edit] {
+  flex-shrink: 0;
 }
 
 /* ==========================================================================
@@ -3062,6 +3097,30 @@ body.slx-panel-open-lock {
   .slx-api-actions,
   .slx-profile-bar {
     grid-template-columns: 1fr;
+  }
+
+  .slx-rule-modal.slx-diary-editor-modal {
+    align-items: center;
+    padding:
+      max(8px, var(--slx-safe-top))
+      max(8px, var(--slx-safe-right))
+      max(8px, var(--slx-safe-bottom))
+      max(8px, var(--slx-safe-left));
+  }
+
+  .slx-rule-modal.slx-diary-editor-modal .slx-diary-editor-card {
+    width: 100%;
+    max-height: calc(100% - 8px);
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .slx-diary-editor-card .slx-form-grid {
+    gap: 8px;
+  }
+
+  .slx-diary-editor-textarea {
+    min-height: clamp(140px, 26vh, 220px);
   }
 
   .slx-profile-actions {
