@@ -5365,6 +5365,7 @@ body.slx-panel-open-lock {
   min-height: 128px;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 .slx-theater-prompt-card:hover {
   border-color: var(--slx-border);
@@ -5372,12 +5373,38 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-prompt-card-body {
-  padding: 10px 12px 8px;
+  padding: 10px 42px 8px 12px;
   display: flex;
   flex-direction: column;
   gap: 3px;
   flex: 1;
   min-height: 0;
+}
+
+.slx-theater-card-fly-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--slx-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  transition: border-color 0.14s, background 0.14s, color 0.14s, transform 0.14s;
+}
+
+.slx-theater-card-fly-btn:hover {
+  border-color: var(--slx-border);
+  background: var(--slx-bg-card-hover);
+  color: var(--slx-text);
+  transform: translateY(-1px);
 }
 
 .slx-theater-prompt-card-name {
@@ -5429,14 +5456,6 @@ body.slx-panel-open-lock {
   border-radius: 8px;
   font-size: 11px;
   flex: 0 0 auto;
-}
-
-.slx-theater-prompt-card-actions .slx-theater-icon-action {
-  width: 30px;
-  min-width: 30px;
-  padding: 5px 0;
-  font-size: 13px;
-  line-height: 1;
 }
 
 /* ── 回看列表 ── */

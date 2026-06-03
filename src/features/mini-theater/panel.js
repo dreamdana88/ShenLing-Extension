@@ -804,6 +804,9 @@ function renderPromptCard(prompt, folders) {
   const hasMore = (prompt.content || "").length > 65;
   return `
     <div class="slx-theater-prompt-card" data-prompt-id="${escapeHtml(prompt.id)}">
+      <button class="slx-theater-card-fly-btn" type="button" data-theater-chat-prompt="${escapeHtml(prompt.id)}" title="发送到聊天输入框" aria-label="发送到聊天输入框">
+        <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+      </button>
       <div class="slx-theater-prompt-card-body">
         <div class="slx-theater-prompt-card-name">${escapeHtml(prompt.name || "未命名")}</div>
         ${preview ? `<div class="slx-theater-prompt-card-preview">${escapeHtml(preview)}${hasMore ? "…" : ""}</div>` : ""}
@@ -812,7 +815,6 @@ function renderPromptCard(prompt, folders) {
       <div class="slx-theater-prompt-card-actions">
         <button class="slx-soft-btn" type="button" data-theater-copy-prompt="${escapeHtml(prompt.id)}">复制</button>
         <button class="slx-soft-btn" type="button" data-theater-send-prompt="${escapeHtml(prompt.id)}">生成</button>
-        <button class="slx-soft-btn slx-theater-icon-action" type="button" data-theater-chat-prompt="${escapeHtml(prompt.id)}" title="发送到聊天输入框" aria-label="发送到聊天输入框">✈</button>
         <button class="slx-soft-btn" type="button" data-theater-edit-prompt="${escapeHtml(prompt.id)}">编辑</button>
         <button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-delete-prompt="${escapeHtml(prompt.id)}">删除</button>
       </div>
