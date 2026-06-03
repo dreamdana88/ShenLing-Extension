@@ -35,11 +35,13 @@ let panelState = {
   previewOpen: false,
   promptText: "",
   promptSource: null, // { id, name } | null
+  selectedStyle: null, // { id, name, content } | null
   generationStatus: "idle", // 'idle' | 'running' | 'success' | 'failed'
   generationError: "",
   result: null,
   previewEditing: false,
   previewDraft: null,
+  collectionMode: "prompts", // 'prompts' | 'styles'
   promptSearch: "",
   promptSortBy: "newest", // 'newest' | 'name'
   promptFolderFilter: null, // folderId | null（null = 全部）
@@ -50,9 +52,11 @@ let panelState = {
 /*
   modal 类型：
   { type: 'prompt-form', promptId: null|string, fields: { name, content, folderId } }
+  { type: 'style-form', styleId: null|string, fields: { name, content } }
   { type: 'folder-form', fields: { name } }
-  { type: 'delete-confirm', target: 'prompt'|'folder'|'saved', id, name }
+  { type: 'delete-confirm', target: 'prompt'|'folder'|'saved'|'style', id, name }
   { type: 'pick-prompt' }
+  { type: 'pick-style' }
 */
 
 export function configureMiniTheaterPanel(options = {}) {
@@ -68,6 +72,16 @@ function refreshPanel() {
 function getPanelOption(name) {
   const value = panelOptions[name];
   return typeof value === "function" ? value : null;
+}
+
+function notifyMiniTheater(type, message, title = "小剧场") {
+  const toastr = globalThis.toastr || globalThis.parent?.toastr;
+  if (toastr && typeof toastr[type] === "function") {
+    toastr[type](message, title);
+    return;
+  }
+  const logger = type === "error" ? console.error : console.info;
+  logger(`[蜃灵助手] ${title}：${message}`);
 }
 
 function refreshPanelDebounced(kind, delay = 450) {
@@ -93,6 +107,7 @@ function getMiniTheaterSettings() {
     mt.apiMode = "secondary_api";
   if (!Array.isArray(mt.folders)) mt.folders = [];
   if (!Array.isArray(mt.prompts)) mt.prompts = [];
+  if (!Array.isArray(mt.styles)) mt.styles = [];
   return mt;
 }
 
@@ -114,6 +129,8 @@ function cloneTheaterResult(result) {
     id: result.id || genId(),
     promptName: result.promptName || "自定义小剧场",
     promptContent: result.promptContent || "",
+    styleName: result.styleName || "",
+    styleContent: result.styleContent || "",
     resultType: result.resultType === "html" ? "html" : "text",
     resultContent: result.resultContent || "",
     characterName: result.characterName || "",
@@ -224,6 +241,26 @@ function getFilteredSortedPrompts(prompts, { search, folderId, sortBy }) {
     result.sort((a, b) => (a.name || "").localeCompare(b.name || "", "zh"));
   } else {
     result.sort((a, b) => ((b.createdAt || "") > (a.createdAt || "") ? 1 : -1));
+  }
+  return result;
+}
+
+function getFilteredSortedStyles(styles, { search, sortBy }) {
+  let result = [...styles];
+  if (search.trim()) {
+    const q = search.trim().toLowerCase();
+    result = result.filter(
+      (style) =>
+        (style.name || "").toLowerCase().includes(q) ||
+        (style.content || "").toLowerCase().includes(q),
+    );
+  }
+  if (sortBy === "name") {
+    result.sort((a, b) => (a.name || "").localeCompare(b.name || "", "zh"));
+  } else {
+    result.sort((a, b) =>
+      String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")),
+    );
   }
   return result;
 }
@@ -341,7 +378,10 @@ function renderMarkdownText(markdown) {
   return output.join("\n");
 }
 
-function buildMiniTheaterPrompt({ userPrompt, contextMaterial }) {
+function buildMiniTheaterPrompt({ userPrompt, styleContent, contextMaterial }) {
+  const styleSection = String(styleContent || "").trim()
+    ? ["", `【文风要求】\n${String(styleContent || "").trim()}`]
+    : [];
   return [
     "当前蜃灵已进入小剧场专属梦境，小剧场内容须严格尊重梦境素材中的角色设定、关系、世界信息、近期剧情与情感档案。",
     "请只输出小剧场正文或完整静态 HTML，不要解释你的创作过程，不要输出上下文分析，不要要求用户补充。",
@@ -353,6 +393,7 @@ function buildMiniTheaterPrompt({ userPrompt, contextMaterial }) {
     contextMaterial || "（未读取到额外上下文）",
     "",
     `【梦境小剧场要求】\n${userPrompt}`,
+    ...styleSection,
     "",
     "【小剧场构筑清单】",
     "以下步骤仅用于小剧场构筑与校准，不要输出分析、清单或思考过程；完成校准后，只输出完整小剧场正文。",
@@ -387,12 +428,12 @@ function buildMiniTheaterPrompt({ userPrompt, contextMaterial }) {
   ].join("\n");
 }
 
-function buildMiniTheaterMessages({ userPrompt, contextMaterial }) {
+function buildMiniTheaterMessages({ userPrompt, styleContent, contextMaterial }) {
   return replacePromptMessageMacros([
     ...SUMMARY_SUPPORT_MESSAGES.map((message) => ({ ...message })),
     {
       role: "user",
-      content: buildMiniTheaterPrompt({ userPrompt, contextMaterial }),
+      content: buildMiniTheaterPrompt({ userPrompt, styleContent, contextMaterial }),
     },
   ]);
 }
@@ -478,6 +519,13 @@ async function runMiniTheaterGeneration() {
   if (!userPrompt) {
     throw new Error("请先输入小剧场提示词，或从提示词库选择一条。");
   }
+  const selectedStyle = panelState.selectedStyle
+    ? {
+        id: panelState.selectedStyle.id || "",
+        name: panelState.selectedStyle.name || "",
+        content: panelState.selectedStyle.content || "",
+      }
+    : null;
 
   const info = getContextInfo();
   const mt = getMiniTheaterSettings();
@@ -507,7 +555,11 @@ async function runMiniTheaterGeneration() {
     const contextMaterial = formatShenlingContextForPrompt(context, {
       worldInfoMaterialMode: "injection_first",
     });
-    messages = buildMiniTheaterMessages({ userPrompt, contextMaterial });
+    messages = buildMiniTheaterMessages({
+      userPrompt,
+      styleContent: selectedStyle?.content || "",
+      contextMaterial,
+    });
     apiResult =
       apiMode === "main_api"
         ? await requestMiniTheaterMainApi({ messages })
@@ -532,6 +584,8 @@ async function runMiniTheaterGeneration() {
       id: genId(),
       promptName: panelState.promptSource?.name || "自定义小剧场",
       promptContent: userPrompt,
+      styleName: selectedStyle?.name || "",
+      styleContent: selectedStyle?.content || "",
       resultType,
       resultContent: wordReplacement.text,
       characterName: info.characterName,
@@ -553,12 +607,20 @@ async function runMiniTheaterGeneration() {
       url: apiResult.url,
       httpStatus: apiResult.httpStatus || "",
       messages,
-      requestBody: { ...requestBody, contextDiagnostics },
+      requestBody: { ...requestBody, contextDiagnostics, selectedStyle },
       responseText: apiResult.responseText,
       rawResultContent: content,
       parsedResult: result,
       wordReplacement,
     });
+
+    if (wordReplacement.replacements > 0) {
+      notifyMiniTheater(
+        "success",
+        `小剧场生成结果已替换 ${wordReplacement.replacements} 处。`,
+        "禁词替换",
+      );
+    }
 
     return result;
   } catch (error) {
@@ -577,8 +639,8 @@ async function runMiniTheaterGeneration() {
       httpStatus: apiResult?.httpStatus || "",
       messages,
       requestBody: requestBody
-        ? { ...requestBody, contextDiagnostics }
-        : { contextDiagnostics },
+        ? { ...requestBody, contextDiagnostics, selectedStyle }
+        : { contextDiagnostics, selectedStyle },
       responseText: apiResult?.responseText || "",
       errorStack: error.stack || error.message || error,
     });
@@ -669,6 +731,13 @@ function regeneratePreviewResult() {
         ? { id: "", name: panelState.result.promptName }
         : null;
   }
+  panelState.selectedStyle = String(panelState.result.styleContent || "").trim()
+    ? {
+        id: "",
+        name: panelState.result.styleName || "当次文风",
+        content: panelState.result.styleContent || "",
+      }
+    : null;
   cancelPreviewEditing();
   generateMiniTheater();
 }
@@ -772,37 +841,95 @@ function renderPromptCard(prompt, folders) {
   `;
 }
 
+function renderCollectionModeSwitch() {
+  const modes = [
+    { id: "prompts", label: "提示词" },
+    { id: "styles", label: "文风" },
+  ];
+  return `
+    <div class="slx-theater-collection-switch" role="tablist" aria-label="收藏类型">
+      ${modes
+        .map(
+          (mode) => `
+        <button
+          class="slx-theater-folder-chip${panelState.collectionMode === mode.id ? " is-active" : ""}"
+          type="button"
+          data-theater-collection-mode="${escapeHtml(mode.id)}"
+        >${escapeHtml(mode.label)}</button>
+      `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderStyleCard(style) {
+  const preview = (style.content || "").slice(0, 75).replace(/[\r\n]+/g, " ");
+  const hasMore = (style.content || "").length > 75;
+  return `
+    <div class="slx-theater-prompt-card" data-style-id="${escapeHtml(style.id)}">
+      <div class="slx-theater-prompt-card-body">
+        <div class="slx-theater-prompt-card-name">${escapeHtml(style.name || "未命名文风")}</div>
+        ${preview ? `<div class="slx-theater-prompt-card-preview">${escapeHtml(preview)}${hasMore ? "…" : ""}</div>` : ""}
+        <span class="slx-theater-prompt-card-folder">文风</span>
+      </div>
+      <div class="slx-theater-prompt-card-actions">
+        <button class="slx-soft-btn" type="button" data-theater-copy-style="${escapeHtml(style.id)}">复制</button>
+        <button class="slx-soft-btn" type="button" data-theater-use-style="${escapeHtml(style.id)}">用于生成</button>
+        <button class="slx-soft-btn" type="button" data-theater-edit-style="${escapeHtml(style.id)}">编辑</button>
+        <button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-delete-style="${escapeHtml(style.id)}">删除</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderPromptsTab() {
   const mt = getMiniTheaterSettings();
-  const { folders, prompts } = mt;
+  const { folders, prompts, styles } = mt;
+  const isStyleMode = panelState.collectionMode === "styles";
   const filtered = getFilteredSortedPrompts(prompts, {
     search: panelState.promptSearch,
     folderId: panelState.promptFolderFilter,
     sortBy: panelState.promptSortBy,
   });
+  const filteredStyles = getFilteredSortedStyles(styles, {
+    search: panelState.promptSearch,
+    sortBy: panelState.promptSortBy,
+  });
 
   return `
     <div class="slx-theater-tab-content" role="tabpanel">
+      ${renderCollectionModeSwitch()}
       <div class="slx-theater-prompts-toolbar">
         <input
           class="slx-theater-search-input"
           type="search"
-          placeholder="搜索提示词…"
+          placeholder="${isStyleMode ? "搜索文风…" : "搜索提示词…"}"
           value="${escapeHtml(panelState.promptSearch)}"
           data-theater-prompt-search
-          aria-label="搜索提示词"
+          aria-label="${isStyleMode ? "搜索文风" : "搜索提示词"}"
         >
         <select class="slx-theater-sort-select" data-theater-sort aria-label="排序方式">
           <option value="newest" ${panelState.promptSortBy === "newest" ? "selected" : ""}>最新</option>
           <option value="name" ${panelState.promptSortBy === "name" ? "selected" : ""}>名称</option>
         </select>
-        <button class="slx-soft-btn" type="button" data-theater-new-prompt>＋ 新建</button>
+        <button class="slx-soft-btn" type="button" ${isStyleMode ? "data-theater-new-style" : "data-theater-new-prompt"}>＋ 新建</button>
       </div>
 
-      ${renderFolderChips(folders)}
+      ${isStyleMode ? "" : renderFolderChips(folders)}
 
       ${
-        filtered.length === 0
+        isStyleMode
+          ? filteredStyles.length === 0
+            ? `<div class="slx-detail-card slx-theater-empty-state">
+                 <div class="slx-theater-empty-icon">✒️</div>
+                 <p>${styles.length === 0 ? "还没有收藏的文风" : "没有符合条件的文风"}</p>
+                 ${styles.length === 0 ? '<button class="slx-soft-btn" type="button" data-theater-new-style>＋ 新建第一条</button>' : ""}
+               </div>`
+            : `<div class="slx-theater-prompt-list">
+                 ${filteredStyles.map(renderStyleCard).join("")}
+               </div>`
+          : filtered.length === 0
           ? `<div class="slx-detail-card slx-theater-empty-state">
            <div class="slx-theater-empty-icon">📝</div>
            <p>${prompts.length === 0 ? "还没有收藏的提示词" : "没有符合条件的提示词"}</p>
@@ -833,6 +960,9 @@ function renderGenerateTab() {
   ]
     .filter(Boolean)
     .join(" ");
+  const styleButtonLabel = panelState.selectedStyle
+    ? `文风：${panelState.selectedStyle.name || "未命名"}`
+    : "选择文风";
   return `
     <div class="slx-theater-tab-content" role="tabpanel">
       <div class="slx-detail-card">
@@ -846,14 +976,7 @@ function renderGenerateTab() {
         >${escapeHtml(panelState.promptText)}</textarea>
         <div class="slx-action-row">
           <button class="slx-soft-btn" type="button" data-theater-pick-prompt>从提示词库选择</button>
-          ${
-            panelState.promptSource
-              ? `<span class="slx-theater-source-bar">
-               来源：${escapeHtml(panelState.promptSource.name)}
-               <button class="slx-theater-source-clear" type="button" data-theater-clear-source aria-label="清除来源">✕</button>
-             </span>`
-              : ""
-          }
+          <button class="slx-soft-btn" type="button" data-theater-pick-style>${escapeHtml(styleButtonLabel)}</button>
         </div>
       </div>
 
@@ -973,6 +1096,42 @@ function renderModalContent() {
     `;
   }
 
+  if (m.type === "style-form") {
+    const isEdit = Boolean(m.styleId);
+    return `
+      <div class="slx-theater-modal-header">
+        <span class="slx-theater-modal-title">${isEdit ? "编辑文风" : "新建文风"}</span>
+        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="slx-theater-modal-body">
+        <div class="slx-theater-form-field">
+          <label for="slx-theater-style-modal-name">名称</label>
+          <input id="slx-theater-style-modal-name" type="text" class="slx-theater-text-input"
+            value="${escapeHtml(m.fields.name)}" placeholder="例如：冷淡克制、古风留白…"
+            data-theater-modal-field="name" maxlength="60" autocomplete="off">
+        </div>
+        <div class="slx-theater-form-field">
+          <label for="slx-theater-style-modal-content">文风要求</label>
+          <textarea id="slx-theater-style-modal-content" class="slx-theater-prompt-textarea slx-theater-modal-textarea" rows="12"
+            placeholder="写下文风、叙事视角、节奏、修辞、禁忌等要求…"
+            data-theater-modal-field="content"
+          >${escapeHtml(m.fields.content)}</textarea>
+        </div>
+      </div>
+      <div class="slx-theater-modal-footer">
+        ${
+          isEdit
+            ? `<button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-modal-delete-style="${escapeHtml(m.styleId)}">删除</button>`
+            : "<span></span>"
+        }
+        <div style="display:flex;gap:8px">
+          <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
+          <button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>保存</button>
+        </div>
+      </div>
+    `;
+  }
+
   if (m.type === "folder-form") {
     return `
       <div class="slx-theater-modal-header">
@@ -1057,6 +1216,46 @@ function renderModalContent() {
     `;
   }
 
+  if (m.type === "pick-style") {
+    const mt = getMiniTheaterSettings();
+    const filtered = getFilteredSortedStyles(mt.styles, {
+      search: panelState.pickSearch,
+      sortBy: "name",
+    });
+    return `
+      <div class="slx-theater-modal-header">
+        <span class="slx-theater-modal-title">选择文风</span>
+        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="slx-theater-modal-body slx-theater-pick-body">
+        <input type="search" class="slx-theater-search-input" placeholder="搜索文风…"
+          value="${escapeHtml(panelState.pickSearch)}"
+          data-theater-pick-search aria-label="搜索文风">
+        <div class="slx-theater-pick-list">
+          <button class="slx-theater-pick-item" type="button" data-theater-clear-style>
+            <span class="slx-theater-pick-item-name">不使用文风</span>
+            <span class="slx-theater-pick-item-preview">仅按小剧场提示词本身生成</span>
+          </button>
+          ${
+            filtered.length === 0
+              ? `<p style="color:var(--slx-muted);font-size:12px;padding:8px 0;margin:0">
+                ${mt.styles.length === 0 ? "文风库为空，请先在收藏页新建文风" : "没有匹配的文风"}</p>`
+              : filtered
+                  .map(
+                    (style) => `
+                <button class="slx-theater-pick-item" type="button" data-theater-pick-style-item="${escapeHtml(style.id)}">
+                  <span class="slx-theater-pick-item-name">${escapeHtml(style.name || "未命名文风")}</span>
+                  <span class="slx-theater-pick-item-preview">${escapeHtml((style.content || "").slice(0, 55))}${(style.content || "").length > 55 ? "…" : ""}</span>
+                </button>
+              `,
+                  )
+                  .join("")
+          }
+        </div>
+      </div>
+    `;
+  }
+
   return "";
 }
 
@@ -1064,7 +1263,7 @@ function renderModal() {
   if (!panelState.modal) return "";
   const modalClass = [
     "slx-theater-modal",
-    panelState.modal.type === "prompt-form"
+    panelState.modal.type === "prompt-form" || panelState.modal.type === "style-form"
       ? "slx-theater-modal-prompt-form"
       : "",
   ]
@@ -1328,6 +1527,14 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
     refreshPanel();
   });
 
+  root.querySelectorAll("[data-theater-collection-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      panelState.collectionMode = btn.dataset.theaterCollectionMode === "styles" ? "styles" : "prompts";
+      panelState.promptFolderFilter = null;
+      refreshPanel();
+    });
+  });
+
   root.querySelectorAll("[data-theater-folder-filter]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const val = btn.dataset.theaterFolderFilter;
@@ -1343,6 +1550,17 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
         type: "prompt-form",
         promptId: null,
         fields: { name: "", content: "", folderId: null },
+      };
+      refreshPanel();
+    });
+  });
+
+  root.querySelectorAll("[data-theater-new-style]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      panelState.modal = {
+        type: "style-form",
+        styleId: null,
+        fields: { name: "", content: "" },
       };
       refreshPanel();
     });
@@ -1448,6 +1666,75 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
     });
   });
 
+  root.querySelectorAll("[data-theater-copy-style]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const style = getMiniTheaterSettings().styles.find(
+        (item) => item.id === btn.dataset.theaterCopyStyle,
+      );
+      if (!style) return;
+      try {
+        await copyTextToClipboard(style.content || "");
+        const orig = btn.textContent;
+        btn.textContent = "已复制 ✓";
+        setTimeout(() => {
+          btn.textContent = orig;
+        }, 1400);
+      } catch {
+        btn.textContent = "复制失败";
+      }
+    });
+  });
+
+  root.querySelectorAll("[data-theater-use-style]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const style = getMiniTheaterSettings().styles.find(
+        (item) => item.id === btn.dataset.theaterUseStyle,
+      );
+      if (!style) return;
+      panelState.selectedStyle = {
+        id: style.id,
+        name: style.name || "未命名文风",
+        content: style.content || "",
+      };
+      panelState.activeTab = "generate";
+      refreshPanel();
+    });
+  });
+
+  root.querySelectorAll("[data-theater-edit-style]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const style = getMiniTheaterSettings().styles.find(
+        (item) => item.id === btn.dataset.theaterEditStyle,
+      );
+      if (!style) return;
+      panelState.modal = {
+        type: "style-form",
+        styleId: style.id,
+        fields: {
+          name: style.name || "",
+          content: style.content || "",
+        },
+      };
+      refreshPanel();
+    });
+  });
+
+  root.querySelectorAll("[data-theater-delete-style]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const style = getMiniTheaterSettings().styles.find(
+        (item) => item.id === btn.dataset.theaterDeleteStyle,
+      );
+      if (!style) return;
+      panelState.modal = {
+        type: "delete-confirm",
+        target: "style",
+        id: style.id,
+        name: style.name || "未命名文风",
+      };
+      refreshPanel();
+    });
+  });
+
   // ── 发送与生成 tab ──
   root
     .querySelector("[data-theater-prompt-text]")
@@ -1471,6 +1758,14 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
     ?.addEventListener("click", () => {
       panelState.pickSearch = "";
       panelState.modal = { type: "pick-prompt" };
+      refreshPanel();
+    });
+
+  root
+    .querySelector("[data-theater-pick-style]")
+    ?.addEventListener("click", () => {
+      panelState.pickSearch = "";
+      panelState.modal = { type: "pick-style" };
       refreshPanel();
     });
 
@@ -1616,6 +1911,39 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
         refreshPanel();
       }
 
+      if (m.type === "style-form") {
+        const name = (m.fields.name || "").trim();
+        const content = (m.fields.content || "").trim();
+        if (!name || !content) return;
+        const mt = getMiniTheaterSettings();
+        if (m.styleId) {
+          const existing = mt.styles.find((style) => style.id === m.styleId);
+          if (existing) {
+            existing.name = name;
+            existing.content = content;
+            existing.updatedAt = now;
+            if (panelState.selectedStyle?.id === existing.id) {
+              panelState.selectedStyle = {
+                id: existing.id,
+                name: existing.name || "未命名文风",
+                content: existing.content || "",
+              };
+            }
+          }
+        } else {
+          mt.styles.push({
+            id: genId(),
+            name,
+            content,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+        saveGlobalSettings();
+        panelState.modal = null;
+        refreshPanel();
+      }
+
       if (m.type === "folder-form") {
         const name = (m.fields.name || "").trim();
         if (!name) return;
@@ -1643,6 +1971,21 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
       refreshPanel();
     });
 
+  root
+    .querySelector("[data-theater-modal-delete-style]")
+    ?.addEventListener("click", function () {
+      const styleId = this.dataset.theaterModalDeleteStyle;
+      const style = getMiniTheaterSettings().styles.find((item) => item.id === styleId);
+      if (!style) return;
+      panelState.modal = {
+        type: "delete-confirm",
+        target: "style",
+        id: styleId,
+        name: style.name || "未命名文风",
+      };
+      refreshPanel();
+    });
+
   // 确认删除
   root
     .querySelector("[data-theater-modal-confirm-delete]")
@@ -1662,6 +2005,12 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
         });
         if (panelState.promptFolderFilter === m.id)
           panelState.promptFolderFilter = null;
+      }
+      if (m.target === "style") {
+        mt.styles = mt.styles.filter((style) => style.id !== m.id);
+        if (panelState.selectedStyle?.id === m.id) {
+          panelState.selectedStyle = null;
+        }
       }
       if (m.target === "saved") {
         deleteSavedTheaterResult(m.id);
@@ -1691,6 +2040,30 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
       panelState.promptSource = {
         id: prompt.id,
         name: prompt.name || "未命名",
+      };
+      panelState.modal = null;
+      panelState.activeTab = "generate";
+      refreshPanel();
+    });
+  });
+
+  root.querySelector("[data-theater-clear-style]")?.addEventListener("click", () => {
+    panelState.selectedStyle = null;
+    panelState.modal = null;
+    panelState.activeTab = "generate";
+    refreshPanel();
+  });
+
+  root.querySelectorAll("[data-theater-pick-style-item]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const style = getMiniTheaterSettings().styles.find(
+        (item) => item.id === btn.dataset.theaterPickStyleItem,
+      );
+      if (!style) return;
+      panelState.selectedStyle = {
+        id: style.id,
+        name: style.name || "未命名文风",
+        content: style.content || "",
       };
       panelState.modal = null;
       panelState.activeTab = "generate";

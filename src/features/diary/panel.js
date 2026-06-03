@@ -176,6 +176,16 @@ function getPanelOption(name) {
   return typeof value === 'function' ? value : null;
 }
 
+function notifyDiary(type, message, title = '日记') {
+  const toastr = globalThis.toastr || globalThis.parent?.toastr;
+  if (toastr && typeof toastr[type] === 'function') {
+    toastr[type](message, title);
+    return;
+  }
+  const logger = type === 'error' ? console.error : console.info;
+  logger(`[蜃灵助手] ${title}：${message}`);
+}
+
 function createDiaryId() {
   return `diary-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -1031,6 +1041,9 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
         parsedResult,
         wordReplacement,
       });
+      if (wordReplacement.replacements > 0) {
+        notifyDiary('success', `日记生成结果已替换 ${wordReplacement.replacements} 处。`, '禁词替换');
+      }
       return parsedResult;
     } catch (error) {
       addCommunicationLog?.({
@@ -1107,6 +1120,9 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
       parsedResult,
       wordReplacement,
     });
+    if (wordReplacement.replacements > 0) {
+      notifyDiary('success', `日记生成结果已替换 ${wordReplacement.replacements} 处。`, '禁词替换');
+    }
     return parsedResult;
   } catch (error) {
     addCommunicationLog?.({

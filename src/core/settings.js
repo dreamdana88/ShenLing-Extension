@@ -82,6 +82,7 @@ export const defaultGlobalSettings = Object.freeze({
       apiMode: 'secondary_api',
       folders: [],
       prompts: [],
+      styles: [],
     },
   },
   communicationLog: {

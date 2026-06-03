@@ -5187,6 +5187,13 @@ body.slx-panel-open-lock {
   gap: 5px;
 }
 
+.slx-theater-collection-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
 .slx-theater-folder-chip {
   padding: 3px 10px;
   border-radius: 999px;
