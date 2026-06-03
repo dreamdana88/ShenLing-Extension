@@ -509,7 +509,10 @@ function renderCommunicationLogPanel(settings) {
       ${renderLogDetailBlock('messages', log.messages)}
       ${renderLogDetailBlock('请求体', log.requestBody)}
       ${renderLogDetailBlock('响应全文', log.responseText)}
+      ${log.rawParsedResult ? renderLogDetailBlock('替换前解析', log.rawParsedResult) : ''}
+      ${log.rawResultContent ? renderLogDetailBlock('替换前正文', log.rawResultContent) : ''}
       ${renderLogDetailBlock('解析结果', log.parsedResult)}
+      ${log.wordReplacement ? renderLogDetailBlock('禁词替换', log.wordReplacement) : ''}
       ${renderLogDetailBlock('错误信息', log.errorStack)}
     </article>
   `).join('');

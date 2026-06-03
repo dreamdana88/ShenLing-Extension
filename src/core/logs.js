@@ -71,7 +71,10 @@ export function createCommunicationLog(input = {}) {
     messages: input.messages ?? '',
     requestBody: input.requestBody ?? '',
     responseText: input.responseText ?? '',
+    rawParsedResult: input.rawParsedResult ?? '',
+    rawResultContent: input.rawResultContent ?? '',
     parsedResult: input.parsedResult ?? '',
+    wordReplacement: input.wordReplacement ?? '',
     errorStack: input.errorStack || input.error?.stack || input.error?.message || input.error || '',
   };
 }
@@ -122,13 +125,16 @@ export function sanitizeCommunicationLog(log, settings = {}) {
     messages: redactLogValue(log.messages, knownKeys),
     requestBody: redactLogValue(log.requestBody, knownKeys),
     responseText: redactLogValue(log.responseText, knownKeys),
+    rawParsedResult: redactLogValue(log.rawParsedResult, knownKeys),
+    rawResultContent: redactLogValue(log.rawResultContent, knownKeys),
     parsedResult: redactLogValue(log.parsedResult, knownKeys),
+    wordReplacement: redactLogValue(log.wordReplacement, knownKeys),
     errorStack: redactLogValue(log.errorStack, knownKeys),
   };
 }
 
 export function formatCommunicationLogForCopy(log) {
-  return [
+  const lines = [
     `模块：${log.moduleName}`,
     `任务：${log.taskType}`,
     `状态：${log.status === 'failure' ? '失败' : '成功'}`,
@@ -147,13 +153,25 @@ export function formatCommunicationLogForCopy(log) {
     '',
     '【响应全文】',
     stringifyLogField(log.responseText) || '未记录',
-    '',
-    '【解析结果】',
-    stringifyLogField(log.parsedResult) || '未记录',
-    '',
-    '【错误信息】',
-    stringifyLogField(log.errorStack) || '未记录',
-  ].join('\n');
+  ];
+
+  if (log.rawParsedResult) {
+    lines.push('', '【替换前解析】', stringifyLogField(log.rawParsedResult) || '未记录');
+  }
+
+  if (log.rawResultContent) {
+    lines.push('', '【替换前正文】', stringifyLogField(log.rawResultContent) || '未记录');
+  }
+
+  lines.push('', '【解析结果】', stringifyLogField(log.parsedResult) || '未记录');
+
+  if (log.wordReplacement) {
+    lines.push('', '【禁词替换】', stringifyLogField(log.wordReplacement) || '未记录');
+  }
+
+  lines.push('', '【错误信息】', stringifyLogField(log.errorStack) || '未记录');
+
+  return lines.join('\n');
 }
 
 export async function copyText(text) {

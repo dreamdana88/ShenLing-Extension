@@ -659,6 +659,20 @@ function savePreviewEdit() {
   cancelPreviewEditing();
 }
 
+function regeneratePreviewResult() {
+  if (!panelState.result) return;
+  const promptContent = String(panelState.result.promptContent || "").trim();
+  if (promptContent) {
+    panelState.promptText = promptContent;
+    panelState.promptSource =
+      panelState.result.promptName && panelState.result.promptName !== "自定义小剧场"
+        ? { id: "", name: panelState.result.promptName }
+        : null;
+  }
+  cancelPreviewEditing();
+  generateMiniTheater();
+}
+
 // ── API 切换 / 标签栏 ─────────────────────────────────────────────────
 
 function renderApiToggle() {
@@ -1129,14 +1143,35 @@ function renderPreviewOverlay() {
                  <button class="slx-soft-btn slx-primary-btn" type="button" data-theater-save-preview-edit>保存编辑</button>`
               : `<button class="slx-soft-btn" type="button" data-theater-close-preview>关闭</button>
                  <button class="slx-soft-btn" type="button" data-theater-edit-preview ${result ? "" : "disabled"}>编辑</button>
-                 <button class="slx-soft-btn" type="button" data-theater-save-result ${result ? "" : "disabled"}>${isSaved ? "已收藏" : "收藏"}</button>
+                 <button class="slx-soft-btn" type="button" data-theater-save-result ${result ? "" : "disabled"}>${isSaved ? "取消收藏" : "收藏"}</button>
                  <button class="slx-soft-btn" type="button" data-theater-copy-result ${result ? "" : "disabled"}>${result?.resultType === "html" ? "复制 HTML" : "复制"}</button>
-                 <button class="slx-soft-btn" type="button" data-theater-regenerate ${panelState.generationStatus === "running" ? "disabled" : ""}>重新生成</button>`
+                 ${
+                   result && !isSaved
+                     ? `<button class="slx-soft-btn" type="button" data-theater-regenerate ${panelState.generationStatus === "running" ? "disabled" : ""}>重新生成</button>`
+                     : ""
+                 }`
           }
         </div>
       </div>
     </div>
   `;
+}
+
+function refreshPreviewOnly(root) {
+  const current = root.querySelector("[data-theater-overlay]");
+  if (!current) {
+    refreshPanel();
+    return;
+  }
+  const template = document.createElement("template");
+  template.innerHTML = renderPreviewOverlay().trim();
+  const next = template.content.firstElementChild;
+  if (!next) {
+    current.remove();
+    return;
+  }
+  current.replaceWith(next);
+  bindMiniTheaterPreviewEvents(root);
 }
 
 // ── 主渲染入口 ────────────────────────────────────────────────────────
@@ -1161,6 +1196,98 @@ function renderActiveTab() {
     default:
       return renderPromptsTab();
   }
+}
+
+function bindMiniTheaterPreviewEvents(root) {
+  root.querySelectorAll("[data-theater-preview-edit-field]").forEach((el) => {
+    el.addEventListener("input", (e) => {
+      if (!panelState.previewDraft) return;
+      const field = el.dataset.theaterPreviewEditField;
+      panelState.previewDraft[field] = e.target.value;
+    });
+  });
+
+  root
+    .querySelector("[data-theater-edit-preview]")
+    ?.addEventListener("click", () => {
+      startPreviewEditing();
+      refreshPreviewOnly(root);
+    });
+
+  root
+    .querySelector("[data-theater-cancel-preview-edit]")
+    ?.addEventListener("click", () => {
+      cancelPreviewEditing();
+      refreshPreviewOnly(root);
+    });
+
+  root
+    .querySelector("[data-theater-save-preview-edit]")
+    ?.addEventListener("click", () => {
+      savePreviewEdit();
+      refreshPreviewOnly(root);
+    });
+
+  root
+    .querySelector("[data-theater-save-result]")
+    ?.addEventListener("click", () => {
+      if (!panelState.result) return;
+      if (isTheaterResultSaved(panelState.result.id)) {
+        deleteSavedTheaterResult(panelState.result.id);
+        panelState.result = {
+          ...panelState.result,
+          savedAt: "",
+          updatedAt: panelState.result.updatedAt || "",
+        };
+      } else {
+        const saved = saveTheaterResultToStore(panelState.result);
+        panelState.result = {
+          ...panelState.result,
+          savedAt: saved.savedAt,
+          updatedAt: saved.updatedAt,
+        };
+      }
+      refreshPreviewOnly(root);
+    });
+
+  root.querySelectorAll("[data-theater-close-preview]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      panelState.previewOpen = false;
+      cancelPreviewEditing();
+      refreshPanel();
+    });
+  });
+
+  root
+    .querySelector("[data-theater-overlay]")
+    ?.addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) {
+        panelState.previewOpen = false;
+        cancelPreviewEditing();
+        refreshPanel();
+      }
+    });
+
+  root
+    .querySelector("[data-theater-copy-result]")
+    ?.addEventListener("click", async function () {
+      try {
+        await copyTheaterResult();
+        const orig = this.textContent;
+        this.textContent = "已复制 ✓";
+        setTimeout(() => {
+          this.textContent = orig;
+        }, 1400);
+      } catch {
+        this.textContent = "复制失败";
+      }
+    });
+
+  root
+    .querySelector("[data-theater-regenerate]")
+    ?.addEventListener("click", () => {
+      regeneratePreviewResult();
+    });
 }
 
 // ── 事件绑定 ──────────────────────────────────────────────────────────
@@ -1361,86 +1488,7 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   });
 
   // ── 预览弹窗 ──
-  root.querySelectorAll("[data-theater-preview-edit-field]").forEach((el) => {
-    const event = el.tagName === "TEXTAREA" ? "input" : "input";
-    el.addEventListener(event, (e) => {
-      if (!panelState.previewDraft) return;
-      const field = el.dataset.theaterPreviewEditField;
-      panelState.previewDraft[field] = e.target.value;
-    });
-  });
-
-  root
-    .querySelector("[data-theater-edit-preview]")
-    ?.addEventListener("click", () => {
-      startPreviewEditing();
-      refreshPanel();
-    });
-
-  root
-    .querySelector("[data-theater-cancel-preview-edit]")
-    ?.addEventListener("click", () => {
-      cancelPreviewEditing();
-      refreshPanel();
-    });
-
-  root
-    .querySelector("[data-theater-save-preview-edit]")
-    ?.addEventListener("click", () => {
-      savePreviewEdit();
-      refreshPanel();
-    });
-
-  root
-    .querySelector("[data-theater-save-result]")
-    ?.addEventListener("click", function () {
-      if (!panelState.result) return;
-      const saved = saveTheaterResultToStore(panelState.result);
-      panelState.result = {
-        ...panelState.result,
-        savedAt: saved.savedAt,
-        updatedAt: saved.updatedAt,
-      };
-      this.textContent = "已收藏";
-      refreshPanel();
-    });
-
-  root.querySelectorAll("[data-theater-close-preview]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      panelState.previewOpen = false;
-      cancelPreviewEditing();
-      refreshPanel();
-    });
-  });
-  root
-    .querySelector("[data-theater-overlay]")
-    ?.addEventListener("click", (e) => {
-      if (e.target === e.currentTarget) {
-        panelState.previewOpen = false;
-        cancelPreviewEditing();
-        refreshPanel();
-      }
-    });
-  root
-    .querySelector("[data-theater-copy-result]")
-    ?.addEventListener("click", async function () {
-      try {
-        await copyTheaterResult();
-        const orig = this.textContent;
-        this.textContent = "已复制 ✓";
-        setTimeout(() => {
-          this.textContent = orig;
-        }, 1400);
-      } catch {
-        this.textContent = "复制失败";
-      }
-    });
-  root
-    .querySelector("[data-theater-regenerate]")
-    ?.addEventListener("click", () => {
-      cancelPreviewEditing();
-      generateMiniTheater();
-    });
+  bindMiniTheaterPreviewEvents(root);
 
   // ── 回看操作 ──
   root.querySelectorAll("[data-theater-open-saved]").forEach((btn) => {

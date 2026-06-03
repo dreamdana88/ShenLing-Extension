@@ -2233,6 +2233,10 @@ body.slx-panel-open-lock {
   padding: 18px;
 }
 
+.slx-rule-modal.slx-diary-editor-modal {
+  z-index: 80;
+}
+
 .slx-rule-modal-card {
   width: min(520px, 100%);
   border: 1px solid var(--slx-border);
