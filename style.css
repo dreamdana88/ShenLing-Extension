@@ -4915,6 +4915,23 @@ body.slx-panel-open-lock {
   background: rgba(22, 16, 18, 0.62);
 }
 
+.slx-theater-preview-overlay[data-theme='dark'] {
+  background: rgba(2, 8, 18, 0.72);
+  color-scheme: dark;
+  --slx-bg-panel: rgba(8, 20, 36, 0.98);
+  --slx-bg-btn: rgba(100, 180, 210, 0.1);
+  --slx-bg-card-hover: rgba(100, 180, 210, 0.16);
+  --slx-border: rgba(100, 180, 210, 0.3);
+  --slx-border-dim: rgba(100, 180, 210, 0.16);
+  --slx-text: rgba(222, 244, 250, 0.96);
+  --slx-muted: rgba(150, 198, 220, 0.66);
+  --slx-accent: #64b4d2;
+  --slx-input-bg: rgba(12, 31, 50, 0.88);
+  --slx-input-bg-focus: rgba(16, 42, 66, 0.96);
+  --slx-input-text: rgba(222, 244, 250, 0.96);
+  --slx-input-placeholder: rgba(150, 198, 220, 0.52);
+}
+
 @keyframes slx-theater-overlay-in {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -4937,6 +4954,15 @@ body.slx-panel-open-lock {
   animation: slx-theater-preview-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-preview {
+  background:
+    linear-gradient(180deg, rgba(11, 29, 48, 0.98), rgba(8, 20, 36, 0.98)),
+    var(--slx-bg-panel);
+  border-color: rgba(100, 180, 210, 0.2);
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.52);
+  color: var(--slx-text);
+}
+
 @keyframes slx-theater-preview-in {
   from { opacity: 0; transform: translateY(12px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
@@ -4951,10 +4977,19 @@ body.slx-panel-open-lock {
   flex-shrink: 0;
 }
 
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-preview-header,
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-preview-footer {
+  border-color: rgba(100, 180, 210, 0.14);
+}
+
 .slx-theater-preview-title {
   font-size: 15px;
   font-weight: 800;
   color: #6b3a2e;
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-preview-title {
+  color: rgba(222, 244, 250, 0.96);
 }
 
 .slx-theater-preview-title-wrap {
@@ -4972,6 +5007,10 @@ body.slx-panel-open-lock {
   white-space: nowrap;
 }
 
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-preview-meta {
+  color: rgba(150, 198, 220, 0.64);
+}
+
 .slx-theater-preview-header .slx-icon-btn {
   background: rgba(255, 246, 238, 0.82);
   border-color: rgba(139, 75, 67, 0.14);
@@ -4982,6 +5021,18 @@ body.slx-panel-open-lock {
   background: rgba(255, 235, 226, 0.94);
   border-color: rgba(139, 75, 67, 0.24);
   color: #7a4a3a;
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-preview-header .slx-icon-btn {
+  border-color: rgba(100, 180, 210, 0.18);
+  background: rgba(100, 180, 210, 0.1);
+  color: rgba(210, 235, 245, 0.86);
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-preview-header .slx-icon-btn:hover {
+  border-color: rgba(100, 180, 210, 0.3);
+  background: rgba(100, 180, 210, 0.16);
+  color: #f3fbfd;
 }
 
 .slx-theater-preview-body {
@@ -5008,6 +5059,10 @@ body.slx-panel-open-lock {
   color: #4f3926;
 }
 
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-text-body {
+  color: rgba(222, 244, 250, 0.92);
+}
+
 .slx-theater-generated-text {
   white-space: normal;
 }
@@ -5026,6 +5081,15 @@ body.slx-panel-open-lock {
   font-weight: 800;
   line-height: 1.35;
   margin: 0 0 0.75em;
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-generated-text h1,
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-generated-text h2,
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-generated-text h3,
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-generated-text h4,
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-generated-text h5,
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-generated-text h6 {
+  color: rgba(236, 250, 254, 0.98);
 }
 
 .slx-theater-generated-text h1 { font-size: 22px; }
@@ -5053,6 +5117,12 @@ body.slx-panel-open-lock {
   color: #5f4539;
 }
 
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-generated-text blockquote {
+  border-left-color: rgba(100, 180, 210, 0.46);
+  background: rgba(100, 180, 210, 0.1);
+  color: rgba(210, 235, 245, 0.9);
+}
+
 .slx-theater-generated-text code {
   padding: 0.08em 0.35em;
   border-radius: 5px;
@@ -5061,10 +5131,18 @@ body.slx-panel-open-lock {
   font-size: 0.92em;
 }
 
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-generated-text code {
+  background: rgba(100, 180, 210, 0.12);
+}
+
 .slx-theater-generated-text hr {
   margin: 1.4em 0;
   border: 0;
   border-top: 1px solid rgba(139, 75, 67, 0.2);
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-generated-text hr {
+  border-top-color: rgba(100, 180, 210, 0.18);
 }
 
 .slx-theater-generated-text a {
@@ -5072,10 +5150,18 @@ body.slx-panel-open-lock {
   text-decoration: underline;
 }
 
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-generated-text a {
+  color: #8fd1e9;
+}
+
 .slx-theater-text-placeholder {
   color: rgba(91, 61, 49, 0.58);
   font-size: 13px;
   margin: 0;
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-text-placeholder {
+  color: rgba(150, 198, 220, 0.62);
 }
 
 /* HTML 小剧场 iframe 区 */
@@ -5091,6 +5177,10 @@ body.slx-panel-open-lock {
   border: none;
   display: block;
   background: #fff;
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-iframe {
+  background: #081424;
 }
 
 .slx-theater-preview-body-edit {
@@ -5142,6 +5232,28 @@ body.slx-panel-open-lock {
   border-color: rgba(139, 75, 67, 0.1);
   background: rgba(248, 238, 231, 0.54);
   color: rgba(139, 90, 78, 0.42);
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-preview-footer .slx-soft-btn {
+  border-color: rgba(100, 180, 210, 0.18);
+  background: rgba(100, 180, 210, 0.1);
+  color: rgba(210, 235, 245, 0.86);
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-preview-footer .slx-soft-btn:hover:not(:disabled) {
+  border-color: rgba(100, 180, 210, 0.3);
+  background: rgba(100, 180, 210, 0.16);
+  color: #f3fbfd;
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-preview-footer .slx-soft-btn:disabled {
+  border-color: rgba(100, 180, 210, 0.1);
+  background: rgba(12, 31, 50, 0.42);
+  color: rgba(150, 198, 220, 0.38);
+}
+
+.slx-theater-preview-overlay[data-theme='dark'] .slx-theater-form-field span {
+  color: rgba(222, 244, 250, 0.94);
 }
 
 @media (max-width: 640px) {

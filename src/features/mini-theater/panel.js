@@ -1235,6 +1235,7 @@ function renderModal() {
 
 function renderPreviewOverlay() {
   if (!panelState.previewOpen) return "";
+  const theme = getGlobalSettings().theme === "dark" ? "dark" : "light";
   const result = panelState.result;
   const info = getContextInfo();
   const isEditing = Boolean(result && panelState.previewEditing);
@@ -1276,7 +1277,7 @@ function renderPreviewOverlay() {
       : "slx-theater-preview-body-text",
   ].join(" ");
   return `
-    <div class="slx-theater-overlay slx-theater-preview-overlay" data-theater-overlay role="dialog" aria-modal="true" aria-label="小剧场预览">
+    <div class="slx-theater-overlay slx-theater-preview-overlay" data-theme="${theme}" data-theater-overlay role="dialog" aria-modal="true" aria-label="小剧场预览">
       <div class="slx-theater-preview">
         <div class="slx-theater-preview-header">
           <div class="slx-theater-preview-title-wrap">
