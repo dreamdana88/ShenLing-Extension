@@ -1383,8 +1383,33 @@ function renderPreviewOverlay() {
   `;
 }
 
+function getPreviewOverlay(root) {
+  if (root?.matches?.("[data-theater-overlay]")) return root;
+  return (
+    root?.querySelector?.("[data-theater-overlay]") ||
+    document.body.querySelector('[data-theater-overlay][data-theater-portal="body"]')
+  );
+}
+
+function mountPreviewPortal(root) {
+  const existingPortal = document.body.querySelector('[data-theater-overlay][data-theater-portal="body"]');
+  const localOverlay = root?.querySelector?.("[data-theater-overlay]");
+  if (!localOverlay) {
+    if (!panelState.previewOpen && existingPortal) {
+      existingPortal.remove();
+    }
+    return existingPortal || null;
+  }
+  if (existingPortal && existingPortal !== localOverlay) {
+    existingPortal.remove();
+  }
+  localOverlay.dataset.theaterPortal = "body";
+  document.body.appendChild(localOverlay);
+  return localOverlay;
+}
+
 function refreshPreviewOnly(root) {
-  const current = root.querySelector("[data-theater-overlay]");
+  const current = getPreviewOverlay(root);
   if (!current) {
     refreshPanel();
     return;
@@ -1396,8 +1421,9 @@ function refreshPreviewOnly(root) {
     current.remove();
     return;
   }
+  next.dataset.theaterPortal = "body";
   current.replaceWith(next);
-  bindMiniTheaterPreviewEvents(root);
+  bindMiniTheaterPreviewEvents(next);
 }
 
 // ── 主渲染入口 ────────────────────────────────────────────────────────
@@ -1484,9 +1510,7 @@ function bindMiniTheaterPreviewEvents(root) {
     });
   });
 
-  root
-    .querySelector("[data-theater-overlay]")
-    ?.addEventListener("click", (e) => {
+  getPreviewOverlay(root)?.addEventListener("click", (e) => {
       if (e.target === e.currentTarget) {
         panelState.previewOpen = false;
         cancelPreviewEditing();
@@ -1521,6 +1545,7 @@ function bindMiniTheaterPreviewEvents(root) {
 export function bindMiniTheaterPanelEvents(panelRoot) {
   const root = panelRoot.querySelector("[data-theater-root]");
   if (!root) return;
+  const previewPortal = mountPreviewPortal(root);
 
   // ── 标签切换 ──
   root.querySelectorAll("[data-theater-tab]").forEach((btn) => {
@@ -1825,7 +1850,9 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   });
 
   // ── 预览弹窗 ──
-  bindMiniTheaterPreviewEvents(root);
+  if (previewPortal) {
+    bindMiniTheaterPreviewEvents(previewPortal);
+  }
 
   // ── 回看操作 ──
   root.querySelectorAll("[data-theater-open-saved]").forEach((btn) => {

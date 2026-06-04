@@ -5010,9 +5010,21 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-preview-overlay {
+  --slx-bg-panel: rgba(252, 244, 239, 0.98);
+  --slx-bg-btn: rgba(186, 148, 133, 0.13);
+  --slx-bg-card-hover: rgba(186, 148, 133, 0.18);
+  --slx-border: rgba(186, 148, 133, 0.28);
+  --slx-border-dim: rgba(186, 148, 133, 0.16);
+  --slx-text: rgba(80, 52, 44, 0.96);
+  --slx-muted: rgba(128, 95, 86, 0.68);
+  --slx-accent: #b4866a;
+  --slx-input-bg: rgba(255, 250, 246, 0.88);
+  --slx-input-bg-focus: rgba(255, 253, 250, 0.96);
+  --slx-input-text: rgba(80, 52, 44, 0.96);
+  --slx-input-placeholder: rgba(128, 95, 86, 0.56);
   position: fixed;
   inset: 0;
-  z-index: 100000;
+  z-index: 2147483200;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5367,6 +5379,51 @@ body.slx-panel-open-lock {
 
 .slx-theater-preview-overlay[data-theme='dark'] .slx-theater-form-field span {
   color: rgba(222, 244, 250, 0.94);
+}
+
+.slx-theater-preview-overlay .slx-theater-form-field span {
+  color: var(--slx-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.slx-theater-preview-overlay .slx-theater-text-input,
+.slx-theater-preview-overlay .slx-theater-prompt-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background-color: var(--slx-input-bg) !important;
+  color: var(--slx-input-text) !important;
+  caret-color: var(--slx-input-text);
+  box-shadow: none;
+  font: inherit;
+  outline: none;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.slx-theater-preview-overlay .slx-theater-text-input {
+  min-height: 34px;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.slx-theater-preview-overlay .slx-theater-prompt-textarea {
+  padding: 9px 10px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.slx-theater-preview-overlay .slx-theater-text-input:focus,
+.slx-theater-preview-overlay .slx-theater-prompt-textarea:focus {
+  border-color: var(--slx-accent);
+  background-color: var(--slx-input-bg-focus) !important;
+}
+
+.slx-theater-preview-overlay .slx-theater-text-input::placeholder,
+.slx-theater-preview-overlay .slx-theater-prompt-textarea::placeholder {
+  color: var(--slx-input-placeholder) !important;
+  opacity: 1;
 }
 
 @media (max-width: 640px) {
