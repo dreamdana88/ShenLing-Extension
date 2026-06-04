@@ -81,7 +81,9 @@ import {
 } from './src/features/context-diagnostics/panel.js';
 import {
   bindMiniTheaterPanelEvents,
+  closeMiniTheaterPreview,
   configureMiniTheaterPanel,
+  isMiniTheaterPreviewOpen,
   renderMiniTheaterPanel,
 } from './src/features/mini-theater/panel.js';
 
@@ -686,6 +688,7 @@ function renderFloatingPanel(options = {}) {
   const panelClasses = [
     'slx-panel',
     activeModule.id === 'diary' && isDiaryNotebookOpen() ? 'slx-panel-diary-book-only' : '',
+    activeModule.id === 'theater' && isMiniTheaterPreviewOpen() ? 'slx-panel-theater-preview-only' : '',
   ].filter(Boolean).join(' ');
 
   panelRoot.innerHTML = `
@@ -917,6 +920,7 @@ function openFloatingPanel() {
 }
 
 function closeFloatingPanel() {
+  closeMiniTheaterPreview({ refresh: false });
   panelRoot?.classList.remove('slx-panel-open');
   document.body.classList.remove('slx-panel-open-lock');
   communicationLogOpen = false;
@@ -1131,8 +1135,10 @@ function init() {
     closePanel: closeFloatingPanel,
     getActiveApiProfile,
     getGenerateRawFunction,
+    getPanelRoot: () => panelRoot,
     refreshPanel: renderFloatingPanel,
   });
+  closeMiniTheaterPreview({ refresh: false });
   configureSummaryWorkflow({
     addCommunicationLog,
     getActiveApiProfile,

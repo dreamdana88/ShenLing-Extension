@@ -68,6 +68,19 @@ export function configureMiniTheaterPanel(options = {}) {
   panelOptions = { ...panelOptions, ...options };
 }
 
+export function isMiniTheaterPreviewOpen() {
+  return Boolean(panelState.previewOpen);
+}
+
+export function closeMiniTheaterPreview({ refresh = false } = {}) {
+  panelState.previewOpen = false;
+  cancelPreviewEditing();
+  removePreviewPortal();
+  if (refresh) {
+    refreshPanel();
+  }
+}
+
 function refreshPanel() {
   if (typeof panelOptions.refreshPanel === "function") {
     panelOptions.refreshPanel();
@@ -1385,14 +1398,37 @@ function renderPreviewOverlay() {
 
 function getPreviewOverlay(root) {
   if (root?.matches?.("[data-theater-overlay]")) return root;
+  const portalHost = getPreviewPortalHost(root);
   return (
     root?.querySelector?.("[data-theater-overlay]") ||
+    portalHost?.querySelector?.('[data-theater-overlay][data-theater-portal="panel-root"]') ||
     document.body.querySelector('[data-theater-overlay][data-theater-portal="body"]')
   );
 }
 
+function getPreviewPortalHost(root) {
+  const configuredRoot = getPanelOption("getPanelRoot")?.();
+  return (
+    configuredRoot ||
+    document.getElementById("shenling-assistant-panel-root") ||
+    root?.closest?.("#shenling-assistant-panel-root") ||
+    null
+  );
+}
+
+function removePreviewPortal() {
+  document
+    .querySelectorAll(
+      '[data-theater-overlay][data-theater-portal="panel-root"], [data-theater-overlay][data-theater-portal="body"]',
+    )
+    .forEach((node) => node.remove());
+}
+
 function mountPreviewPortal(root) {
-  const existingPortal = document.body.querySelector('[data-theater-overlay][data-theater-portal="body"]');
+  const portalHost = getPreviewPortalHost(root);
+  const staleBodyPortal = document.body.querySelector('[data-theater-overlay][data-theater-portal="body"]');
+  staleBodyPortal?.remove();
+  const existingPortal = portalHost?.querySelector?.('[data-theater-overlay][data-theater-portal="panel-root"]');
   const localOverlay = root?.querySelector?.("[data-theater-overlay]");
   if (!localOverlay) {
     if (!panelState.previewOpen && existingPortal) {
@@ -1403,8 +1439,9 @@ function mountPreviewPortal(root) {
   if (existingPortal && existingPortal !== localOverlay) {
     existingPortal.remove();
   }
-  localOverlay.dataset.theaterPortal = "body";
-  document.body.appendChild(localOverlay);
+  if (!portalHost) return localOverlay;
+  localOverlay.dataset.theaterPortal = "panel-root";
+  portalHost.appendChild(localOverlay);
   return localOverlay;
 }
 
@@ -1421,7 +1458,7 @@ function refreshPreviewOnly(root) {
     current.remove();
     return;
   }
-  next.dataset.theaterPortal = "body";
+  next.dataset.theaterPortal = "panel-root";
   current.replaceWith(next);
   bindMiniTheaterPreviewEvents(next);
 }
@@ -1504,17 +1541,13 @@ function bindMiniTheaterPreviewEvents(root) {
 
   root.querySelectorAll("[data-theater-close-preview]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      panelState.previewOpen = false;
-      cancelPreviewEditing();
-      refreshPanel();
+      closeMiniTheaterPreview({ refresh: true });
     });
   });
 
   getPreviewOverlay(root)?.addEventListener("click", (e) => {
       if (e.target === e.currentTarget) {
-        panelState.previewOpen = false;
-        cancelPreviewEditing();
-        refreshPanel();
+        closeMiniTheaterPreview({ refresh: true });
       }
     });
 

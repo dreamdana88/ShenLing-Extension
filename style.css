@@ -329,6 +329,25 @@ body.slx-panel-open-lock {
   overflow: hidden;
 }
 
+.slx-panel.slx-panel-theater-preview-only {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.slx-panel.slx-panel-theater-preview-only > .slx-bubbles,
+.slx-panel.slx-panel-theater-preview-only > .slx-header,
+.slx-panel.slx-panel-theater-preview-only > .slx-body,
+.slx-panel.slx-panel-theater-preview-only > .slx-communication-log-panel {
+  display: none;
+}
+
 .slx-bubbles {
   position: absolute;
   inset: 0;
