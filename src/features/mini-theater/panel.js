@@ -68,6 +68,10 @@ export function configureMiniTheaterPanel(options = {}) {
   panelOptions = { ...panelOptions, ...options };
 }
 
+export function isMiniTheaterPreviewOpen() {
+  return Boolean(panelState.previewOpen);
+}
+
 export function closeMiniTheaterPreview({ refresh = false } = {}) {
   panelState.previewOpen = false;
   cancelPreviewEditing();
