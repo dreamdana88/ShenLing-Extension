@@ -68,14 +68,9 @@ export function configureMiniTheaterPanel(options = {}) {
   panelOptions = { ...panelOptions, ...options };
 }
 
-export function isMiniTheaterPreviewOpen() {
-  return Boolean(panelState.previewOpen);
-}
-
 export function closeMiniTheaterPreview({ refresh = false } = {}) {
   panelState.previewOpen = false;
   cancelPreviewEditing();
-  removePreviewPortal();
   if (refresh) {
     refreshPanel();
   }
@@ -1396,57 +1391,8 @@ function renderPreviewOverlay() {
   `;
 }
 
-function getPreviewOverlay(root) {
-  if (root?.matches?.("[data-theater-overlay]")) return root;
-  const portalHost = getPreviewPortalHost(root);
-  return (
-    root?.querySelector?.("[data-theater-overlay]") ||
-    portalHost?.querySelector?.('[data-theater-overlay][data-theater-portal="panel-root"]') ||
-    document.body.querySelector('[data-theater-overlay][data-theater-portal="body"]')
-  );
-}
-
-function getPreviewPortalHost(root) {
-  const configuredRoot = getPanelOption("getPanelRoot")?.();
-  return (
-    configuredRoot ||
-    document.getElementById("shenling-assistant-panel-root") ||
-    root?.closest?.("#shenling-assistant-panel-root") ||
-    null
-  );
-}
-
-function removePreviewPortal() {
-  document
-    .querySelectorAll(
-      '[data-theater-overlay][data-theater-portal="panel-root"], [data-theater-overlay][data-theater-portal="body"]',
-    )
-    .forEach((node) => node.remove());
-}
-
-function mountPreviewPortal(root) {
-  const portalHost = getPreviewPortalHost(root);
-  const staleBodyPortal = document.body.querySelector('[data-theater-overlay][data-theater-portal="body"]');
-  staleBodyPortal?.remove();
-  const existingPortal = portalHost?.querySelector?.('[data-theater-overlay][data-theater-portal="panel-root"]');
-  const localOverlay = root?.querySelector?.("[data-theater-overlay]");
-  if (!localOverlay) {
-    if (!panelState.previewOpen && existingPortal) {
-      existingPortal.remove();
-    }
-    return existingPortal || null;
-  }
-  if (existingPortal && existingPortal !== localOverlay) {
-    existingPortal.remove();
-  }
-  if (!portalHost) return localOverlay;
-  localOverlay.dataset.theaterPortal = "panel-root";
-  portalHost.appendChild(localOverlay);
-  return localOverlay;
-}
-
 function refreshPreviewOnly(root) {
-  const current = getPreviewOverlay(root);
+  const current = root?.querySelector?.("[data-theater-overlay]");
   if (!current) {
     refreshPanel();
     return;
@@ -1458,9 +1404,8 @@ function refreshPreviewOnly(root) {
     current.remove();
     return;
   }
-  next.dataset.theaterPortal = "panel-root";
   current.replaceWith(next);
-  bindMiniTheaterPreviewEvents(next);
+  bindMiniTheaterPreviewEvents(root);
 }
 
 // ── 主渲染入口 ────────────────────────────────────────────────────────
@@ -1545,7 +1490,7 @@ function bindMiniTheaterPreviewEvents(root) {
     });
   });
 
-  getPreviewOverlay(root)?.addEventListener("click", (e) => {
+  root.querySelector("[data-theater-overlay]")?.addEventListener("click", (e) => {
       if (e.target === e.currentTarget) {
         closeMiniTheaterPreview({ refresh: true });
       }
@@ -1578,7 +1523,6 @@ function bindMiniTheaterPreviewEvents(root) {
 export function bindMiniTheaterPanelEvents(panelRoot) {
   const root = panelRoot.querySelector("[data-theater-root]");
   if (!root) return;
-  const previewPortal = mountPreviewPortal(root);
 
   // ── 标签切换 ──
   root.querySelectorAll("[data-theater-tab]").forEach((btn) => {
@@ -1883,9 +1827,7 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   });
 
   // ── 预览弹窗 ──
-  if (previewPortal) {
-    bindMiniTheaterPreviewEvents(previewPortal);
-  }
+  bindMiniTheaterPreviewEvents(root);
 
   // ── 回看操作 ──
   root.querySelectorAll("[data-theater-open-saved]").forEach((btn) => {

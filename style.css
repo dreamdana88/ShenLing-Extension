@@ -329,25 +329,6 @@ body.slx-panel-open-lock {
   overflow: hidden;
 }
 
-.slx-panel.slx-panel-theater-preview-only {
-  width: 100%;
-  height: 100%;
-  max-height: none;
-  border-color: transparent;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.slx-panel.slx-panel-theater-preview-only > .slx-bubbles,
-.slx-panel.slx-panel-theater-preview-only > .slx-header,
-.slx-panel.slx-panel-theater-preview-only > .slx-body,
-.slx-panel.slx-panel-theater-preview-only > .slx-communication-log-panel {
-  display: none;
-}
-
 .slx-bubbles {
   position: absolute;
   inset: 0;
@@ -4766,6 +4747,9 @@ body.slx-panel-open-lock {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 /* 标签栏 + API 胶囊 */
@@ -5041,19 +5025,15 @@ body.slx-panel-open-lock {
   --slx-input-bg-focus: rgba(255, 253, 250, 0.96);
   --slx-input-text: rgba(80, 52, 44, 0.96);
   --slx-input-placeholder: rgba(128, 95, 86, 0.56);
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 2147483200;
+  z-index: 210;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 0;
   box-sizing: border-box;
-  padding:
-    max(8px, var(--slx-safe-top))
-    max(8px, var(--slx-safe-right))
-    max(8px, var(--slx-safe-bottom))
-    max(8px, var(--slx-safe-left));
+  padding: clamp(10px, 3vw, 24px);
   background: rgba(22, 16, 18, 0.62);
   overflow: hidden;
 }
@@ -5081,9 +5061,9 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-preview {
-  width: min(1180px, calc(100vw - var(--slx-safe-left, 0px) - var(--slx-safe-right, 0px) - 28px));
-  height: min(860px, calc(var(--slx-viewport-height, 100vh) - var(--slx-safe-top, 0px) - var(--slx-safe-bottom, 0px) - 16px));
-  max-height: calc(var(--slx-viewport-height, 100vh) - var(--slx-safe-top, 0px) - var(--slx-safe-bottom, 0px) - 16px);
+  width: min(1180px, 100%);
+  height: min(860px, 100%);
+  max-height: 100%;
   background:
     linear-gradient(180deg, rgba(255, 253, 248, 0.96), rgba(253, 244, 236, 0.96)),
     var(--slx-bg-panel);
@@ -5182,7 +5162,7 @@ body.slx-panel-open-lock {
 .slx-theater-preview-body {
   flex: 1;
   overflow: auto;
-  min-height: 320px;
+  min-height: 0;
   min-width: 0;
 }
 
@@ -5447,9 +5427,9 @@ body.slx-panel-open-lock {
 
 @media (max-width: 640px) {
   .slx-theater-preview {
-    width: min(100%, calc(100vw - var(--slx-safe-left, 0px) - var(--slx-safe-right, 0px) - 12px));
-    height: calc(var(--slx-viewport-height, 100vh) - var(--slx-safe-top, 0px) - var(--slx-safe-bottom, 0px) - 12px);
-    max-height: calc(var(--slx-viewport-height, 100vh) - var(--slx-safe-top, 0px) - var(--slx-safe-bottom, 0px) - 12px);
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
     border-radius: 10px;
   }
 
