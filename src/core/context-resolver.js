@@ -100,6 +100,12 @@ function normalizeMessageId(value) {
   return Number.isFinite(messageId) ? messageId : null;
 }
 
+function normalizeOptionalMessageId(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string' && !value.trim()) return null;
+  return normalizeMessageId(value);
+}
+
 function takeLastItems(items = [], limit = 0) {
   if (!Array.isArray(items) || limit <= 0) return [];
   return items.slice(-limit);
@@ -337,8 +343,8 @@ export function collectRecentMemories({
   beforeMessageId = null,
   includeHidden = false,
 } = {}) {
-  const maxId = Number(beforeMessageId);
-  const hasMaxId = Number.isFinite(maxId);
+  const maxId = normalizeOptionalMessageId(beforeMessageId);
+  const hasMaxId = maxId !== null;
   const safeLimit = normalizeLimit(limit, DEFAULT_MEMORY_LIMIT);
   const messages = getChatMessagesSafe(undefined, { hide_state: 'all' })
     .filter(message => message.role === 'assistant')
@@ -363,8 +369,8 @@ export function collectRecentGrandMemories({
   beforeMessageId = null,
   includeHidden = false,
 } = {}) {
-  const maxId = Number(beforeMessageId);
-  const hasMaxId = Number.isFinite(maxId);
+  const maxId = normalizeOptionalMessageId(beforeMessageId);
+  const hasMaxId = maxId !== null;
   const safeLimit = normalizeLimit(limit, DEFAULT_GRAND_MEMORY_LIMIT);
   const grandMemories = getChatMessagesSafe(undefined, { hide_state: 'all' })
     .filter(message => message.role === 'assistant')
