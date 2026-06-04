@@ -89,6 +89,7 @@ function limitText(value, maxLength = 0) {
 
 function normalizeLimit(value, fallback) {
   if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'all') return Number.POSITIVE_INFINITY;
   const limit = Number(value);
   if (!Number.isFinite(limit)) return fallback;
   if (limit === 0) return fallback;
@@ -108,6 +109,7 @@ function normalizeOptionalMessageId(value) {
 
 function takeLastItems(items = [], limit = 0) {
   if (!Array.isArray(items) || limit <= 0) return [];
+  if (!Number.isFinite(limit)) return [...items];
   return items.slice(-limit);
 }
 
@@ -1093,11 +1095,14 @@ export async function resolveShenlingContext(options = {}) {
   const recentMessages = includeRecentChat
     ? collectRecentChatMessages({ limit: recentMessageLimit })
     : [];
+  const archiveBeforeMessageId = recentMessages.length
+    ? normalizeOptionalMessageId(recentMessages[0].messageId)
+    : null;
   const memories = includeMemories
-    ? collectRecentMemories({ limit: memoryLimit })
+    ? collectRecentMemories({ limit: 'all', beforeMessageId: archiveBeforeMessageId })
     : [];
   const grandMemories = includeGrandMemories
-    ? collectRecentGrandMemories({ limit: grandMemoryLimit })
+    ? collectRecentGrandMemories({ limit: 'all', beforeMessageId: archiveBeforeMessageId })
     : [];
   const emotionProfiles = includeEmotionProfile
     ? collectEmotionProfiles({ targetRoleName, includeAll: includeAllEmotionProfiles })
@@ -1157,6 +1162,14 @@ export async function resolveShenlingContext(options = {}) {
         recentChat: 'visible_only',
         memories: 'visible_only',
         grandMemories: 'visible_only',
+      },
+      archivePolicy: {
+        scope: 'visible_archives_before_recent_chat',
+        beforeMessageId: archiveBeforeMessageId,
+        memoryLimit,
+        grandMemoryLimit,
+        effectiveMemoryLimit: 'all',
+        effectiveGrandMemoryLimit: 'all',
       },
       sorting: {
         recentChat: 'message_id_ascending',
