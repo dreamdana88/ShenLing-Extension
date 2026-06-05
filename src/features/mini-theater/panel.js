@@ -72,6 +72,10 @@ export function isMiniTheaterPreviewOpen() {
   return Boolean(panelState.previewOpen);
 }
 
+export function isMiniTheaterOverlayOpen() {
+  return Boolean(panelState.previewOpen || panelState.modal);
+}
+
 export function closeMiniTheaterPreview({ refresh = false } = {}) {
   panelState.previewOpen = false;
   cancelPreviewEditing();

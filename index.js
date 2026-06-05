@@ -83,7 +83,7 @@ import {
   bindMiniTheaterPanelEvents,
   closeMiniTheaterPreview,
   configureMiniTheaterPanel,
-  isMiniTheaterPreviewOpen,
+  isMiniTheaterOverlayOpen,
   renderMiniTheaterPanel,
 } from './src/features/mini-theater/panel.js';
 
@@ -688,7 +688,7 @@ function renderFloatingPanel(options = {}) {
   const panelClasses = [
     'slx-panel',
     activeModule.id === 'diary' && isDiaryNotebookOpen() ? 'slx-panel-diary-book-only' : '',
-    activeModule.id === 'theater' && isMiniTheaterPreviewOpen() ? 'slx-panel-theater-preview-only' : '',
+    activeModule.id === 'theater' && isMiniTheaterOverlayOpen() ? 'slx-panel-theater-preview-only' : '',
   ].filter(Boolean).join(' ');
 
   panelRoot.innerHTML = `
