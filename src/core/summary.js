@@ -51,7 +51,7 @@ export function extractMemoryBlocks(content) {
 
 export function parseMemoryNumber(content) {
   const text = String(content || '');
-  const match = text.match(/\[number\s*:\s*(\d+)\s*\]/i) || text.match(/<number>\s*(\d+)\s*<\/number>/i);
+  const match = text.match(/\[number\s*:\s*(\d+)\s*\]/i);
   if (!match) return null;
   const number = Number(match[1]);
   return Number.isInteger(number) && number >= 0 ? number : null;
@@ -216,13 +216,13 @@ ${cleanAiContent}`;
 }
 
 export function forceMemoryNumber(memory, number) {
-  const normalized = normalizeMemoryBlock(memory);
+  const normalized = normalizeMemoryBlock(memory)
+    .replace(/<number>[\s\S]*?<\/number>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   const numberLine = `[number:${number}]`;
   if (/\[number\s*:[^\]]*\]/i.test(normalized)) {
     return normalized.replace(/\[number\s*:[^\]]*\]/i, numberLine);
-  }
-  if (/<number>[\s\S]*?<\/number>/i.test(normalized)) {
-    return normalized.replace(/<number>[\s\S]*?<\/number>/i, numberLine);
   }
   return normalized.replace(/<memory\b[^>]*>/i, match => `${match}\n${numberLine}`);
 }
