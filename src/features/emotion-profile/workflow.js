@@ -26,7 +26,8 @@ const EMOTION_PROFILE_PROMPT_ID = 'shenling_assistant_emotion_profile_state';
 const PSYCHOLOGY_BLOCK_RE = /<psychology>[\s\S]*?<\/psychology>/gi;
 const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
 const EMOTION_BLOCK_RE = /<emotion>[\s\S]*?<\/emotion>/gi;
-const EMOTION_UPDATE_BLOCK_RE = /<emotion_update>\s*([\s\S]*?)\s*<\/emotion_update>/i;
+const EMOTION_UPDATE_BLOCK_RE = /<emotion_update\b([^>]*)\/>|<emotion_update\b([^>]*)>([\s\S]*?)<\/emotion_update>/i;
+const PROFILE_BLOCK_RE = /<profile\b([^>]*)>([\s\S]*?)<\/profile>/gi;
 const emotionEventStops = [];
 let emotionEventsRegistered = false;
 
@@ -103,24 +104,67 @@ function createEmotionFingerprint(content) {
   return `${text.length}:${Math.abs(hash)}`;
 }
 
-function extractJsonObject(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return null;
+function decodeXmlText(value) {
+  return String(value || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .trim();
+}
 
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced ? fenced[1].trim() : raw;
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    const start = candidate.indexOf('{');
-    const end = candidate.lastIndexOf('}');
-    if (start < 0 || end <= start) return null;
-    try {
-      return JSON.parse(candidate.slice(start, end + 1));
-    } catch {
-      return null;
-    }
-  }
+function parseXmlAttributes(attributeText) {
+  const attributes = {};
+  String(attributeText || '').replace(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'/>]+))/g, (_match, key, doubleQuoted, singleQuoted, bare) => {
+    attributes[String(key || '').trim()] = decodeXmlText(doubleQuoted ?? singleQuoted ?? bare ?? '');
+    return '';
+  });
+  return attributes;
+}
+
+function getXmlTagText(content, tagName) {
+  const pattern = new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i');
+  const match = String(content || '').match(pattern);
+  return match ? decodeXmlText(match[1]) : '';
+}
+
+function parseBooleanFlag(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes';
+}
+
+function parseEmotionUpdateXml(text) {
+  const match = String(text || '').match(EMOTION_UPDATE_BLOCK_RE);
+  if (!match) return null;
+
+  const attributes = parseXmlAttributes(match[1] || match[2] || '');
+  const body = String(match[3] || '');
+  const profiles = [];
+
+  body.replace(PROFILE_BLOCK_RE, (_profileMatch, profileAttributesText, profileContent) => {
+    const profileAttributes = parseXmlAttributes(profileAttributesText);
+    const roleName = normalizeRoleName(
+      profileAttributes.role ||
+      profileAttributes.roleName ||
+      profileAttributes.character ||
+      profileAttributes.name
+    );
+    if (!roleName) return '';
+
+    profiles.push({
+      roleName,
+      currentStatus: getXmlTagText(profileContent, 'status') || getXmlTagText(profileContent, 'currentStatus'),
+      changeSummary: getXmlTagText(profileContent, 'change') || getXmlTagText(profileContent, 'changeSummary'),
+      relationshipToUser: profileAttributes.relation || profileAttributes.relationship || profileAttributes.relationshipToUser || '',
+    });
+    return '';
+  });
+
+  return {
+    changed: parseBooleanFlag(attributes.changed),
+    profiles,
+  };
 }
 
 function normalizeProfileItems(parsed) {
@@ -186,11 +230,9 @@ function buildReadableEmotionBlock(updates) {
 
 export function applyEmotionUpdateToMemory(memory, result) {
   let nextMemory = String(memory || '').replace(EMOTION_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n').trim();
-  const match = String(result || '').match(EMOTION_UPDATE_BLOCK_RE);
-  if (!match) return nextMemory;
-
   try {
-    const parsed = extractJsonObject(sanitizeMemoryForEmotionAnalysis(match[1]));
+    const parsed = parseEmotionUpdateXml(sanitizeMemoryForEmotionAnalysis(result));
+    if (!parsed) return nextMemory;
     const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
     if (!changed) return nextMemory;
     const emotionBlock = buildReadableEmotionBlock(normalizeProfileItems(parsed));
@@ -452,12 +494,11 @@ export function removeEmotionProfileRecordsForMessage(messageId, { save = true }
 export async function processEmotionUpdateFromSummaryResult(result, { messageId } = {}) {
   if (!shouldAnalyzeEmotionProfile()) return;
   try {
-    const match = String(result || '').match(EMOTION_UPDATE_BLOCK_RE);
-    if (!match) {
+    const parsed = parseEmotionUpdateXml(sanitizeMemoryForEmotionAnalysis(result));
+    if (!parsed) {
       console.warn('[蜃灵助手] 本轮小总结未返回 emotion_update，已跳过情感档案更新。');
       return;
     }
-    const parsed = extractJsonObject(sanitizeMemoryForEmotionAnalysis(match[1]));
     const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
     const fingerprint = getMessageEmotionFingerprint(messageId);
     if (!fingerprint) return;
@@ -483,9 +524,8 @@ export async function processEmotionUpdateFromSummaryResult(result, { messageId 
 export async function processEmotionUpdateFromArchiveResult(result, { messageId, sourceType = 'legacy_archive' } = {}) {
   if (!shouldAnalyzeEmotionProfile()) return;
   try {
-    const match = String(result || '').match(EMOTION_UPDATE_BLOCK_RE);
-    if (!match) return;
-    const parsed = extractJsonObject(sanitizeMemoryForEmotionAnalysis(match[1]));
+    const parsed = parseEmotionUpdateXml(sanitizeMemoryForEmotionAnalysis(result));
+    if (!parsed) return;
     const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
     const updates = changed ? normalizeProfileItems(parsed) : [];
     if (!updates.length) return;

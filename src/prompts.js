@@ -13,7 +13,7 @@ export const SUMMARY_INTERNAL_CHECKLIST = `## 内部档案工序
 4. 连续性：参考过往 memory / grand_memory，避免重复编号、重复总结和时间错乱。
 5. 去噪：忽略普通寒暄、无后续影响的小动作、模板噪声、思维链残留与格式标签杂讯。
 6. 女本位视角：保留剧情事实，但总结时净化男权、客体化、爹味或性别刻板表达，不强化“被征服/被占有/被拯救”的叙事框架。
-7. 格式校验：最终只输出完整的 <memory>...</memory>；如情感档案开启，则在 <memory> 后追加完整的 <emotion_update> JSON，不要输出 Markdown、解释、工序、额外标签或正文续写。`;
+7. 格式校验：最终只输出完整的 <memory>...</memory>；如情感档案开启，则在 <memory> 后追加完整的 <emotion_update> XML，不要输出 Markdown、解释、工序、额外标签或正文续写。`;
 
 export const GRAND_SUMMARY_INTERNAL_CHECKLIST = `## 内部归档工序
 在内部完成以下归档工序，不要输出工序内容：
@@ -288,30 +288,18 @@ export function buildEmotionUpdatePromptSection({ knownProfilesText }) {
 ${String(knownProfilesText || "暂无。").trim() || "暂无。"}
 
 请在 <memory>...</memory> 后继续输出独立的 <emotion_update>...</emotion_update>。
-<emotion_update> 内只能放 JSON，不要放 Markdown，不要续写剧情。
+<emotion_update> 必须使用 XML 属性与子标签，不要放 JSON，不要放 Markdown，不要续写剧情。
 
 格式：
-<emotion_update>
-{
-  "changed": true,
-  "profiles": [
-    {
-      "roleName": "角色名",
-      "currentStatus": "该角色当前情感状态",
-      "changeSummary": "本轮具体变化",
-      "relationshipToUser": "该角色与{{user}}当前关系（10字内）"
-    }
-  ]
-}
+<emotion_update changed="true">
+<profile role="角色名" relation="该角色与{{user}}当前关系（10字内）">
+<status>该角色当前情感状态</status>
+<change>本轮具体变化</change>
+</profile>
 </emotion_update>
 
 如果没有显著变化，请输出：
-<emotion_update>
-{
-  "changed": false,
-  "profiles": []
-}
-</emotion_update>`;
+<emotion_update changed="false" />`;
 }
 
 export function buildLegacyArchiveEmotionUpdatePromptSection({
@@ -333,28 +321,16 @@ export function buildLegacyArchiveEmotionUpdatePromptSection({
 如果 <grand_memory> 的【情感轨迹】为空或没有显著变化，请输出 changed=false。
 
 请在 <grand_memory>...</grand_memory> 后继续输出独立的 <emotion_update>...</emotion_update>。
-<emotion_update> 内只能放 JSON，不要放 Markdown，不要续写剧情。
+<emotion_update> 必须使用 XML 属性与子标签，不要放 JSON，不要放 Markdown，不要续写剧情。
 
 格式：
-<emotion_update>
-{
-  "changed": true,
-  "profiles": [
-    {
-      "roleName": "角色名",
-      "currentStatus": "该角色当前情感状态",
-      "changeSummary": "旧聊天区间内形成的关键情感变化过程",
-      "relationshipToUser": "该角色与{{user}}当前关系（10字内）"
-    }
-  ]
-}
+<emotion_update changed="true">
+<profile role="角色名" relation="该角色与{{user}}当前关系（10字内）">
+<status>该角色当前情感状态</status>
+<change>旧聊天区间内形成的关键情感变化过程</change>
+</profile>
 </emotion_update>
 
 如果没有可整理的显著情感变化，请输出：
-<emotion_update>
-{
-  "changed": false,
-  "profiles": []
-}
-</emotion_update>`;
+<emotion_update changed="false" />`;
 }
