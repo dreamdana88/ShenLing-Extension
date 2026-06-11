@@ -192,7 +192,7 @@ export function buildMemorySummaryPrompt(content, priorMemories = [], summary = 
   const extraInstructions = String(options.extraInstructions || '').trim();
   const materialInstructions = String(options.materialInstructions || '').trim();
   const outputRule = extraInstructions
-    ? '严格按照格式要求输出完整的 <memory>...</memory>，并按附加要求输出其他独立块。'
+    ? '严格按照格式要求输出完整的 <memory>...</memory>，并在 <memory> 内遵循附加要求。'
     : '严格按照格式要求输出完整的 <memory>...</memory>。';
   const systemContent = [
     '蜃灵处于梦境档案编制状态。',

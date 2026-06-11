@@ -15,6 +15,10 @@ import {
   getChatMessageById,
 } from '../../core/chat.js';
 import {
+  getMemoryField,
+  getMemoryFields,
+  normalizeMemoryBlock,
+  parsePipeFields,
   stripMemoryBlock,
 } from '../../core/summary.js';
 import {
@@ -26,7 +30,6 @@ const EMOTION_PROFILE_PROMPT_ID = 'shenling_assistant_emotion_profile_state';
 const PSYCHOLOGY_BLOCK_RE = /<psychology>[\s\S]*?<\/psychology>/gi;
 const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
 const EMOTION_BLOCK_RE = /<emotion>[\s\S]*?<\/emotion>/gi;
-const EMOTION_LINE_RE = /^\s*\[emotion:[^\r\n]*\]\s*$/gim;
 const EMOTION_UPDATE_BLOCK_RE = /<emotion_update\b([^>]*)\/>|<emotion_update\b([^>]*)>([\s\S]*?)<\/emotion_update>/i;
 const PROFILE_BLOCK_RE = /<profile\b([^>]*)>([\s\S]*?)<\/profile>/gi;
 const emotionEventStops = [];
@@ -193,6 +196,32 @@ function normalizeProfileItems(parsed) {
     .filter(item => item.currentStatus || item.changeSummary || item.relationshipToUser);
 }
 
+function parseEmotionUpdateFromMemory(text) {
+  const memory = normalizeMemoryBlock(text);
+  const changedText = getMemoryField(memory, 'emotion_changed');
+  if (!changedText) return null;
+
+  const changed = parseBooleanFlag(changedText);
+  const profiles = changed
+    ? getMemoryFields(memory, 'emotion')
+      .map(value => {
+        const [roleName, relationshipToUser, currentStatus, changeSummary] = parsePipeFields(value, 4);
+        const normalizedRoleName = normalizeRoleName(roleName);
+        if (!normalizedRoleName) return null;
+        return {
+          roleName: normalizedRoleName,
+          currentStatus: String(currentStatus || '').trim(),
+          changeSummary: String(changeSummary || '').trim(),
+          relationshipToUser: String(relationshipToUser || '').trim(),
+        };
+      })
+      .filter(Boolean)
+      .filter(item => item.currentStatus || item.changeSummary || item.relationshipToUser)
+    : [];
+
+  return { changed, profiles };
+}
+
 function buildKnownProfilesSection(store) {
   const profiles = Object.entries(store.profiles || {})
     .filter(([, profile]) => isPlainObject(profile))
@@ -214,52 +243,11 @@ function sanitizeMemoryForEmotionAnalysis(memory) {
     .trim();
 }
 
-function cleanMemoryLineField(value) {
-  return String(value || '')
-    .replace(/[\r\n]+/g, ' ')
-    .replace(/\|/g, '｜')
-    .trim();
-}
-
-function buildReadableEmotionBlock(updates) {
-  if (!Array.isArray(updates) || !updates.length) return '';
-  const lines = updates.map(update => {
-    const roleName = normalizeRoleName(update.roleName);
-    if (!roleName) return '';
-    return `[emotion:${[
-      roleName,
-      update.relationshipToUser,
-      update.currentStatus,
-      update.changeSummary,
-    ].map(cleanMemoryLineField).join('|')}]`;
-  }).filter(Boolean);
-  return lines.join('\n');
-}
-
-function insertEmotionLinesToMemory(memory, emotionLines) {
-  const nextMemory = String(memory || '').trim();
-  const cleanEmotionLines = String(emotionLines || '').trim();
-  if (!cleanEmotionLines) return nextMemory;
-  if (/\[progress\s*:/i.test(nextMemory)) {
-    return nextMemory.replace(/^\s*\[progress\s*:/im, `${cleanEmotionLines}\n[progress:`);
-  }
-  return nextMemory.replace(/<\/memory>\s*$/i, `${cleanEmotionLines}\n</memory>`).trim();
-}
-
 export function applyEmotionUpdateToMemory(memory, result) {
-  let nextMemory = String(memory || '').replace(EMOTION_BLOCK_RE, '').replace(EMOTION_LINE_RE, '').replace(/\n{3,}/g, '\n\n').trim();
-  try {
-    const parsed = parseEmotionUpdateXml(sanitizeMemoryForEmotionAnalysis(result));
-    if (!parsed) return nextMemory;
-    const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
-    if (!changed) return nextMemory;
-    const emotionBlock = buildReadableEmotionBlock(normalizeProfileItems(parsed));
-    if (!emotionBlock) return nextMemory;
-    return insertEmotionLinesToMemory(nextMemory, emotionBlock);
-  } catch (error) {
-    console.warn('[蜃灵助手] emotion_update 转写 emotion 失败。', error);
-    return nextMemory;
-  }
+  return String(memory || '')
+    .replace(EMOTION_BLOCK_RE, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 export function getMessageEmotionFingerprint(messageId, settings = getGlobalSettings()) {
@@ -509,9 +497,9 @@ export function removeEmotionProfileRecordsForMessage(messageId, { save = true }
 export async function processEmotionUpdateFromSummaryResult(result, { messageId } = {}) {
   if (!shouldAnalyzeEmotionProfile()) return;
   try {
-    const parsed = parseEmotionUpdateXml(sanitizeMemoryForEmotionAnalysis(result));
+    const parsed = parseEmotionUpdateFromMemory(sanitizeMemoryForEmotionAnalysis(result));
     if (!parsed) {
-      console.warn('[蜃灵助手] 本轮小总结未返回 emotion_update，已跳过情感档案更新。');
+      console.warn('[蜃灵助手] 本轮小总结未返回 emotion_changed，已跳过情感档案更新。');
       return;
     }
     const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';

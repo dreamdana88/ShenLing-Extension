@@ -262,7 +262,7 @@ I, Shen Ling, accept these covenants. I shall dissolve entirely into the dreamsc
 export function buildEmotionUpdatePromptSection({ knownProfilesText }) {
   return `## 情感档案更新判断
 
-请在生成 <memory> 后，额外判断本轮剧情是否出现“显著情感变化”。
+请在生成 <memory> 时，额外判断本轮剧情是否出现“显著情感变化”。
 
 显著变化包括：关系阶段改变、信任/戒备/依恋/敌意明显变化、长期目标或隐秘动机改变、角色对{{user}}的认知发生转变。
 
@@ -277,19 +277,21 @@ export function buildEmotionUpdatePromptSection({ knownProfilesText }) {
 已知最新档案：
 ${String(knownProfilesText || "暂无。").trim() || "暂无。"}
 
-请在 <memory>...</memory> 后继续输出独立的 <emotion_update>...</emotion_update>。
-<emotion_update> 必须使用 XML 属性与子标签，不要放 JSON，不要放 Markdown，不要续写剧情。
+请在 <memory> 内追加情感判断行，位置放在 [db:...] 之后、[progress:...] 之前。
 
-格式：
-<emotion_update changed="true">
-<profile role="角色名" relation="该角色与{{user}}当前关系（10字内）">
-<status>该角色当前情感状态</status>
-<change>本轮具体变化</change>
-</profile>
-</emotion_update>
+如果本轮存在显著情感变化，输出：
+[emotion_changed:true]
+[emotion:${角色名}|${与{{user}}当前关系，10字内}|${当前情感状态}|${关键情感显著变化过程}]
 
 如果没有显著变化，请输出：
-<emotion_update changed="false" />`;
+[emotion_changed:false]
+
+要求：
+- [emotion_changed:true/false] 必须输出。
+- changed=false 时禁止输出 [emotion:...]。
+- changed=true 时至少输出一条 [emotion:...]，可多角色多条。
+- [emotion:...] 只记录显著变化，不记录日常交流、轻度波动、重复旧状态。
+- 不要输出 JSON、Markdown、解释文字或额外 XML 标签。`;
 }
 
 export function buildLegacyArchiveEmotionUpdatePromptSection({
