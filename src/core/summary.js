@@ -49,11 +49,54 @@ export function extractMemoryBlocks(content) {
   return Array.from(String(content || '').matchAll(/<memory>[\s\S]*?<\/memory>/gi)).map(match => match[0].trim());
 }
 
+export function parseMemoryLines(memoryText) {
+  const memory = normalizeMemoryBlock(memoryText);
+  const body = memory
+    .replace(/^<memory\b[^>]*>/i, '')
+    .replace(/<\/memory>\s*$/i, '');
+  return body
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const match = String(line || '').match(/^\s*\[([A-Za-z][\w-]*)\s*:\s*([\s\S]*?)\]\s*$/);
+      if (!match) return null;
+      return {
+        key: match[1].trim().toLowerCase(),
+        rawKey: match[1].trim(),
+        value: match[2].trim(),
+        line: String(line || '').trim(),
+        index,
+      };
+    })
+    .filter(Boolean);
+}
+
+export function getMemoryFields(memoryText, key) {
+  const normalizedKey = String(key || '').trim().toLowerCase();
+  if (!normalizedKey) return [];
+  return parseMemoryLines(memoryText)
+    .filter(item => item.key === normalizedKey)
+    .map(item => item.value);
+}
+
+export function getMemoryField(memoryText, key) {
+  return getMemoryFields(memoryText, key)[0] ?? '';
+}
+
+export function parsePipeFields(value, expectedParts = 0) {
+  const parts = String(value || '').split('|').map(part => part.trim());
+  const count = Number(expectedParts);
+  if (!Number.isInteger(count) || count <= 0 || parts.length <= count) {
+    return parts;
+  }
+  return [
+    ...parts.slice(0, count - 1),
+    parts.slice(count - 1).join('|').trim(),
+  ];
+}
+
 export function parseMemoryNumber(content) {
-  const text = String(content || '');
-  const match = text.match(/\[number\s*:\s*(\d+)\s*\]/i);
-  if (!match) return null;
-  const number = Number(match[1]);
+  const numberText = getMemoryField(content, 'number');
+  const number = Number.parseInt(String(numberText || '').trim(), 10);
   return Number.isInteger(number) && number >= 0 ? number : null;
 }
 
