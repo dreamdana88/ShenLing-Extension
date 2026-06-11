@@ -29,7 +29,6 @@ import {
 const EMOTION_PROFILE_PROMPT_ID = 'shenling_assistant_emotion_profile_state';
 const PSYCHOLOGY_BLOCK_RE = /<psychology>[\s\S]*?<\/psychology>/gi;
 const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
-const EMOTION_BLOCK_RE = /<emotion>[\s\S]*?<\/emotion>/gi;
 const EMOTION_UPDATE_BLOCK_RE = /<emotion_update\b([^>]*)\/>|<emotion_update\b([^>]*)>([\s\S]*?)<\/emotion_update>/i;
 const PROFILE_BLOCK_RE = /<profile\b([^>]*)>([\s\S]*?)<\/profile>/gi;
 const emotionEventStops = [];
@@ -239,13 +238,6 @@ function sanitizeMemoryForEmotionAnalysis(memory) {
   return String(memory || '')
     .replace(PSYCHOLOGY_BLOCK_RE, '')
     .replace(LIST_BLOCK_RE, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-export function applyEmotionUpdateToMemory(memory, result) {
-  return String(memory || '')
-    .replace(EMOTION_BLOCK_RE, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

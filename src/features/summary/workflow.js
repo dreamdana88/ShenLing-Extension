@@ -33,7 +33,6 @@ import {
 } from '../../core/settings.js';
 import { applyReplacementRulesByScope } from '../word-replace/core.js';
 import {
-  applyEmotionUpdateToMemory,
   buildEmotionUpdatePromptSection,
   buildLegacyArchiveEmotionUpdatePromptSection,
   processEmotionUpdateFromArchiveResult,
@@ -582,7 +581,7 @@ export async function summarizeOpeningMessage() {
         '如果角色基础信息与0楼正文冲突，以0楼正文为准。',
       ].join('\n'),
     }), { type: '0楼小总结' });
-    const memory = applyEmotionUpdateToMemory(forceMemoryNumber(result, 0), result);
+    const memory = forceMemoryNumber(result, 0);
     const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
     if (memoryReplacementResult.errors.length > 0) {
       throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
@@ -631,7 +630,7 @@ export async function regenerateMemoryForMessage(messageId) {
     }), {
       type: '手动重写小总结',
     });
-    const memory = applyEmotionUpdateToMemory(normalizeMemoryBlock(result), result);
+    const memory = normalizeMemoryBlock(result);
     const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
     if (memoryReplacementResult.errors.length > 0) {
       throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
@@ -1157,7 +1156,7 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
       extraInstructions: emotionPromptSection,
     });
     const result = await generateSummaryMemory(prompt, { type: '自动小总结' });
-    const memory = applyEmotionUpdateToMemory(normalizeMemoryBlock(result), result);
+    const memory = normalizeMemoryBlock(result);
     const memoryReplacementResult = applyReplacementRulesByScope(memory, wordReplace);
     if (memoryReplacementResult.errors.length > 0) {
       throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
