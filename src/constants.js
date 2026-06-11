@@ -1,14 +1,14 @@
 export const MODULE_NAME = 'shenling_assistant';
 export const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 export const STORAGE_VERSION = 1;
-export const PLUGIN_VERSION = '0.12.35';
+export const PLUGIN_VERSION = '0.12.37';
 export const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 export const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 export const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
 export const GRAND_MEMORY_BLOCK_RE = /<grand_memory>[\s\S]*?<\/grand_memory>/i;
 export const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
 export const SUMMARY_EVENT_DELAY_MS = 700;
-export const SUMMARY_PROMPT_VERSION = 9;
+export const SUMMARY_PROMPT_VERSION = 10;
 
 export const MODULES = [
   { id: 'summary', icon: '🫧', shortTitle: '总结', title: '自动总结', desc: '副 API、小总结、大总结与归档管理。' },

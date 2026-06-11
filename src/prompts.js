@@ -21,8 +21,9 @@ export const GRAND_SUMMARY_INTERNAL_CHECKLIST = `## 内部归档工序
 2. 时间顺序：按 memory 编号与剧情时间整理因果链，必要时重新合并、拆分和命名剧情节点。
 3. 信息取舍：保留关键事件、重要台词、关系转折、物品/地点/概念/承诺/伏笔，压缩重复寒暄与低影响细节。
 4. 连续性：避免重复归档同一事实，保留编号可追溯性。
-5. 女本位视角：保留事实但净化男权、客体化、爹味或性别刻板表达。
-6. 格式校验：最终只输出完整的 <grand_memory>...</grand_memory>，不要输出 Markdown 包裹、解释、工序、额外标签或正文续写。`;
+5. 字段理解：小总结素材为 <memory> 内部 [key:...] 行；[number] 是编号，[time] 是剧情时间，[location] 是地点，[characters] 是在场角色，[task] 是当前主线目标，[plot] 是剧情事实，[quote] 是关键台词，[db] 是重要物品/地点/概念/规则，[emotion] 是显著情感变化。
+6. 女本位视角：保留事实但净化男权、客体化、爹味或性别刻板表达。
+7. 格式校验：最终只输出完整的 <grand_memory>...</grand_memory>，不要输出 Markdown 包裹、解释、工序、额外标签或正文续写。`;
 
 export const LEGACY_ARCHIVE_INTERNAL_CHECKLIST = `## 内部旧聊天压缩工序
 在内部完成以下压缩工序，不要输出工序内容：
@@ -206,7 +207,7 @@ export const DEFAULT_GRAND_MEMORY_TEMPLATE = `## 梦境大归档
 ---
 
 ## 【世界档案】
-汇总筛选各轮 database 积累的重要条目。
+汇总筛选各轮 [db:...] 积累的重要条目。
 
 重要物品/概念：
 - \${名称} - [首现编号] - \${作用/意义}
@@ -217,7 +218,7 @@ export const DEFAULT_GRAND_MEMORY_TEMPLATE = `## 梦境大归档
 ---
 
 ## 【当前状态】
-主线进度：\${currentTask 当前目标与进展}
+主线进度：\${根据各轮 [task:...] 与 [plot:...] 归纳当前目标与进展}
 各方动向：
 - \${角色名}：\${长期目标推进状态} | \${当前处境}
 待发展方向：\${下一步可能展开的叙事线索}
@@ -312,17 +313,19 @@ export function buildLegacyArchiveEmotionUpdatePromptSection({
 请把【情感轨迹】中已经完成的连续变化，压缩为角色在归档结束时的最新版关系状态；不要把每个节点逐条拆成多条档案。
 如果 <grand_memory> 的【情感轨迹】为空或没有显著变化，请输出 changed=false。
 
-请在 <grand_memory>...</grand_memory> 后继续输出独立的 <emotion_update>...</emotion_update>。
-<emotion_update> 必须使用 XML 属性与子标签，不要放 JSON，不要放 Markdown，不要续写剧情。
+请在 <grand_memory>...</grand_memory> 后继续输出情感判断行。
 
-格式：
-<emotion_update changed="true">
-<profile role="角色名" relation="该角色与{{user}}当前关系（10字内）">
-<status>该角色当前情感状态</status>
-<change>旧聊天区间内形成的关键情感变化过程</change>
-</profile>
-</emotion_update>
+如果旧聊天区间内存在显著情感变化，输出：
+[emotion_changed:true]
+[emotion:\${角色名}|\${与{{user}}当前关系，10字内}|\${当前情感状态}|\${旧聊天区间内形成的关键情感变化过程}]
 
 如果没有可整理的显著情感变化，请输出：
-<emotion_update changed="false" />`;
+[emotion_changed:false]
+
+要求：
+- [emotion_changed:true/false] 必须输出。
+- changed=false 时禁止输出 [emotion:...]。
+- changed=true 时至少输出一条 [emotion:...]，可多角色多条。
+- [emotion:...] 只记录确有持续意义的显著变化，不记录日常交流、轻度波动、重复旧状态。
+- 不要输出 JSON、Markdown、解释文字或额外 XML 标签。`;
 }
