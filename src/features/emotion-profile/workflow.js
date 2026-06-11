@@ -26,6 +26,7 @@ const EMOTION_PROFILE_PROMPT_ID = 'shenling_assistant_emotion_profile_state';
 const PSYCHOLOGY_BLOCK_RE = /<psychology>[\s\S]*?<\/psychology>/gi;
 const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
 const EMOTION_BLOCK_RE = /<emotion>[\s\S]*?<\/emotion>/gi;
+const EMOTION_LINE_RE = /^\s*\[emotion:[^\r\n]*\]\s*$/gim;
 const EMOTION_UPDATE_BLOCK_RE = /<emotion_update\b([^>]*)\/>|<emotion_update\b([^>]*)>([\s\S]*?)<\/emotion_update>/i;
 const PROFILE_BLOCK_RE = /<profile\b([^>]*)>([\s\S]*?)<\/profile>/gi;
 const emotionEventStops = [];
@@ -213,23 +214,40 @@ function sanitizeMemoryForEmotionAnalysis(memory) {
     .trim();
 }
 
+function cleanMemoryLineField(value) {
+  return String(value || '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\|/g, '｜')
+    .trim();
+}
+
 function buildReadableEmotionBlock(updates) {
   if (!Array.isArray(updates) || !updates.length) return '';
   const lines = updates.map(update => {
     const roleName = normalizeRoleName(update.roleName);
     if (!roleName) return '';
-    return [
-      `${roleName}：`,
-      update.currentStatus ? `- 当前状态：${update.currentStatus}` : '',
-      update.changeSummary ? `- 本次变化：${update.changeSummary}` : '',
-      update.relationshipToUser ? `- 与{{user}}关系：${update.relationshipToUser}` : '',
-    ].filter(Boolean).join('\n');
+    return `[emotion:${[
+      roleName,
+      update.relationshipToUser,
+      update.currentStatus,
+      update.changeSummary,
+    ].map(cleanMemoryLineField).join('|')}]`;
   }).filter(Boolean);
-  return lines.length ? `<emotion>\n${lines.join('\n\n')}\n</emotion>` : '';
+  return lines.join('\n');
+}
+
+function insertEmotionLinesToMemory(memory, emotionLines) {
+  const nextMemory = String(memory || '').trim();
+  const cleanEmotionLines = String(emotionLines || '').trim();
+  if (!cleanEmotionLines) return nextMemory;
+  if (/\[progress\s*:/i.test(nextMemory)) {
+    return nextMemory.replace(/^\s*\[progress\s*:/im, `${cleanEmotionLines}\n[progress:`);
+  }
+  return nextMemory.replace(/<\/memory>\s*$/i, `${cleanEmotionLines}\n</memory>`).trim();
 }
 
 export function applyEmotionUpdateToMemory(memory, result) {
-  let nextMemory = String(memory || '').replace(EMOTION_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n').trim();
+  let nextMemory = String(memory || '').replace(EMOTION_BLOCK_RE, '').replace(EMOTION_LINE_RE, '').replace(/\n{3,}/g, '\n\n').trim();
   try {
     const parsed = parseEmotionUpdateXml(sanitizeMemoryForEmotionAnalysis(result));
     if (!parsed) return nextMemory;
@@ -237,10 +255,7 @@ export function applyEmotionUpdateToMemory(memory, result) {
     if (!changed) return nextMemory;
     const emotionBlock = buildReadableEmotionBlock(normalizeProfileItems(parsed));
     if (!emotionBlock) return nextMemory;
-    if (/<\/database>/i.test(nextMemory)) {
-      return nextMemory.replace(/<\/database>/i, `</database>\n${emotionBlock}`);
-    }
-    return nextMemory.replace(/<\/memory>\s*$/i, `${emotionBlock}\n</memory>`).trim();
+    return insertEmotionLinesToMemory(nextMemory, emotionBlock);
   } catch (error) {
     console.warn('[蜃灵助手] emotion_update 转写 emotion 失败。', error);
     return nextMemory;

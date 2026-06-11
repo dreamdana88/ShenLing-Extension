@@ -294,7 +294,7 @@ export function shouldResetSummaryPromptTemplate(summary) {
     prompt.includes('<psychology>') ||
     prompt.includes('<list>') ||
     !prompt.includes('##浓缩梦境') ||
-    !prompt.includes('<worldstate>')
+    !prompt.includes('[number:')
   );
 }
 
