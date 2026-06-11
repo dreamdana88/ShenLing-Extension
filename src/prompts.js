@@ -281,7 +281,7 @@ ${String(knownProfilesText || "暂无。").trim() || "暂无。"}
 
 如果本轮存在显著情感变化，输出：
 [emotion_changed:true]
-[emotion:${角色名}|${与{{user}}当前关系，10字内}|${当前情感状态}|${关键情感显著变化过程}]
+[emotion:\${角色名}|\${与{{user}}当前关系，10字内}|\${当前情感状态}|\${关键情感显著变化过程}]
 
 如果没有显著变化，请输出：
 [emotion_changed:false]
