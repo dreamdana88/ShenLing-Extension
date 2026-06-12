@@ -24,7 +24,30 @@ let panelState = {
   generationStatus: 'idle',
   generationError: '',
   editing: null,
+  // 章节折叠状态：key 形如 'saved:CH01' / 'draft:CH01'，未记录时按默认规则展开
+  expandedChapters: {},
+  // 已有大纲时生成区折叠为 details，记录用户手动开合
+  generateOpen: false,
 };
+
+function isChapterExpanded(scope, chapterId, fallback) {
+  const key = `${scope}:${chapterId}`;
+  return Object.hasOwn(panelState.expandedChapters, key)
+    ? Boolean(panelState.expandedChapters[key])
+    : fallback;
+}
+
+function clearExpandedChapters(scope = null) {
+  if (!scope) {
+    panelState.expandedChapters = {};
+    return;
+  }
+  Object.keys(panelState.expandedChapters).forEach(key => {
+    if (key.startsWith(`${scope}:`)) {
+      delete panelState.expandedChapters[key];
+    }
+  });
+}
 
 export function configurePlotOutlinePanel(options = {}) {
   panelOptions = { ...panelOptions, ...options };
@@ -87,18 +110,23 @@ function renderStoryCoreBlock(storyCore = {}) {
   `;
 }
 
-function renderChapterBlock(chapter, { progress = {}, readonly = false, isCurrent = false } = {}) {
+function renderChapterBlock(chapter, { scope = 'saved', progress = {}, readonly = false, isCurrent = false } = {}) {
   const chapterProgress = isPlainObject(progress[chapter.id]) ? progress[chapter.id] : {};
+  const totalCount = chapter.conditions?.length || 0;
+  const doneCount = totalCount
+    ? chapter.conditions.filter(condition => chapterProgress[condition.id]).length
+    : 0;
+  const expanded = isChapterExpanded(scope, chapter.id, scope === 'draft' ? true : isCurrent);
   const tagName = readonly ? 'div' : 'button type="button"';
   const closingTag = readonly ? 'div' : 'button';
-  return `
-    <div class="slx-outline-chapter-card ${isCurrent ? 'slx-outline-chapter-current' : ''}">
-      <div class="slx-outline-chapter-head">
-        <span class="slx-outline-chapter-badge">${escapeHtml(chapter.id)}</span>
-        <b>${escapeHtml(chapter.title)}</b>
-        ${chapter.stage ? `<span class="slx-outline-stage-badge">${escapeHtml(chapter.stage)}</span>` : ''}
-        ${isCurrent ? '<span class="slx-outline-current-mark">当前</span>' : ''}
-      </div>
+  const cardClasses = [
+    'slx-outline-chapter-card',
+    isCurrent ? 'slx-outline-chapter-current' : '',
+    expanded ? 'slx-outline-chapter-expanded' : 'slx-outline-chapter-collapsed',
+  ].filter(Boolean).join(' ');
+
+  const body = `
+    <div class="slx-outline-chapter-body">
       ${chapter.theme ? `<div class="slx-outline-chapter-line"><span>主题</span><div>${escapeHtml(chapter.theme)}</div></div>` : ''}
       ${chapter.synopsis ? `<div class="slx-outline-chapter-line"><span>脉络</span><div>${escapeHtml(chapter.synopsis)}</div></div>` : ''}
       ${chapter.keyEvents?.length ? `
@@ -121,24 +149,43 @@ function renderChapterBlock(chapter, { progress = {}, readonly = false, isCurren
           </div>
         </div>` : ''}
       ${chapter.exitChapterId ? `<div class="slx-outline-chapter-line"><span>出口</span><div>${escapeHtml(chapter.exitChapterId)}</div></div>` : ''}
+      ${scope === 'saved' && !readonly && !isCurrent ? `
+        <div class="slx-outline-btn-row">
+          <button class="slx-soft-btn" type="button" data-slx-outline-set-current="${escapeHtml(chapter.id)}">设为当前章节</button>
+        </div>` : ''}
+    </div>
+  `;
+
+  return `
+    <div class="${cardClasses}">
+      <button class="slx-outline-chapter-head" type="button" data-slx-outline-toggle-chapter="${escapeHtml(scope)}|${escapeHtml(chapter.id)}" title="${expanded ? '收起章节' : '展开章节'}">
+        <span class="slx-outline-chevron" aria-hidden="true">▸</span>
+        <span class="slx-outline-chapter-badge">${escapeHtml(chapter.id)}</span>
+        <b>${escapeHtml(chapter.title)}</b>
+        ${chapter.stage ? `<span class="slx-outline-stage-badge" data-stage="${escapeHtml(chapter.stage)}">${escapeHtml(chapter.stage)}</span>` : ''}
+        <span class="slx-outline-head-tail">
+          ${totalCount && scope === 'saved' ? `<span class="slx-outline-progress-badge ${doneCount === totalCount ? 'slx-outline-progress-done' : ''}">${doneCount}/${totalCount}</span>` : ''}
+          ${isCurrent ? '<span class="slx-outline-current-mark">当前</span>' : ''}
+        </span>
+      </button>
+      ${expanded ? body : ''}
     </div>
   `;
 }
 
-function renderGenerateCard(outline, plotSettings) {
+function renderGenerateCard(outline, plotSettings, { collapsed = false } = {}) {
   const isRunning = panelState.generationStatus === 'running';
   const hasSavedOutline = outline.chapters.length > 0;
-  return `
-    <div class="slx-detail-card">
-      <div class="slx-detail-title">生成剧情大纲</div>
+  const disabled = isRunning ? 'disabled' : '';
+  const body = `
       <label class="slx-field">
         <span>剧情方向</span>
-        <textarea rows="3" data-slx-outline-user-direction placeholder="可写想看的主线方向、关系张力、案件目标或结局倾向。">${escapeHtml(outline.userDirection || '')}</textarea>
+        <textarea rows="3" data-slx-outline-user-direction placeholder="可写想看的主线方向、关系张力、案件目标或结局倾向。" ${disabled}>${escapeHtml(outline.userDirection || '')}</textarea>
       </label>
       <div class="slx-form-grid">
         <label class="slx-field">
           <span>章节数</span>
-          <select data-slx-outline-chapter-count>
+          <select data-slx-outline-chapter-count ${disabled}>
             ${[
               ['auto', '自动（4-6章）'],
               ['4', '4章'],
@@ -150,7 +197,7 @@ function renderGenerateCard(outline, plotSettings) {
         </label>
         <label class="slx-field">
           <span>API 模式</span>
-          <select data-slx-outline-api-mode>
+          <select data-slx-outline-api-mode ${disabled}>
             <option value="secondary_api" ${plotSettings.apiMode === 'secondary_api' ? 'selected' : ''}>独立副 API</option>
             <option value="main_api" ${plotSettings.apiMode === 'main_api' ? 'selected' : ''}>使用主 API</option>
           </select>
@@ -161,7 +208,24 @@ function renderGenerateCard(outline, plotSettings) {
       </div>
       ${panelState.generationStatus === 'success' ? `<div class="slx-field-hint">草稿已生成，确认后可保存到当前聊天。</div>` : ''}
       ${panelState.generationError ? `<div class="slx-outline-error">${escapeHtml(panelState.generationError)}</div>` : ''}
-    </div>
+  `;
+
+  if (!collapsed) {
+    return `
+      <div class="slx-detail-card">
+        <div class="slx-detail-title">生成剧情大纲</div>
+        ${body}
+      </div>
+    `;
+  }
+
+  // 已有大纲时折叠为 details，生成中强制展开以显示状态
+  const open = isRunning || panelState.generateOpen;
+  return `
+    <details class="slx-detail-card slx-outline-gen-details" data-slx-outline-gen-details ${open ? 'open' : ''}>
+      <summary class="slx-outline-gen-summary">🎲 重新生成大纲</summary>
+      ${body}
+    </details>
   `;
 }
 
@@ -170,9 +234,9 @@ function renderDraftCard() {
   const draft = panelState.draft;
   return `
     <div class="slx-detail-card slx-outline-draft-card">
-      <div class="slx-detail-title">剧情大纲草稿</div>
+      <div class="slx-detail-title">剧情大纲草稿 <span class="slx-outline-draft-badge">未保存</span></div>
       ${renderStoryCoreBlock(draft.storyCore)}
-      ${draft.chapters.map(chapter => renderChapterBlock(chapter, { readonly: true })).join('')}
+      ${draft.chapters.map(chapter => renderChapterBlock(chapter, { scope: 'draft', readonly: true })).join('')}
       <div class="slx-outline-btn-row">
         <button class="slx-soft-btn" type="button" data-slx-outline-save-draft>保存大纲</button>
         <button class="slx-soft-btn" type="button" data-slx-outline-edit-draft>编辑草稿</button>
@@ -183,16 +247,18 @@ function renderDraftCard() {
   `;
 }
 
+function renderEmptyHint() {
+  return `
+    <div class="slx-detail-card slx-outline-empty-card">
+      <div class="slx-outline-empty-icon">🧭</div>
+      <div class="slx-outline-empty-title">尚未保存剧情大纲</div>
+      <p class="slx-outline-empty-hint">填写期望方向并点击「生成剧情大纲」，AI 会参考角色、世界书与近期剧情生成章节蓝图。</p>
+    </div>
+  `;
+}
+
 function renderSavedOutline(outline) {
-  if (!outline.chapters.length) {
-    return `
-      <div class="slx-detail-card slx-outline-empty-card">
-        <div class="slx-outline-empty-icon">🧭</div>
-        <div class="slx-outline-empty-title">尚未保存剧情大纲</div>
-        <p class="slx-outline-empty-hint">生成并保存后，故事核心、章节蓝图与推进条件会显示在这里。</p>
-      </div>
-    `;
-  }
+  if (!outline.chapters.length) return '';
   return `
     <div class="slx-detail-card">
       <div class="slx-detail-title">当前大纲</div>
@@ -204,6 +270,7 @@ function renderSavedOutline(outline) {
         </select>
       </label>
       ${outline.chapters.map(chapter => renderChapterBlock(chapter, {
+        scope: 'saved',
         progress: outline.progress,
         readonly: false,
         isCurrent: chapter.id === outline.currentChapterId,
@@ -260,10 +327,18 @@ export function renderPlotOutlinePanel(settings, chatState) {
   if (panelState.editing) {
     return renderOutlineEditor(panelState.editing);
   }
+  const hasOutline = outline.chapters.length > 0;
+  if (!hasOutline) {
+    return `
+      ${renderGenerateCard(outline, plotSettings, { collapsed: false })}
+      ${renderDraftCard()}
+      ${panelState.draft ? '' : renderEmptyHint()}
+    `;
+  }
   return `
-    ${renderGenerateCard(outline, plotSettings)}
     ${renderDraftCard()}
     ${renderSavedOutline(outline)}
+    ${renderGenerateCard(outline, plotSettings, { collapsed: true })}
   `;
 }
 
@@ -367,6 +442,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
   });
 
   panelRoot.querySelector('[data-slx-outline-generate]')?.addEventListener('click', async () => {
+    if (panelState.generationStatus === 'running') return;
     const userDirection = readDirectionAndPersist(panelRoot);
     panelState.generationStatus = 'running';
     panelState.generationError = '';
@@ -376,6 +452,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
       panelState.draft = result.draft;
       panelState.draftReplacements = result.replacements || 0;
       panelState.generationStatus = 'success';
+      clearExpandedChapters('draft');
       if (panelState.draftReplacements > 0) {
         notifyOutline('success', `剧情大纲生成结果已替换 ${panelState.draftReplacements} 处。`, '禁词替换');
       }
@@ -400,6 +477,8 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     panelState.draft = null;
     panelState.draftReplacements = 0;
     panelState.generationStatus = 'idle';
+    panelState.generateOpen = false;
+    clearExpandedChapters();
     notifyOutline('success', '剧情大纲已保存到当前聊天。');
     refreshPanel();
   });
@@ -408,6 +487,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     panelState.draft = null;
     panelState.draftReplacements = 0;
     panelState.generationStatus = 'idle';
+    clearExpandedChapters('draft');
     refreshPanel();
   });
 
@@ -457,8 +537,39 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     outline.progress = {};
     outline.updatedAt = formatTimestamp();
     saveChatState();
+    clearExpandedChapters();
+    panelState.generateOpen = false;
     notifyOutline('info', '剧情大纲已清空。');
     refreshPanel();
+  });
+
+  panelRoot.querySelectorAll('[data-slx-outline-toggle-chapter]').forEach(button => {
+    button.addEventListener('click', () => {
+      const [scope, chapterId] = String(button.dataset.slxOutlineToggleChapter).split('|');
+      if (!scope || !chapterId) return;
+      const fallback = scope === 'draft'
+        ? true
+        : chapterId === getPlotOutlineState(getChatState()).currentChapterId;
+      panelState.expandedChapters[`${scope}:${chapterId}`] = !isChapterExpanded(scope, chapterId, fallback);
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-outline-set-current]').forEach(button => {
+    button.addEventListener('click', () => {
+      const chapterId = String(button.dataset.slxOutlineSetCurrent || '');
+      if (!chapterId) return;
+      const chatState = getChatState();
+      const outline = getPlotOutlineState(chatState);
+      outline.currentChapterId = chapterId;
+      outline.updatedAt = formatTimestamp();
+      saveChatState();
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-outline-gen-details]')?.addEventListener('toggle', event => {
+    panelState.generateOpen = event.currentTarget.open;
   });
 
   bindEditorEvents(panelRoot);

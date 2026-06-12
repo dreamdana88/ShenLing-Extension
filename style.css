@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    Legacy Settings Card / Floating Entry Button
    ========================================================================== */
 
@@ -6299,7 +6299,8 @@ body.slx-panel-open-lock {
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--slx-text);
-  padding: 3px 0;
+  padding: 4px 6px;
+  border-radius: 6px;
 }
 
 .slx-outline-checklist-placeholder .slx-outline-check-item {
@@ -6341,7 +6342,45 @@ body.slx-panel-open-lock {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 4px 2px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  border-radius: 8px;
+}
+
+button.slx-outline-chapter-head {
+  cursor: pointer;
+  transition: background 0.13s;
+}
+
+button.slx-outline-chapter-head:hover {
+  background: var(--slx-bg-btn);
+}
+
+.slx-outline-chapter-expanded .slx-outline-chapter-head {
   margin-bottom: 6px;
+}
+
+.slx-outline-chevron {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--slx-muted);
+  transition: transform 0.15s ease;
+}
+
+.slx-outline-chapter-expanded .slx-outline-chevron {
+  transform: rotate(90deg);
+}
+
+.slx-outline-head-tail {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .slx-outline-stage-badge {
@@ -6352,11 +6391,48 @@ body.slx-panel-open-lock {
   font-size: 11px;
 }
 
+.slx-outline-stage-badge[data-stage='起'] {
+  background: rgba(118, 180, 120, 0.16);
+  color: #4e8a52;
+}
+
+.slx-outline-stage-badge[data-stage='承'] {
+  background: rgba(100, 180, 210, 0.14);
+  color: #4f93ad;
+}
+
+.slx-outline-stage-badge[data-stage='转'] {
+  background: rgba(224, 164, 74, 0.18);
+  color: #b07a2a;
+}
+
+.slx-outline-stage-badge[data-stage='合'] {
+  background: rgba(168, 130, 200, 0.18);
+  color: #8a5fb0;
+}
+
+.slx-outline-progress-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(120, 104, 98, 0.14);
+  color: var(--slx-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.slx-outline-progress-done {
+  background: rgba(118, 180, 120, 0.18);
+  color: #4e8a52;
+}
+
 .slx-outline-current-mark {
-  margin-left: auto;
   font-size: 11px;
   color: #4f93ad;
   font-weight: 700;
+}
+
+.slx-outline-chapter-body {
+  padding: 0 2px 2px;
 }
 
 .slx-outline-chapter-line {
@@ -6396,8 +6472,55 @@ button.slx-outline-check-item:hover {
   background: var(--slx-bg-btn);
 }
 
+button.slx-outline-check-item:active {
+  transform: scale(0.995);
+}
+
 .slx-outline-draft-card {
-  border-color: rgba(100, 180, 210, 0.45);
+  border-color: rgba(224, 164, 74, 0.5);
+  border-left: 3px solid rgba(224, 164, 74, 0.75);
+}
+
+.slx-outline-draft-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(224, 164, 74, 0.18);
+  color: #b07a2a;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.slx-outline-gen-details > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--slx-text);
+  list-style: none;
+}
+
+.slx-outline-gen-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.slx-outline-gen-details > summary::before {
+  content: '▸';
+  font-size: 11px;
+  color: var(--slx-muted);
+  transition: transform 0.15s ease;
+}
+
+.slx-outline-gen-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.slx-outline-gen-details[open] > summary {
+  margin-bottom: 8px;
 }
 
 .slx-outline-error {
@@ -6405,5 +6528,17 @@ button.slx-outline-check-item:hover {
   font-size: 12px;
   color: #c25f5f;
   line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .slx-outline-chapter-line {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .slx-outline-chapter-line > span:first-child {
+    width: auto;
+    padding-top: 0;
+  }
 }
 

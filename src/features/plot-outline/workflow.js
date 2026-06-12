@@ -56,6 +56,16 @@ function stripMarkdownFence(text) {
   return (matched?.[1] || raw).trim();
 }
 
+function extractJsonObjectText(text) {
+  const raw = String(text || '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    return raw.slice(start, end + 1).trim();
+  }
+  return '';
+}
+
 function cleanFieldText(value) {
   return String(value ?? '').trim();
 }
@@ -260,7 +270,13 @@ export async function runPlotOutlineGeneration({ userDirection } = {}) {
     try {
       parsed = JSON.parse(jsonText);
     } catch {
-      throw new Error('剧情大纲生成结果不是合法 JSON，请重试或检查模型输出。');
+      // 模型可能在 JSON 前后附带说明文字，截取首个 { 到末个 } 再试一次
+      const fallbackText = extractJsonObjectText(jsonText);
+      try {
+        parsed = JSON.parse(fallbackText);
+      } catch {
+        throw new Error('剧情大纲生成结果不是合法 JSON，请重试或检查模型输出。');
+      }
     }
     const normalized = normalizePlotOutlineDraft(parsed);
     const { draft, replacements } = applyWordReplacementToDraft(normalized);

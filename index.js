@@ -1,4 +1,4 @@
-﻿import {
+import {
   MODULES,
   PLUGIN_VERSION,
 } from './src/constants.js';
@@ -1162,7 +1162,10 @@ function init() {
     refreshPanel: renderFloatingPanel,
   });
   configurePlotOutlinePanel({
-    refreshPanel: renderFloatingPanel,
+    refreshPanel: () => renderFloatingPanel({
+      moduleScrollTop: panelRoot?.querySelector('.slx-module-grid')?.scrollTop,
+      detailScrollTop: panelRoot?.querySelector('.slx-detail')?.scrollTop,
+    }),
   });
   configurePlotOutlineWorkflow({
     addCommunicationLog,
