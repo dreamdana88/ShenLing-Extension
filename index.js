@@ -1,4 +1,4 @@
-import {
+﻿import {
   MODULES,
   PLUGIN_VERSION,
 } from './src/constants.js';
@@ -91,6 +91,9 @@ import {
   configurePlotOutlinePanel,
   renderPlotOutlinePanel,
 } from './src/features/plot-outline/panel.js';
+import {
+  configurePlotOutlineWorkflow,
+} from './src/features/plot-outline/workflow.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -1161,6 +1164,11 @@ function init() {
   configurePlotOutlinePanel({
     refreshPanel: renderFloatingPanel,
   });
+  configurePlotOutlineWorkflow({
+    addCommunicationLog,
+    getActiveApiProfile,
+    getGenerateRawFunction,
+  });
   configureSummaryWorkflow({
     addCommunicationLog,
     getActiveApiProfile,
@@ -1189,3 +1197,4 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
+

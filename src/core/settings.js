@@ -1,4 +1,4 @@
-import {
+﻿import {
   CHAT_STATE_KEY,
   DEFAULT_SUMMARY_EXCLUDE_TAGS,
   DEFAULT_SUMMARY_INCLUDE_TAGS,
@@ -84,6 +84,10 @@ export const defaultGlobalSettings = Object.freeze({
       prompts: [],
       styles: [],
     },
+    plotOutline: {
+      apiMode: 'secondary_api',
+      chapterCount: 'auto',
+    },
   },
   communicationLog: {
     maxEntries: 10,
@@ -144,6 +148,7 @@ export const defaultChatState = Object.freeze({
   },
   outline: {
     enabled: false,
+    userDirection: '',
     storyCore: {
       logline: '',
       conflict: '',
@@ -366,6 +371,24 @@ export function getChatBeautifySettings(settings = getGlobalSettings()) {
   return settings.modules.chatBeautify;
 }
 
+export function getPlotOutlineSettings(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.modules)) {
+    settings.modules = {};
+  }
+  settings.modules.plotOutline = mergeDefaults(
+    settings.modules.plotOutline,
+    cloneData(defaultGlobalSettings.modules.plotOutline),
+  );
+  const plotOutline = settings.modules.plotOutline;
+  if (!['secondary_api', 'main_api'].includes(plotOutline.apiMode)) {
+    plotOutline.apiMode = 'secondary_api';
+  }
+  if (!['auto', '4', '5', '6', '8'].includes(String(plotOutline.chapterCount))) {
+    plotOutline.chapterCount = 'auto';
+  }
+  return plotOutline;
+}
+
 export function getPlotOutlineState(chatState = getChatState()) {
   if (!isPlainObject(chatState.outline)) {
     chatState.outline = cloneData(defaultChatState.outline);
@@ -382,3 +405,4 @@ export function getPlotOutlineState(chatState = getChatState()) {
   }
   return chatState.outline;
 }
+

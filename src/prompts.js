@@ -1,4 +1,4 @@
-export const SUMMARY_GAZE_GUIDANCE = `##总结视角约束
+﻿export const SUMMARY_GAZE_GUIDANCE = `##总结视角约束
 - 总结须遵循女性凝视与女本位叙事：尊重女性主体性、欲望与选择，不客体化、矮化弱化女性。
 - 客观精准的档案生成式记录，极简主义、信息密集、零修辞。只记客观存在的角色行为、情节发展。
 - 禁止任何修辞渲染；禁止加入主观评价、情感推测，氛围描述。
@@ -145,6 +145,64 @@ export function buildMiniTheaterPrompt({
   ].join("\n");
 }
 
+export function buildPlotOutlinePrompt({
+  userDirection,
+  chapterCount,
+  contextMaterial,
+}) {
+  const chapterCountText =
+    chapterCount === "auto"
+      ? "4 到 6 章（按故事规模自行决定）"
+      : `${chapterCount} 章`;
+  const directionSection = String(userDirection || "").trim()
+    ? `\n【用户期望的剧情方向】\n${String(userDirection).trim()}\n生成时必须把用户期望方向作为主线核心参考。\n`
+    : "";
+  return `当前蜃灵已进入剧情编织状态。
+
+请根据下方梦境上下文素材，为这个故事设计一份「完整主线章节蓝图」。这不是总结已有剧情，而是从当前剧情状态出发，规划接下来的故事主线走向。
+
+以下是本次可参考的梦境上下文素材：
+
+${contextMaterial || "（未读取到额外上下文）"}
+${directionSection}
+【章节蓝图要求】
+- 共 ${chapterCountText}，整体遵循起承转合，终章必须收束，给{{user}}一个有高潮、有结局的完整故事。
+- 每章只给出梗概级章节方向与关键事件，不设计{{user}}的具体选择点，不写分支树，不写后日谈。
+- 已发生的剧情不要重新编排进章节；章节应从当前剧情状态自然向后延伸。
+- 前章取得的线索、物证须在后续章节被调用、印证或反转，重要伏笔须在终章回收，使整条主线环环相扣。
+
+【推进条件规则】
+- 推进条件只能是客观可捕捉的硬指标，如：抵达地点 / 取得物品 / 获知线索 / 击退·对峙目标 / 完成明确承诺 / 确认明确事实。
+- 严禁「感情升温」「气氛到位」「时机成熟」「关系更近」等情感、氛围、模糊类条件。
+- 每章 2 到 5 条，推进条件应是推动剧情、揭示真相的关键节点。
+
+【输出格式】
+必须只输出合法 JSON，不要输出 Markdown 代码块，不要输出解释文字：
+{
+  "storyCore": {
+    "logline": "一句话主线",
+    "conflict": "核心冲突",
+    "tone": "叙事基调"
+  },
+  "chapters": [
+    {
+      "id": "CH01",
+      "title": "章节名",
+      "stage": "起",
+      "theme": "本章核心氛围或叙事主题，简述",
+      "synopsis": "剧情脉络：档案记录式客观详述本章发生什么、推向何处",
+      "keyEvents": ["详述驱动本章的关键事件及过程"],
+      "conditions": [{ "id": "C1", "text": "客观硬指标推进条件" }],
+      "exitChapterId": "CH02"
+    }
+  ]
+}
+
+字段规则：
+- stage 只能是 起 / 承 / 转 / 合 之一。
+- conditions 的 id 按 C1、C2 顺序编号。
+- 末章 exitChapterId 填空字符串。`;
+}
 export const DEFAULT_MEMORY_PROMPT_TEMPLATE = [
   "##浓缩梦境",
   "",
@@ -332,3 +390,4 @@ export function buildLegacyArchiveEmotionUpdatePromptSection({
 已知最新情感档案：
 ${String(knownProfilesText || "暂无。").trim() || "暂无。"}`;
 }
+
