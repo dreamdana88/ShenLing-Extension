@@ -719,6 +719,11 @@ body.slx-panel-open-lock {
   transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
+.slx-setting-toggle-row input[type='checkbox']::before {
+  content: none;
+  display: none;
+}
+
 .slx-setting-toggle-row input[type='checkbox']::after {
   content: '';
   position: absolute;
