@@ -271,11 +271,11 @@ export function buildEmotionUpdatePromptSection({ knownProfilesText }) {
 
 判断依据优先级：
 1. 本轮正文事实。
-2. 对比已知最新档案。
+2. 对比已知最新情感档案。
 
 只有正文/剧情事实确实支持时才 changed=true。
 
-已知最新档案：
+已知最新情感档案：
 ${String(knownProfilesText || "暂无。").trim() || "暂无。"}
 
 请在 <memory> 内追加情感判断行，位置放在 [db:...] 之后、[progress:...] 之前。

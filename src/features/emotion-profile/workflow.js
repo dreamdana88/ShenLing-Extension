@@ -582,6 +582,66 @@ function registerTavernEvent(eventName, handler) {
   return null;
 }
 
+function stripEmotionLinesForSendingText(text) {
+  const value = String(text || '');
+  if (!/^\s*\[emotion(?:_changed)?\s*:/im.test(value)) return value;
+  return value
+    .replace(/^\s*\[emotion_changed\s*:[^\r\n]*\]\s*$/gim, '')
+    .replace(/^\s*\[emotion\s*:[^\r\n]*\]\s*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+function stripEmotionLinesFromSendingContent(content) {
+  if (typeof content === 'string') {
+    return stripEmotionLinesForSendingText(content);
+  }
+  if (!Array.isArray(content)) return content;
+
+  let changed = false;
+  const nextContent = content.map(part => {
+    if (!part || typeof part !== 'object' || typeof part.text !== 'string') return part;
+    const text = stripEmotionLinesForSendingText(part.text);
+    if (text === part.text) return part;
+    changed = true;
+    return { ...part, text };
+  });
+  return changed ? nextContent : content;
+}
+
+function getSendingContentText(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map(part => (part && typeof part === 'object' && typeof part.text === 'string' ? part.text : ''))
+    .filter(Boolean)
+    .join('\n');
+}
+
+function isShenlingInternalMemoryTask(chat) {
+  const text = chat
+    .map(message => getSendingContentText(message?.content))
+    .filter(Boolean)
+    .join('\n\n');
+  return [
+    '现在是梦境小总结模块',
+    '现在是梦境大归档模块',
+    '蜃灵助手的总档案压缩模块',
+    '现在是旧聊天归档模块',
+  ].some(marker => text.includes(marker));
+}
+
+function stripEmotionLinesFromChatCompletionPrompt(eventData) {
+  const chat = Array.isArray(eventData?.chat) ? eventData.chat : [];
+  if (isShenlingInternalMemoryTask(chat)) return;
+  chat.forEach(message => {
+    if (!message || typeof message !== 'object') return;
+    const content = stripEmotionLinesFromSendingContent(message.content);
+    if (content !== message.content) {
+      message.content = content;
+    }
+  });
+}
+
 export function registerEmotionProfileEvents() {
   if (emotionEventsRegistered) return;
   const tavernEvents = getTavernEventsSafe();
@@ -597,6 +657,12 @@ export function registerEmotionProfileEvents() {
 
   const beforeCombineStop = registerTavernEvent(tavernEvents.GENERATE_BEFORE_COMBINE_PROMPTS, syncHandler);
   if (beforeCombineStop) emotionEventStops.push(beforeCombineStop);
+
+  const chatCompletionPromptReadyStop = registerTavernEvent(
+    tavernEvents.CHAT_COMPLETION_PROMPT_READY,
+    stripEmotionLinesFromChatCompletionPrompt,
+  );
+  if (chatCompletionPromptReadyStop) emotionEventStops.push(chatCompletionPromptReadyStop);
 
   const chatChangedStop = registerTavernEvent(tavernEvents.CHAT_CHANGED, syncHandler);
   if (chatChangedStop) emotionEventStops.push(chatChangedStop);

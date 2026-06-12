@@ -45,6 +45,20 @@ export function stripListBlocks(content) {
   return String(content || '').replace(LIST_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+export function stripMemoryEmotionControlLines(content) {
+  return String(content || '')
+    .replace(/^\s*\[emotion_changed\s*:[^\r\n]*\]\s*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+export function stripMemoryEmotionContextLines(content) {
+  return stripMemoryEmotionControlLines(content)
+    .replace(/^\s*\[emotion\s*:[^\r\n]*\]\s*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export function extractMemoryBlocks(content) {
   return Array.from(String(content || '').matchAll(/<memory>[\s\S]*?<\/memory>/gi)).map(match => match[0].trim());
 }
@@ -201,8 +215,8 @@ export function buildMemorySummaryPrompt(content, priorMemories = [], summary = 
     SUMMARY_GAZE_GUIDANCE,
     SUMMARY_INTERNAL_CHECKLIST,
     materialInstructions,
-    extraInstructions,
     `请不要续写剧情，不要输出 <content>，${outputRule}`,
+    extraInstructions,
   ].filter(Boolean).join('\n\n');
   const userContent = [
     priorSection,
