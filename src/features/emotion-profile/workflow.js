@@ -426,6 +426,49 @@ export function removeEmotionProfileRecordsForMessage(messageId, { save = true }
   return changed;
 }
 
+export async function deleteEmotionProfileByRole(roleName) {
+  const cleanRoleName = normalizeRoleName(roleName);
+  if (!cleanRoleName) return false;
+
+  const chatState = getChatState();
+  const store = getEmotionProfileStore(chatState);
+  let changed = false;
+
+  if (isPlainObject(store.profiles?.[cleanRoleName])) {
+    delete store.profiles[cleanRoleName];
+    changed = true;
+  }
+
+  for (const [messageId, bucket] of Object.entries(store.pendingByMessage || {})) {
+    if (!isPlainObject(bucket) || !isPlainObject(bucket.items)) continue;
+
+    for (const [fingerprint, item] of Object.entries(bucket.items)) {
+      if (!isPlainObject(item) || !Array.isArray(item.profiles)) continue;
+      const nextProfiles = item.profiles.filter(profile => normalizeRoleName(profile?.roleName) !== cleanRoleName);
+      if (nextProfiles.length === item.profiles.length) continue;
+
+      changed = true;
+      if (nextProfiles.length) {
+        item.profiles = nextProfiles;
+      } else {
+        delete bucket.items[fingerprint];
+      }
+    }
+
+    if (!Object.keys(bucket.items).length) {
+      delete store.pendingByMessage[messageId];
+    }
+  }
+
+  if (!changed) return false;
+  store.lastUpdatedAt = formatTimestamp();
+  saveChatState();
+  await syncEmotionProfileInjection();
+  refreshPanel();
+  notifyEmotion('success', `已删除「${cleanRoleName}」的情感档案。`);
+  return true;
+}
+
 export async function processEmotionUpdateFromSummaryResult(result, { messageId } = {}) {
   if (!shouldAnalyzeEmotionProfile()) return;
   try {

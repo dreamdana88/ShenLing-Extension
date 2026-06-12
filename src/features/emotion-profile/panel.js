@@ -10,6 +10,7 @@ import {
   saveGlobalSettings,
 } from '../../core/settings.js';
 import {
+  deleteEmotionProfileByRole,
   getCurrentPendingEmotionUpdates,
   getCurrentPendingEmotionMessageIds,
   syncEmotionProfileInjection,
@@ -242,7 +243,10 @@ function renderProfileCard(roleName, profile, records = getProfileRecords(profil
           <div class="slx-detail-title">${escapeHtml(profile.name || roleName)}</div>
           <p>${escapeHtml(sourceLabel)} · ${escapeHtml(updatedAt)}</p>
         </div>
-        <button class="slx-mini-action-btn" type="button" data-slx-edit-emotion-profile="${escapeHtml(roleName)}" title="编辑情感档案"><i class="fa-solid fa-pen-to-square"></i></button>
+        <div class="slx-card-actions">
+          <button class="slx-mini-action-btn" type="button" data-slx-edit-emotion-profile="${escapeHtml(roleName)}" title="编辑情感档案"><i class="fa-solid fa-pen-to-square"></i></button>
+          <button class="slx-mini-action-btn slx-danger-mini-btn" type="button" data-slx-delete-emotion-profile="${escapeHtml(roleName)}" title="删除该角色全部情感档案"><i class="fa-solid fa-trash"></i></button>
+        </div>
       </div>
       <div class="slx-emotion-profile-section">
         <span>当前状态</span>
@@ -350,6 +354,18 @@ export function bindEmotionProfilePanelEvents(panelRoot, settings) {
     button.addEventListener('click', () => {
       openEmotionProfileEditor(button.dataset.slxEditEmotionProfile || '');
       refreshPanel();
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-delete-emotion-profile]').forEach(button => {
+    button.addEventListener('click', () => {
+      const roleName = button.dataset.slxDeleteEmotionProfile || '';
+      if (!roleName) return;
+      if (!confirm(`删除「${roleName}」的所有情感档案？此操作不会删除聊天楼层里的 memory。`)) return;
+      if (emotionProfileEditorState.roleName === roleName) {
+        closeEmotionProfileEditor();
+      }
+      void deleteEmotionProfileByRole(roleName);
     });
   });
 

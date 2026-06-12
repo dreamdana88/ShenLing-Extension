@@ -2439,6 +2439,22 @@ body.slx-panel-open-lock {
   color: var(--slx-text);
 }
 
+.slx-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.slx-danger-mini-btn {
+  color: var(--slx-danger, #c0392b);
+}
+
+.slx-danger-mini-btn:hover:not(:disabled) {
+  background: rgba(192, 57, 43, 0.1);
+  color: var(--slx-danger, #c0392b);
+}
+
 .slx-soft-btn:disabled,
 .slx-mini-action-btn:disabled,
 #shenling-assistant-panel-root .slx-field input:not([type='checkbox']):disabled {
