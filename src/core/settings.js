@@ -143,8 +143,16 @@ export const defaultChatState = Object.freeze({
     lastError: '',
   },
   outline: {
-    currentOutlineId: '',
-    currentNodeId: '',
+    enabled: false,
+    storyCore: {
+      logline: '',
+      conflict: '',
+      tone: '',
+    },
+    chapters: [],
+    currentChapterId: '',
+    progress: {},
+    updatedAt: '',
   },
   memoir: {
     worldBookId: '',
@@ -356,4 +364,21 @@ export function getChatBeautifySettings(settings = getGlobalSettings()) {
     cloneData(defaultGlobalSettings.modules.chatBeautify),
   );
   return settings.modules.chatBeautify;
+}
+
+export function getPlotOutlineState(chatState = getChatState()) {
+  if (!isPlainObject(chatState.outline)) {
+    chatState.outline = cloneData(defaultChatState.outline);
+  }
+  chatState.outline = mergeDefaults(chatState.outline, cloneData(defaultChatState.outline));
+  if (!Array.isArray(chatState.outline.chapters)) {
+    chatState.outline.chapters = [];
+  }
+  if (!isPlainObject(chatState.outline.progress)) {
+    chatState.outline.progress = {};
+  }
+  if (!isPlainObject(chatState.outline.storyCore)) {
+    chatState.outline.storyCore = cloneData(defaultChatState.outline.storyCore);
+  }
+  return chatState.outline;
 }

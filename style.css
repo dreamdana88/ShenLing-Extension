@@ -6166,3 +6166,155 @@ body.slx-panel-open-lock {
   color: var(--slx-muted);
   line-height: 1.45;
 }
+
+/* ==========================================================================
+   Plot Outline Module (剧情大纲)
+   ========================================================================== */
+
+.slx-outline-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 24px 16px;
+}
+
+.slx-outline-empty-icon {
+  font-size: 32px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.slx-outline-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--slx-text);
+}
+
+.slx-outline-empty-hint {
+  font-size: 12px;
+  color: var(--slx-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.slx-outline-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.slx-outline-has-card .slx-outline-btn-row {
+  justify-content: flex-start;
+}
+
+/* Story core rows */
+.slx-outline-story-core {
+  margin-bottom: 12px;
+}
+
+.slx-outline-core-row {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--slx-border-dim);
+  font-size: 12.5px;
+}
+
+.slx-outline-core-row:last-child {
+  border-bottom: none;
+}
+
+.slx-outline-core-label {
+  flex-shrink: 0;
+  width: 32px;
+  color: var(--slx-muted);
+  font-size: 11px;
+  padding-top: 1px;
+}
+
+.slx-outline-core-value {
+  color: var(--slx-text);
+  line-height: 1.5;
+}
+
+/* Chapter status */
+.slx-outline-chapter-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 28px;
+}
+
+.slx-outline-chapter-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(140, 100, 80, 0.14);
+  color: var(--slx-accent, #9a6b55);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.slx-outline-chapter-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--slx-text);
+}
+
+.slx-outline-chapter-empty {
+  font-size: 12px;
+  color: var(--slx-muted);
+}
+
+.slx-outline-chapter-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--slx-muted);
+}
+
+/* Checklist */
+.slx-outline-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.slx-outline-check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--slx-text);
+  padding: 3px 0;
+}
+
+.slx-outline-checklist-placeholder .slx-outline-check-item {
+  opacity: 0.35;
+}
+
+.slx-outline-check-done {
+  color: var(--slx-muted);
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.slx-outline-check-box {
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.slx-outline-checklist-empty {
+  font-size: 12px;
+  color: var(--slx-muted);
+  padding: 4px 0 8px;
+}

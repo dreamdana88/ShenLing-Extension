@@ -86,6 +86,11 @@ import {
   isMiniTheaterOverlayOpen,
   renderMiniTheaterPanel,
 } from './src/features/mini-theater/panel.js';
+import {
+  bindPlotOutlinePanelEvents,
+  configurePlotOutlinePanel,
+  renderPlotOutlinePanel,
+} from './src/features/plot-outline/panel.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -435,13 +440,24 @@ function getActiveModule(settings = getGlobalSettings()) {
 }
 
 function renderModuleHeaderAction(activeModule, settings) {
-  if (activeModule.id !== 'profile') return '';
-  const emotionSettings = getEmotionProfileSettings(settings);
-  return `
-    <label class="slx-setting-toggle-row slx-module-head-toggle" for="slx-emotion-enabled" title="情感档案">
-      <input id="slx-emotion-enabled" type="checkbox" data-slx-emotion-field="enabled" ${emotionSettings.enabled ? 'checked' : ''} />
-    </label>
-  `;
+  if (activeModule.id === 'profile') {
+    const emotionSettings = getEmotionProfileSettings(settings);
+    return `
+      <label class="slx-setting-toggle-row slx-module-head-toggle" for="slx-emotion-enabled" title="情感档案">
+        <input id="slx-emotion-enabled" type="checkbox" data-slx-emotion-field="enabled" ${emotionSettings.enabled ? 'checked' : ''} />
+      </label>
+    `;
+  }
+  if (activeModule.id === 'outline') {
+    const chatState = getChatState();
+    const outline = chatState.outline || {};
+    return `
+      <label class="slx-setting-toggle-row slx-module-head-toggle" for="slx-outline-enabled" title="启用剧情大纲">
+        <input id="slx-outline-enabled" type="checkbox" data-slx-outline-enabled ${outline.enabled ? 'checked' : ''} />
+      </label>
+    `;
+  }
+  return '';
 }
 
 function createModuleButton(module, settings) {
@@ -616,6 +632,10 @@ function renderModuleDetail(module, settings) {
 
   if (module.id === 'diary') {
     return renderDiaryPanel(settings, chatState);
+  }
+
+  if (module.id === 'outline') {
+    return renderPlotOutlinePanel(settings, chatState);
   }
 
   if (module.id === 'theater') {
@@ -868,6 +888,7 @@ function renderFloatingPanel(options = {}) {
   bindDiaryPanelEvents(panelRoot);
   bindContextDiagnosticsPanelEvents(panelRoot);
   bindMiniTheaterPanelEvents(panelRoot);
+  bindPlotOutlinePanelEvents(panelRoot);
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
     button.addEventListener('click', () => {
@@ -1135,6 +1156,9 @@ function init() {
     closePanel: closeFloatingPanel,
     getActiveApiProfile,
     getGenerateRawFunction,
+    refreshPanel: renderFloatingPanel,
+  });
+  configurePlotOutlinePanel({
     refreshPanel: renderFloatingPanel,
   });
   configureSummaryWorkflow({
