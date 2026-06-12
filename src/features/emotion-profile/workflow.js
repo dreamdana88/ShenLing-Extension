@@ -169,8 +169,18 @@ function buildKnownProfilesSection(store) {
       const status = getRecordField(latest, ['currentStatus', 'currentState', 'status', 'summary'])
         || getRecordField(profile, ['currentStatus', 'currentState', 'summary'])
         || '尚未整理';
-      return `- ${profile.name || roleName}：${status}`;
-    });
+      const relationship = getRecordField(latest, ['relationshipToUser', 'relationship']);
+      const source = latest?.sourceMessageId === undefined || latest?.sourceMessageId === null
+        ? ''
+        : `- 来源：第 ${latest.sourceMessageId} 楼`;
+      return [
+        `【${profile.name || roleName}】`,
+        source,
+        `- 当前状态：${status}`,
+        relationship ? `- 与{{user}}关系：${relationship}` : '',
+      ].filter(Boolean).join('\n');
+    })
+    .filter(Boolean);
   return profiles.length ? profiles.join('\n') : '暂无。';
 }
 

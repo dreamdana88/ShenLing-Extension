@@ -275,9 +275,6 @@ export function buildEmotionUpdatePromptSection({ knownProfilesText }) {
 
 只有正文/剧情事实确实支持时才 changed=true。
 
-已知最新情感档案：
-${String(knownProfilesText || "暂无。").trim() || "暂无。"}
-
 请在 <memory> 内追加情感判断行，位置放在 [db:...] 之后、[progress:...] 之前。
 
 如果本轮存在显著情感变化，输出：
@@ -292,7 +289,10 @@ ${String(knownProfilesText || "暂无。").trim() || "暂无。"}
 - changed=false 时禁止输出 [emotion:...]。
 - changed=true 时至少输出一条 [emotion:...]，可多角色多条。
 - [emotion:...] 只记录显著变化，不记录日常交流、轻度波动、重复旧状态。
-- 不要输出 JSON、Markdown、解释文字或额外 XML 标签。`;
+- 不要输出 JSON、Markdown、解释文字或额外 XML 标签。
+
+已知最新情感档案：
+${String(knownProfilesText || "暂无。").trim() || "暂无。"}`;
 }
 
 export function buildLegacyArchiveEmotionUpdatePromptSection({
@@ -327,5 +327,8 @@ export function buildLegacyArchiveEmotionUpdatePromptSection({
 - changed=false 时禁止输出 [emotion:...]。
 - changed=true 时至少输出一条 [emotion:...]，可多角色多条。
 - [emotion:...] 只记录确有持续意义的显著变化，不记录日常交流、轻度波动、重复旧状态。
-- 不要输出 JSON、Markdown、解释文字或额外 XML 标签。`;
+- 不要输出 JSON、Markdown、解释文字或额外 XML 标签。
+
+已知最新情感档案：
+${String(knownProfilesText || "暂无。").trim() || "暂无。"}`;
 }
