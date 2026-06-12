@@ -186,6 +186,13 @@ function hasUsableWorldInfoContext(context = {}) {
   return hasPromptWorldInfoInjection(context) || hasWorldInfoEntries(context);
 }
 
+function getFilteredWorldInfoMaterialSource(filtered, injectionText = '') {
+  if (filtered.filtered.length > 0) {
+    return filtered.used.length ? 'filtered_entries_fallback' : 'filtered_out_all';
+  }
+  return injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none');
+}
+
 function getTavernEventsSafe() {
   const context = getContextSafe();
   return globalThis.tavern_events || context?.tavern_events || context?.event_types || {};
@@ -714,6 +721,7 @@ export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT
     cacheSource: record.source,
   })));
   const filtered = filterActivatedWorldInfoEntries(entries, { limit });
+  const materialSource = getFilteredWorldInfoMaterialSource(filtered, latestPromptInjection?.injectionText || '');
   return createWorldInfoContextResult({
     entries: filtered.used,
     worldInfoBefore: latestPromptInjection?.worldInfoBefore || '',
@@ -725,7 +733,7 @@ export function collectCachedWorldInfoContext({ limit = DEFAULT_WORLD_INFO_LIMIT
       cacheCount: cache.length,
       usedCache: cache.length > 0,
       usedDryRun: false,
-      materialSource: latestPromptInjection?.injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none'),
+      materialSource,
       injectionSource: latestPromptInjection?.injectionSource || 'none',
       activatedTextLength: Number(latestActivatedText?.activatedTextLength) || 0,
       cacheHitReason: latestPromptInjection?.injectionText
@@ -896,6 +904,7 @@ export async function collectDryRunWorldInfoContext({
     const injection = getWorldInfoInjectionFromPayload(result);
     const entries = normalizeWorldInfoEntriesFromPayload(result, 'dry_run');
     const filtered = filterActivatedWorldInfoEntries(entries, { limit });
+    const materialSource = getFilteredWorldInfoMaterialSource(filtered, injection.injectionText);
     return createWorldInfoContextResult({
       entries: filtered.used,
       worldInfoBefore: injection.worldInfoBefore,
@@ -907,7 +916,7 @@ export async function collectDryRunWorldInfoContext({
         cacheCount: 0,
         usedCache: false,
         usedDryRun: true,
-        materialSource: injection.injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none'),
+        materialSource,
         injectionSource: injection.injectionSource,
         activatedTextLength: injection.activatedTextLength,
         fallbackReason: 'event_cache_empty',
@@ -1236,6 +1245,7 @@ export function formatWorldInfoForPrompt(entries = []) {
 }
 
 export function formatWorldInfoInjectionForPrompt(context = {}) {
+  if (shouldAvoidRawWorldInfoInjection(context)) return '';
   const before = cleanText(context.worldInfoBefore);
   const after = cleanText(context.worldInfoAfter);
   const injectionText = cleanText(context.worldInfoInjectionText);
@@ -1248,6 +1258,14 @@ export function formatWorldInfoInjectionForPrompt(context = {}) {
   }
 
   return injectionText;
+}
+
+function getWorldInfoMaterialDiagnostics(context = {}) {
+  return context?.worldInfo?.diagnostics || context?.diagnostics?.worldInfo || context?.diagnostics || {};
+}
+
+function shouldAvoidRawWorldInfoInjection(context = {}) {
+  return Number(getWorldInfoMaterialDiagnostics(context).filteredCount || 0) > 0;
 }
 
 export function formatWorldInfoMaterialForPrompt(context = {}, { mode = 'injection_first' } = {}) {
