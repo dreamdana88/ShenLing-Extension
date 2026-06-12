@@ -53,6 +53,10 @@ export function configurePlotOutlinePanel(options = {}) {
   panelOptions = { ...panelOptions, ...options };
 }
 
+export function isPlotOutlineEditorOpen() {
+  return Boolean(panelState.editing);
+}
+
 function refreshPanel() {
   panelOptions.refreshPanel();
 }
@@ -195,13 +199,13 @@ function renderGenerateCard(outline, plotSettings, { collapsed = false } = {}) {
             ].map(([value, label]) => `<option value="${value}" ${String(plotSettings.chapterCount) === value ? 'selected' : ''}>${label}</option>`).join('')}
           </select>
         </label>
-        <label class="slx-field">
+        <div class="slx-field">
           <span>API 模式</span>
-          <select data-slx-outline-api-mode ${disabled}>
-            <option value="secondary_api" ${plotSettings.apiMode === 'secondary_api' ? 'selected' : ''}>独立副 API</option>
-            <option value="main_api" ${plotSettings.apiMode === 'main_api' ? 'selected' : ''}>使用主 API</option>
-          </select>
-        </label>
+          <div class="slx-segment-row slx-outline-api-segment" role="group" aria-label="剧情大纲 API 模式">
+            <button class="slx-segment-btn ${plotSettings.apiMode === 'secondary_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-outline-api-mode="secondary_api" ${disabled}>副 API</button>
+            <button class="slx-segment-btn ${plotSettings.apiMode === 'main_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-outline-api-mode="main_api" ${disabled}>主 API</button>
+          </div>
+        </div>
       </div>
       <div class="slx-outline-btn-row">
         <button class="slx-soft-btn" type="button" data-slx-outline-generate ${isRunning ? 'disabled' : ''}>${isRunning ? '生成中...' : hasSavedOutline ? '重 Roll 大纲' : '生成剧情大纲'}</button>
@@ -285,38 +289,57 @@ function renderSavedOutline(outline) {
   `;
 }
 
-function renderOutlineEditor(editing) {
+function renderOutlineEditorOverlay(editing) {
+  if (!editing) return '';
   const data = editing.data;
+  const theme = getGlobalSettings().theme === 'dark' ? 'dark' : 'light';
+  const title = editing.target === 'draft' ? '编辑大纲草稿' : '编辑当前大纲';
+  const meta = `${data.chapters.length} 章 · 出口章节按顺序自动维护`;
   return `
-    <div class="slx-detail-card">
-      <div class="slx-detail-title">编辑大纲${editing.target === 'draft' ? '草稿' : ''}</div>
-      <div class="slx-form-grid">
-        <label class="slx-field"><span>一句话主线</span><input type="text" data-slx-outline-edit="logline" value="${escapeHtml(data.storyCore.logline)}" /></label>
-        <label class="slx-field"><span>核心冲突</span><input type="text" data-slx-outline-edit="conflict" value="${escapeHtml(data.storyCore.conflict)}" /></label>
-        <label class="slx-field"><span>叙事基调</span><input type="text" data-slx-outline-edit="tone" value="${escapeHtml(data.storyCore.tone)}" /></label>
-      </div>
-      ${data.chapters.map((chapter, index) => `
-        <div class="slx-outline-chapter-card" data-slx-outline-edit-chapter="${index}">
-          <div class="slx-outline-chapter-head"><span class="slx-outline-chapter-badge">${escapeHtml(chapter.id)}</span></div>
-          <div class="slx-form-grid">
-            <label class="slx-field"><span>章节名</span><input type="text" data-slx-chapter-field="title" value="${escapeHtml(chapter.title)}" /></label>
-            <label class="slx-field"><span>叙事阶段</span>
-              <select data-slx-chapter-field="stage">
-                ${['', '起', '承', '转', '合'].map(stage => `<option value="${stage}" ${chapter.stage === stage ? 'selected' : ''}>${stage || '未设置'}</option>`).join('')}
-              </select>
-            </label>
-            <label class="slx-field"><span>主题</span><input type="text" data-slx-chapter-field="theme" value="${escapeHtml(chapter.theme)}" /></label>
-            <label class="slx-field"><span>剧情脉络</span><textarea rows="3" data-slx-chapter-field="synopsis">${escapeHtml(chapter.synopsis)}</textarea></label>
-            <label class="slx-field"><span>关键事件（每行一条）</span><textarea rows="3" data-slx-chapter-field="keyEvents">${escapeHtml(chapter.keyEvents.join('\n'))}</textarea></label>
-            <label class="slx-field"><span>推进条件（每行一条，自动编号）</span><textarea rows="3" data-slx-chapter-field="conditions">${escapeHtml(chapter.conditions.map(condition => condition.text).join('\n'))}</textarea></label>
+    <div class="slx-outline-overlay slx-outline-editor-overlay" data-theme="${theme}" data-slx-outline-editor-overlay role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+      <div class="slx-outline-editor">
+        <div class="slx-outline-editor-header">
+          <div class="slx-outline-editor-title-wrap">
+            <span class="slx-outline-editor-title">${escapeHtml(title)}</span>
+            <span class="slx-outline-editor-meta">${escapeHtml(meta)}</span>
           </div>
+          <button class="slx-icon-btn" type="button" data-slx-outline-editor-cancel aria-label="关闭编辑器">×</button>
         </div>
-      `).join('')}
-      <div class="slx-outline-btn-row">
-        <button class="slx-soft-btn" type="button" data-slx-outline-editor-save>保存修改</button>
-        <button class="slx-soft-btn" type="button" data-slx-outline-editor-cancel>取消</button>
+        <div class="slx-outline-editor-body">
+          <section class="slx-outline-editor-section">
+            <div class="slx-outline-editor-section-title">故事核心</div>
+            <div class="slx-outline-editor-core-grid">
+              <label class="slx-outline-editor-field"><span>一句话主线</span><input type="text" data-slx-outline-edit="logline" value="${escapeHtml(data.storyCore.logline)}" /></label>
+              <label class="slx-outline-editor-field"><span>核心冲突</span><input type="text" data-slx-outline-edit="conflict" value="${escapeHtml(data.storyCore.conflict)}" /></label>
+              <label class="slx-outline-editor-field"><span>叙事基调</span><input type="text" data-slx-outline-edit="tone" value="${escapeHtml(data.storyCore.tone)}" /></label>
+            </div>
+          </section>
+          ${data.chapters.map((chapter, index) => `
+            <section class="slx-outline-editor-chapter" data-slx-outline-edit-chapter="${index}">
+              <div class="slx-outline-editor-chapter-head">
+                <span class="slx-outline-chapter-badge">${escapeHtml(chapter.id)}</span>
+                <b>${escapeHtml(chapter.title || '未命名章节')}</b>
+              </div>
+              <div class="slx-outline-editor-chapter-grid">
+                <label class="slx-outline-editor-field"><span>章节名</span><input type="text" data-slx-chapter-field="title" value="${escapeHtml(chapter.title)}" /></label>
+                <label class="slx-outline-editor-field"><span>叙事阶段</span>
+                  <select data-slx-chapter-field="stage">
+                    ${['', '起', '承', '转', '合'].map(stage => `<option value="${stage}" ${chapter.stage === stage ? 'selected' : ''}>${stage || '未设置'}</option>`).join('')}
+                  </select>
+                </label>
+                <label class="slx-outline-editor-field slx-outline-editor-field-wide"><span>主题</span><input type="text" data-slx-chapter-field="theme" value="${escapeHtml(chapter.theme)}" /></label>
+                <label class="slx-outline-editor-field slx-outline-editor-field-wide"><span>剧情脉络</span><textarea rows="4" data-slx-chapter-field="synopsis">${escapeHtml(chapter.synopsis)}</textarea></label>
+                <label class="slx-outline-editor-field"><span>关键事件（每行一条）</span><textarea rows="6" data-slx-chapter-field="keyEvents">${escapeHtml(chapter.keyEvents.join('\\n'))}</textarea></label>
+                <label class="slx-outline-editor-field"><span>推进条件（每行一条，自动编号）</span><textarea rows="6" data-slx-chapter-field="conditions">${escapeHtml(chapter.conditions.map(condition => condition.text).join('\\n'))}</textarea></label>
+              </div>
+            </section>
+          `).join('')}
+        </div>
+        <div class="slx-outline-editor-footer">
+          <button class="slx-soft-btn" type="button" data-slx-outline-editor-cancel>取消</button>
+          <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-outline-editor-save>保存修改</button>
+        </div>
       </div>
-      <div class="slx-field-hint">出口章节按顺序自动维护，无需手动填写。</div>
     </div>
   `;
 }
@@ -324,21 +347,25 @@ function renderOutlineEditor(editing) {
 export function renderPlotOutlinePanel(settings, chatState) {
   const outline = getPlotOutlineState(chatState);
   const plotSettings = getPlotOutlineSettings(settings);
-  if (panelState.editing) {
-    return renderOutlineEditor(panelState.editing);
-  }
   const hasOutline = outline.chapters.length > 0;
-  if (!hasOutline) {
-    return `
+  const mainContent = !hasOutline
+    ? `
       ${renderGenerateCard(outline, plotSettings, { collapsed: false })}
       ${renderDraftCard()}
       ${panelState.draft ? '' : renderEmptyHint()}
+    `
+    : `
+      ${renderDraftCard()}
+      ${renderSavedOutline(outline)}
+      ${renderGenerateCard(outline, plotSettings, { collapsed: true })}
     `;
-  }
   return `
-    ${renderDraftCard()}
-    ${renderSavedOutline(outline)}
-    ${renderGenerateCard(outline, plotSettings, { collapsed: true })}
+    <div class="slx-outline-root" data-slx-outline-root>
+      <div class="slx-outline-main">
+        ${mainContent}
+      </div>
+      ${renderOutlineEditorOverlay(panelState.editing)}
+    </div>
   `;
 }
 
@@ -367,7 +394,15 @@ function bindEditorEvents(panelRoot) {
     refreshPanel();
   });
 
-  panelRoot.querySelector('[data-slx-outline-editor-cancel]')?.addEventListener('click', () => {
+  panelRoot.querySelectorAll('[data-slx-outline-editor-cancel]').forEach(button => {
+    button.addEventListener('click', () => {
+      panelState.editing = null;
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-outline-editor-overlay]')?.addEventListener('click', event => {
+    if (event.target !== event.currentTarget) return;
     panelState.editing = null;
     refreshPanel();
   });
@@ -423,11 +458,14 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     refreshPanel();
   });
 
-  panelRoot.querySelector('[data-slx-outline-api-mode]')?.addEventListener('change', event => {
-    const settings = getGlobalSettings();
-    const plotSettings = getPlotOutlineSettings(settings);
-    plotSettings.apiMode = event.currentTarget.value === 'main_api' ? 'main_api' : 'secondary_api';
-    saveGlobalSettings();
+  panelRoot.querySelectorAll('[data-slx-outline-api-mode]').forEach(button => {
+    button.addEventListener('click', event => {
+      const settings = getGlobalSettings();
+      const plotSettings = getPlotOutlineSettings(settings);
+      plotSettings.apiMode = event.currentTarget.dataset.slxOutlineApiMode === 'main_api' ? 'main_api' : 'secondary_api';
+      saveGlobalSettings();
+      refreshPanel();
+    });
   });
 
   panelRoot.querySelector('[data-slx-outline-chapter-count]')?.addEventListener('change', event => {

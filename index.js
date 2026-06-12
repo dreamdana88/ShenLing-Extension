@@ -89,6 +89,7 @@ import {
 import {
   bindPlotOutlinePanelEvents,
   configurePlotOutlinePanel,
+  isPlotOutlineEditorOpen,
   renderPlotOutlinePanel,
 } from './src/features/plot-outline/panel.js';
 import {
@@ -712,6 +713,7 @@ function renderFloatingPanel(options = {}) {
     'slx-panel',
     activeModule.id === 'diary' && isDiaryNotebookOpen() ? 'slx-panel-diary-book-only' : '',
     activeModule.id === 'theater' && isMiniTheaterOverlayOpen() ? 'slx-panel-theater-preview-only' : '',
+    activeModule.id === 'outline' && isPlotOutlineEditorOpen() ? 'slx-panel-outline-editor-only' : '',
   ].filter(Boolean).join(' ');
 
   panelRoot.innerHTML = `

@@ -329,7 +329,8 @@ body.slx-panel-open-lock {
   overflow: hidden;
 }
 
-.slx-panel.slx-panel-theater-preview-only {
+.slx-panel.slx-panel-theater-preview-only,
+.slx-panel.slx-panel-outline-editor-only {
   width: 100%;
   height: 100%;
   max-height: none;
@@ -342,11 +343,15 @@ body.slx-panel-open-lock {
 
 .slx-panel.slx-panel-theater-preview-only > .slx-bubbles,
 .slx-panel.slx-panel-theater-preview-only > .slx-header,
-.slx-panel.slx-panel-theater-preview-only > .slx-communication-log-panel {
+.slx-panel.slx-panel-theater-preview-only > .slx-communication-log-panel,
+.slx-panel.slx-panel-outline-editor-only > .slx-bubbles,
+.slx-panel.slx-panel-outline-editor-only > .slx-header,
+.slx-panel.slx-panel-outline-editor-only > .slx-communication-log-panel {
   display: none;
 }
 
-.slx-panel.slx-panel-theater-preview-only > .slx-body {
+.slx-panel.slx-panel-theater-preview-only > .slx-body,
+.slx-panel.slx-panel-outline-editor-only > .slx-body {
   display: block;
   min-height: 100%;
   padding: 0;
@@ -354,11 +359,14 @@ body.slx-panel-open-lock {
 }
 
 .slx-panel.slx-panel-theater-preview-only .slx-module-grid,
-.slx-panel.slx-panel-theater-preview-only .slx-detail > .slx-detail-head {
+.slx-panel.slx-panel-theater-preview-only .slx-detail > .slx-detail-head,
+.slx-panel.slx-panel-outline-editor-only .slx-module-grid,
+.slx-panel.slx-panel-outline-editor-only .slx-detail > .slx-detail-head {
   display: none;
 }
 
-.slx-panel.slx-panel-theater-preview-only .slx-detail {
+.slx-panel.slx-panel-theater-preview-only .slx-detail,
+.slx-panel.slx-panel-outline-editor-only .slx-detail {
   position: absolute;
   inset: 0;
   padding: 0;
@@ -368,12 +376,14 @@ body.slx-panel-open-lock {
   overflow: hidden;
 }
 
-.slx-panel.slx-panel-theater-preview-only .slx-theater-root {
+.slx-panel.slx-panel-theater-preview-only .slx-theater-root,
+.slx-panel.slx-panel-outline-editor-only .slx-outline-root {
   height: 100%;
   gap: 0;
 }
 
-.slx-panel.slx-panel-theater-preview-only .slx-theater-root > :not(.slx-theater-preview-overlay):not(.slx-theater-modal-overlay) {
+.slx-panel.slx-panel-theater-preview-only .slx-theater-root > :not(.slx-theater-preview-overlay):not(.slx-theater-modal-overlay),
+.slx-panel.slx-panel-outline-editor-only .slx-outline-root > :not(.slx-outline-editor-overlay) {
   display: none;
 }
 
@@ -6539,6 +6549,263 @@ button.slx-outline-check-item:active {
   .slx-outline-chapter-line > span:first-child {
     width: auto;
     padding-top: 0;
+  }
+}
+
+
+.slx-outline-root {
+  position: relative;
+  min-height: 100%;
+}
+
+.slx-outline-api-segment {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.slx-outline-api-segment .slx-segment-btn {
+  min-width: 72px;
+}
+
+.slx-outline-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 210;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding:
+    max(10px, env(safe-area-inset-top))
+    max(10px, env(safe-area-inset-right))
+    max(10px, env(safe-area-inset-bottom))
+    max(10px, env(safe-area-inset-left));
+  background: rgba(22, 16, 18, 0.62);
+  overflow: hidden;
+  backdrop-filter: blur(3px);
+  animation: slx-theater-overlay-in 0.18s ease-out;
+}
+
+.slx-outline-editor-overlay {
+  --slx-outline-editor-panel: rgba(252, 244, 239, 0.98);
+  --slx-outline-editor-soft: rgba(255, 250, 246, 0.9);
+  --slx-outline-editor-border: rgba(186, 148, 133, 0.22);
+  --slx-outline-editor-text: rgba(80, 52, 44, 0.96);
+  --slx-outline-editor-muted: rgba(128, 95, 86, 0.68);
+  --slx-outline-editor-accent: #b4866a;
+}
+
+.slx-outline-editor-overlay[data-theme='dark'] {
+  background: rgba(2, 8, 18, 0.72);
+  color-scheme: dark;
+  --slx-outline-editor-panel: rgba(8, 20, 36, 0.98);
+  --slx-outline-editor-soft: rgba(12, 31, 50, 0.88);
+  --slx-outline-editor-border: rgba(100, 180, 210, 0.18);
+  --slx-outline-editor-text: rgba(222, 244, 250, 0.96);
+  --slx-outline-editor-muted: rgba(150, 198, 220, 0.66);
+  --slx-outline-editor-accent: #64b4d2;
+}
+
+.slx-outline-editor {
+  width: min(1180px, 100%);
+  height: min(860px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--slx-outline-editor-border);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 253, 248, 0.96), rgba(253, 244, 236, 0.96)),
+    var(--slx-outline-editor-panel);
+  color: var(--slx-outline-editor-text);
+  box-shadow: 0 22px 55px rgba(38, 22, 18, 0.22);
+  animation: slx-theater-preview-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.slx-outline-editor-overlay[data-theme='dark'] .slx-outline-editor {
+  background:
+    linear-gradient(180deg, rgba(11, 29, 48, 0.98), rgba(8, 20, 36, 0.98)),
+    var(--slx-outline-editor-panel);
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.52);
+}
+
+.slx-outline-editor-header,
+.slx-outline-editor-footer {
+  flex-shrink: 0;
+  border-color: var(--slx-outline-editor-border);
+}
+
+.slx-outline-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 13px;
+  border-bottom: 1px solid var(--slx-outline-editor-border);
+}
+
+.slx-outline-editor-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.slx-outline-editor-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--slx-outline-editor-text);
+}
+
+.slx-outline-editor-meta {
+  font-size: 11px;
+  color: var(--slx-outline-editor-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slx-outline-editor-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.slx-outline-editor-section,
+.slx-outline-editor-chapter {
+  border: 1px solid var(--slx-outline-editor-border);
+  border-radius: 10px;
+  background: rgba(255, 250, 246, 0.54);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.slx-outline-editor-overlay[data-theme='dark'] .slx-outline-editor-section,
+.slx-outline-editor-overlay[data-theme='dark'] .slx-outline-editor-chapter {
+  background: rgba(12, 31, 50, 0.42);
+}
+
+.slx-outline-editor-section-title,
+.slx-outline-editor-chapter-head {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--slx-outline-editor-text);
+  margin-bottom: 11px;
+}
+
+.slx-outline-editor-chapter-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slx-outline-editor-core-grid,
+.slx-outline-editor-chapter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.slx-outline-editor-core-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.slx-outline-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.slx-outline-editor-field-wide {
+  grid-column: 1 / -1;
+}
+
+.slx-outline-editor-field span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--slx-outline-editor-text);
+}
+
+.slx-outline-editor-field input,
+.slx-outline-editor-field select,
+.slx-outline-editor-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background-color: var(--slx-input-bg) !important;
+  color: var(--slx-input-text) !important;
+  caret-color: var(--slx-input-text);
+  box-shadow: none;
+  font: inherit;
+  outline: none;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.slx-outline-editor-field input,
+.slx-outline-editor-field select {
+  min-height: 36px;
+  padding: 7px 10px;
+}
+
+.slx-outline-editor-field textarea {
+  min-height: 108px;
+  padding: 9px 10px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.slx-outline-editor-field input:focus,
+.slx-outline-editor-field select:focus,
+.slx-outline-editor-field textarea:focus {
+  border-color: var(--slx-outline-editor-accent);
+  background-color: var(--slx-input-bg-focus) !important;
+}
+
+.slx-outline-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 13px 18px;
+  border-top: 1px solid var(--slx-outline-editor-border);
+  background: rgba(255, 250, 246, 0.72);
+}
+
+.slx-outline-editor-overlay[data-theme='dark'] .slx-outline-editor-footer {
+  background: rgba(8, 20, 36, 0.74);
+}
+
+@media (max-width: 760px) {
+  .slx-outline-editor {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 10px;
+  }
+
+  .slx-outline-editor-header {
+    padding: 12px 13px 10px;
+  }
+
+  .slx-outline-editor-body {
+    padding: 12px;
+  }
+
+  .slx-outline-editor-core-grid,
+  .slx-outline-editor-chapter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .slx-outline-editor-footer {
+    padding: 10px 12px;
+  }
+
+  .slx-outline-editor-footer .slx-soft-btn {
+    flex: 1 1 0;
   }
 }
 
