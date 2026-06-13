@@ -1,13 +1,16 @@
 ﻿import { buildApiUrl } from '../../core/api.js';
+import { getContextSafe } from '../../core/chat.js';
 import {
   formatShenlingContextForPrompt,
   resolveShenlingContext,
 } from '../../core/context-resolver.js';
 import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
+  getChatState,
   getContextInfo,
   getGlobalSettings,
   getPlotOutlineSettings,
+  getPlotOutlineState,
   getWordReplaceSettings,
 } from '../../core/settings.js';
 import { getOpenAiResponseContent } from '../../core/summary.js';
@@ -28,7 +31,14 @@ let workflowOptions = {
 };
 
 const OUTLINE_GENERATION_TIMEOUT_MS = 180000;
+const PLOT_OUTLINE_PROMPT_ID = 'shenling_assistant_plot_outline_state';
+// setExtensionPrompt 参数：position 1 = IN_CHAT，depth 0 = 紧贴最新楼层，与情感档案一致
+const PLOT_OUTLINE_INJECT_POSITION = 1;
+const PLOT_OUTLINE_INJECT_DEPTH = 0;
 const VALID_STAGES = ['起', '承', '转', '合'];
+
+const outlineEventStops = [];
+let outlineEventsRegistered = false;
 
 export function configurePlotOutlineWorkflow(options = {}) {
   workflowOptions = { ...workflowOptions, ...options };
@@ -113,6 +123,135 @@ export function normalizePlotOutlineDraft(raw) {
     },
     chapters,
   };
+}
+
+
+export function getActiveOutlineChapter(outline) {
+  if (!Array.isArray(outline.chapters) || outline.chapters.length === 0) return null;
+  return outline.chapters.find(chapter => chapter.id === outline.currentChapterId)
+    || outline.chapters[0];
+}
+
+export function buildPlotOutlineInjection(chatState = getChatState()) {
+  const outline = getPlotOutlineState(chatState);
+  if (!outline.enabled) return '';
+  const chapter = getActiveOutlineChapter(outline);
+  if (!chapter) return '';
+
+  const core = outline.storyCore || {};
+  const coreLines = [
+    core.logline ? `一句话主线：${core.logline}` : '',
+    core.conflict ? `核心冲突：${core.conflict}` : '',
+    core.tone ? `叙事基调：${core.tone}` : '',
+  ].filter(Boolean);
+
+  const conditions = Array.isArray(chapter.conditions) ? chapter.conditions : [];
+  const chapterProgress = outline.progress?.[chapter.id] || {};
+  const chapterLines = [
+    `${chapter.id} ${chapter.title}`,
+    chapter.stage ? `叙事阶段：${chapter.stage}` : '',
+    chapter.theme ? `主题：${chapter.theme}` : '',
+    chapter.synopsis ? `剧情脉络：${chapter.synopsis}` : '',
+    chapter.keyEvents?.length
+      ? `关键事件：\n${chapter.keyEvents.map(event => `- ${event}`).join('\n')}`
+      : '',
+    conditions.length
+      ? `推进条件：\n${conditions.map(condition => `${condition.id}. ${condition.text}`).join('\n')}`
+      : '',
+    chapter.exitChapterId ? `出口章节：${chapter.exitChapterId}` : '',
+  ].filter(Boolean);
+
+  const progressLines = conditions.map(condition => (
+    `${condition.id} ${chapterProgress[condition.id] ? '✅' : '⬜'}`
+  ));
+
+  const sections = [
+    coreLines.length ? `【故事核心】\n${coreLines.join('\n')}` : '',
+    `【当前章节】\n${chapterLines.join('\n')}`,
+    progressLines.length ? `【当前推进进度】\n${progressLines.join('\n')}` : '',
+  ].filter(Boolean);
+
+  return `<plot_outline_state>
+以下为蜃灵助手维护的剧情大纲当前章节状态。它不是已发生剧情，而是当前章节的方向指引，用于把控主线节奏。
+
+使用规则：
+- 正文展开时自然向本章方向靠拢，不要照本宣科复述大纲内容。
+- 推进条件只用于判断剧情是否逐步靠近章节目标，不要求本轮全部完成，也不要在正文中逐条复述、打卡或宣告条件完成。
+- 不要为了满足推进条件而强行触发关键事件、关键物品、告白、战斗或章节结尾。
+- 不要提前剧透或展开其他章节内容。
+
+${sections.join('\n\n')}
+</plot_outline_state>`;
+}
+
+export async function syncPlotOutlineInjection() {
+  const context = getContextSafe();
+  const setExtensionPrompt = typeof context?.setExtensionPrompt === 'function'
+    ? (...args) => context.setExtensionPrompt(...args)
+    : typeof globalThis.setExtensionPrompt === 'function'
+      ? (...args) => globalThis.setExtensionPrompt(...args)
+      : null;
+  if (!setExtensionPrompt) return;
+
+  const content = buildPlotOutlineInjection();
+
+  if (!content) {
+    await setExtensionPrompt(PLOT_OUTLINE_PROMPT_ID, '', -1, 0, false, 0, () => false);
+    return;
+  }
+
+  await setExtensionPrompt(
+    PLOT_OUTLINE_PROMPT_ID,
+    content,
+    PLOT_OUTLINE_INJECT_POSITION,
+    PLOT_OUTLINE_INJECT_DEPTH,
+    false,
+    0,
+    () => Boolean(buildPlotOutlineInjection()),
+  );
+}
+
+function getTavernEventsSafe() {
+  const context = getContextSafe();
+  return globalThis.tavern_events || context?.tavern_events || context?.event_types || {};
+}
+
+function registerTavernEvent(eventName, handler) {
+  if (!eventName) return null;
+  const context = getContextSafe();
+  if (context?.eventSource?.on) {
+    context.eventSource.on(eventName, handler);
+    return {
+      stop: () => context.eventSource.off?.(eventName, handler),
+    };
+  }
+  const eventSource = globalThis.eventSource || globalThis.parent?.eventSource;
+  if (eventSource?.on) {
+    eventSource.on(eventName, handler);
+    return {
+      stop: () => eventSource.off?.(eventName, handler),
+    };
+  }
+  return null;
+}
+
+export function registerPlotOutlineEvents() {
+  if (outlineEventsRegistered) return;
+  const tavernEvents = getTavernEventsSafe();
+  const syncHandler = () => {
+    void syncPlotOutlineInjection().catch(error => {
+      console.warn('[蜃灵助手] 剧情大纲注入刷新失败。', error);
+    });
+  };
+
+  const beforeCombineStop = registerTavernEvent(tavernEvents.GENERATE_BEFORE_COMBINE_PROMPTS, syncHandler);
+  if (beforeCombineStop) outlineEventStops.push(beforeCombineStop);
+
+  const chatChangedStop = registerTavernEvent(tavernEvents.CHAT_CHANGED, syncHandler);
+  if (chatChangedStop) outlineEventStops.push(chatChangedStop);
+
+  outlineEventsRegistered = outlineEventStops.length > 0;
+  syncHandler();
 }
 
 function applyWordReplacementToDraft(draft) {

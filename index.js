@@ -94,6 +94,7 @@ import {
 } from './src/features/plot-outline/panel.js';
 import {
   configurePlotOutlineWorkflow,
+  registerPlotOutlineEvents,
 } from './src/features/plot-outline/workflow.js';
 
 let panelRoot = null;
@@ -456,7 +457,7 @@ function renderModuleHeaderAction(activeModule, settings) {
     const chatState = getChatState();
     const outline = chatState.outline || {};
     return `
-      <label class="slx-setting-toggle-row slx-module-head-toggle" for="slx-outline-enabled" title="启用剧情大纲">
+      <label class="slx-setting-toggle-row slx-module-head-toggle" for="slx-outline-enabled" title="启用剧情大纲正文注入">
         <input id="slx-outline-enabled" type="checkbox" data-slx-outline-enabled ${outline.enabled ? 'checked' : ''} />
       </label>
     `;
@@ -1191,6 +1192,7 @@ function init() {
   scanExistingSummaryState();
   registerAutoSummaryEvents();
   registerEmotionProfileEvents();
+  registerPlotOutlineEvents();
   registerWorldInfoContextEvents();
   registerChatBeautifyRenderer();
   renderSettingsPanel();

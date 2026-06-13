@@ -12,7 +12,10 @@ import {
   formatTimestamp,
   isPlainObject,
 } from '../../utils/text.js';
-import { runPlotOutlineGeneration } from './workflow.js';
+import {
+  runPlotOutlineGeneration,
+  syncPlotOutlineInjection,
+} from './workflow.js';
 
 let panelOptions = {
   refreshPanel: () => {},
@@ -75,6 +78,12 @@ function notifyOutline(type, message, title = '剧情大纲') {
     return;
   }
   console[type === 'error' ? 'warn' : 'info'](`[${title}] ${message}`);
+}
+
+function scheduleInjectionSync() {
+  void syncPlotOutlineInjection().catch(error => {
+    console.warn('[蜃灵助手] 剧情大纲注入同步失败。', error);
+  });
 }
 
 function normalizeEditedOutline(data) {
@@ -263,9 +272,10 @@ function renderEmptyHint() {
 
 function renderSavedOutline(outline) {
   if (!outline.chapters.length) return '';
+  const injecting = Boolean(outline.enabled);
   return `
     <div class="slx-detail-card">
-      <div class="slx-detail-title">当前大纲</div>
+      <div class="slx-detail-title">当前大纲 <span class="slx-outline-inject-badge ${injecting ? 'slx-outline-inject-on' : ''}">${injecting ? '注入中' : '未注入'}</span></div>
       ${renderStoryCoreBlock(outline.storyCore)}
       <label class="slx-field">
         <span>当前章节</span>
@@ -441,6 +451,7 @@ function bindEditorEvents(panelRoot) {
       }
       outline.updatedAt = formatTimestamp();
       saveChatState();
+      scheduleInjectionSync();
     }
     panelState.editing = null;
     notifyOutline('success', '大纲修改已保存。');
@@ -455,6 +466,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     outline.enabled = Boolean(event.currentTarget.checked);
     outline.updatedAt = formatTimestamp();
     saveChatState();
+    scheduleInjectionSync();
     refreshPanel();
   });
 
@@ -512,6 +524,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     outline.progress = {};
     outline.updatedAt = formatTimestamp();
     saveChatState();
+    scheduleInjectionSync();
     panelState.draft = null;
     panelState.draftReplacements = 0;
     panelState.generationStatus = 'idle';
@@ -535,6 +548,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     outline.currentChapterId = event.currentTarget.value;
     outline.updatedAt = formatTimestamp();
     saveChatState();
+    scheduleInjectionSync();
     refreshPanel();
   });
 
@@ -550,6 +564,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
       outline.progress[chapterId][conditionId] = !outline.progress[chapterId][conditionId];
       outline.updatedAt = formatTimestamp();
       saveChatState();
+      scheduleInjectionSync();
       refreshPanel();
     });
   });
@@ -562,6 +577,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     outline.currentChapterId = outline.chapters[0]?.id || '';
     outline.updatedAt = formatTimestamp();
     saveChatState();
+    scheduleInjectionSync();
     refreshPanel();
   });
 
@@ -575,6 +591,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     outline.progress = {};
     outline.updatedAt = formatTimestamp();
     saveChatState();
+    scheduleInjectionSync();
     clearExpandedChapters();
     panelState.generateOpen = false;
     notifyOutline('info', '剧情大纲已清空。');
@@ -602,6 +619,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
       outline.currentChapterId = chapterId;
       outline.updatedAt = formatTimestamp();
       saveChatState();
+      scheduleInjectionSync();
       refreshPanel();
     });
   });
