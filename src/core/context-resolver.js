@@ -42,28 +42,23 @@ const SCRIPT_IMPORT_CANDIDATES = [
 const WORLD_INFO_STRONG_EXCLUDE_PATTERNS = [
   /状态栏/i,
   /\bMVU\b/i,
+  /变量列表/i,
   /变量框架/i,
   /变量更新/i,
   /输出格式/i,
+  /格式输出/i,
   /格式要求/i,
-  /前端/i,
-  /\bUI\b/i,
-  /正则/i,
   /酒馆助手/i,
-  /脚本/i,
-  /样式/i,
+  /美化样式/i,
   /模板占位/i,
   /不要输出/i,
   /禁止输出/i,
+  /更新规则/i,
+  /输出规则/i,
+  /输出标签/i,
+  /系统规则/i,
   /system prompt/i,
-];
-
-const WORLD_INFO_SOFT_EXCLUDE_PATTERNS = [
-  /\bD0\b/i,
-  /depth\s*0/i,
-  /深度\s*0/i,
-  /系统/i,
-  /机制/i,
+  /StatusBlock/i,
 ];
 
 let worldInfoEventsRegistered = false;
@@ -607,14 +602,6 @@ function classifyWorldInfoEntry(entry) {
     return {
       status: 'filtered',
       reason: `命中机制类关键词：${strongPattern.source}`,
-    };
-  }
-
-  const softPattern = WORLD_INFO_SOFT_EXCLUDE_PATTERNS.find(pattern => pattern.test(text));
-  if (softPattern) {
-    return {
-      status: 'suspicious',
-      reason: `命中可疑关键词：${softPattern.source}`,
     };
   }
 
