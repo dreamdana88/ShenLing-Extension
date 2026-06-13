@@ -12,6 +12,7 @@ import {
   getPlotOutlineSettings,
   getPlotOutlineState,
   getWordReplaceSettings,
+  saveChatState,
 } from '../../core/settings.js';
 import { getOpenAiResponseContent } from '../../core/summary.js';
 import {
@@ -132,6 +133,22 @@ export function getActiveOutlineChapter(outline) {
     || outline.chapters[0];
 }
 
+function normalizeOutlineId(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function splitProgressConditionIds(value) {
+  return String(value || '')
+    .split(/[，、,\s]+/)
+    .map(normalizeOutlineId)
+    .filter(Boolean);
+}
+
+function getOutlineChapterById(outline, chapterId) {
+  const normalizedId = normalizeOutlineId(chapterId);
+  return (Array.isArray(outline.chapters) ? outline.chapters : [])
+    .find(chapter => normalizeOutlineId(chapter.id) === normalizedId) || null;
+}
 export function buildPlotOutlineInjection(chatState = getChatState()) {
   const outline = getPlotOutlineState(chatState);
   if (!outline.enabled) return '';
@@ -184,6 +201,115 @@ ${sections.join('\n\n')}
 </plot_outline_state>`;
 }
 
+export function buildPlotOutlineProgressPromptSection(chatState = getChatState()) {
+  const outline = getPlotOutlineState(chatState);
+  if (!outline.enabled) return '';
+  const chapter = getActiveOutlineChapter(outline);
+  if (!chapter) return '';
+
+  const conditions = Array.isArray(chapter.conditions) ? chapter.conditions : [];
+  if (conditions.length === 0) return '';
+
+  const chapterProgress = isPlainObject(outline.progress?.[chapter.id]) ? outline.progress[chapter.id] : {};
+  const completedConditionIds = conditions
+    .filter(condition => chapterProgress[condition.id])
+    .map(condition => condition.id);
+  const exitChapter = getOutlineChapterById(outline, chapter.exitChapterId);
+  const exitLabel = exitChapter
+    ? `${exitChapter.id} ${exitChapter.title}`
+    : (chapter.exitChapterId ? `${chapter.exitChapterId}（未找到）` : '无');
+  const conditionLines = conditions.map(condition => `${condition.id}. ${condition.text}`);
+  const outputLine = `[progress:${chapter.id}|本轮新增完成条件|${chapter.exitChapterId || ''}]`;
+  const emptyLine = `[progress:${chapter.id}||${chapter.exitChapterId || ''}]`;
+
+  return `【剧情章节进度检查】
+当前章节：${chapter.id} ${chapter.title}
+出口章节：${exitLabel}
+
+推进条件：
+${conditionLines.join('\n')}
+
+当前已完成：
+${completedConditionIds.length ? completedConditionIds.join(',') : '无'}
+
+请根据本轮素材判断是否新增完成推进条件。
+只在 <memory> 内追加一行，格式固定为：
+${outputLine}
+
+本轮新增完成条件只写本轮新增的条件编号，用英文逗号分隔，例如 C2 或 C2,C3；不要输出累计已完成项。
+如果本轮没有新增完成条件，请输出：
+${emptyLine}`;
+}
+
+export function parsePlotOutlineProgressLine(memoryText) {
+  const matched = String(memoryText || '').match(/\[progress\s*:\s*([^\]]*)\]/i);
+  if (!matched) return null;
+  const parts = matched[1].split('|');
+  if (parts.length < 2) return null;
+  const chapterId = normalizeOutlineId(parts[0]);
+  if (!chapterId) return null;
+  return {
+    chapterId,
+    conditionIds: splitProgressConditionIds(parts[1]),
+    exitChapterId: normalizeOutlineId(parts[2] || ''),
+  };
+}
+
+export function applyPlotOutlineProgressUpdate(memoryText, chatState = getChatState()) {
+  const parsed = parsePlotOutlineProgressLine(memoryText);
+  if (!parsed) return { changed: false };
+
+  const outline = getPlotOutlineState(chatState);
+  if (!outline.enabled) return { changed: false };
+  const chapter = getActiveOutlineChapter(outline);
+  if (!chapter || normalizeOutlineId(chapter.id) !== parsed.chapterId) return { changed: false };
+
+  const conditions = Array.isArray(chapter.conditions) ? chapter.conditions : [];
+  if (conditions.length === 0) return { changed: false };
+
+  const conditionIdsByNormalized = new Map(
+    conditions.map(condition => [normalizeOutlineId(condition.id), condition.id]),
+  );
+  const validConditionIds = [...new Set(parsed.conditionIds
+    .map(id => conditionIdsByNormalized.get(id))
+    .filter(Boolean))];
+
+  if (!isPlainObject(outline.progress)) {
+    outline.progress = {};
+  }
+  if (!isPlainObject(outline.progress[chapter.id])) {
+    outline.progress[chapter.id] = {};
+  }
+
+  const chapterProgress = outline.progress[chapter.id];
+  const completedConditionIds = [];
+  validConditionIds.forEach(conditionId => {
+    if (!chapterProgress[conditionId]) {
+      chapterProgress[conditionId] = true;
+      completedConditionIds.push(conditionId);
+    }
+  });
+
+  let switchedToChapterId = '';
+  const allConditionsComplete = conditions.every(condition => chapterProgress[condition.id]);
+  const exitChapter = getOutlineChapterById(outline, chapter.exitChapterId);
+  if (completedConditionIds.length > 0 && allConditionsComplete && exitChapter) {
+    outline.currentChapterId = exitChapter.id;
+    switchedToChapterId = exitChapter.id;
+  }
+
+  const changed = completedConditionIds.length > 0 || Boolean(switchedToChapterId);
+  if (!changed) return { changed: false };
+
+  outline.updatedAt = formatTimestamp();
+  saveChatState();
+  return {
+    changed: true,
+    chapterId: chapter.id,
+    completedConditionIds,
+    switchedToChapterId,
+  };
+}
 export async function syncPlotOutlineInjection() {
   const context = getContextSafe();
   const setExtensionPrompt = typeof context?.setExtensionPrompt === 'function'

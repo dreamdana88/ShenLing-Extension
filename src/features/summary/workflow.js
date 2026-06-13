@@ -39,6 +39,11 @@ import {
   processEmotionUpdateFromSummaryResult,
 } from '../emotion-profile/workflow.js';
 import {
+  applyPlotOutlineProgressUpdate,
+  buildPlotOutlineProgressPromptSection,
+  syncPlotOutlineInjection,
+} from '../plot-outline/workflow.js';
+import {
   buildGrandMemoryMaterialPrompt,
   buildLegacyArchiveBatchMaterial,
   buildLegacyArchiveBatchPrompt,
@@ -107,6 +112,43 @@ export function notifySummary(type, message, title = '自动总结') {
   logger(`[蜃灵助手] ${title}：${message}`);
 }
 
+function joinSummaryExtraInstructions(...sections) {
+  return sections
+    .map(section => String(section || '').trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+async function processPlotOutlineProgressFromMemory(memoryText, { messageId = null } = {}) {
+  let result = { changed: false };
+  try {
+    result = applyPlotOutlineProgressUpdate(memoryText);
+  } catch (error) {
+    console.warn('[蜃灵助手] 剧情大纲进度解析失败。', error);
+    return result;
+  }
+  if (!result.changed) return result;
+
+  try {
+    await syncPlotOutlineInjection();
+  } catch (error) {
+    console.warn('[蜃灵助手] 剧情大纲进度同步注入失败。', error);
+  }
+
+  const completedText = result.completedConditionIds?.length
+    ? `：${result.chapterId} ${result.completedConditionIds.join(',')}`
+    : '';
+  if (result.switchedToChapterId) {
+    notifySummary('success', `剧情大纲已推进至 ${result.switchedToChapterId}。`, '剧情大纲');
+  } else {
+    notifySummary('success', `剧情大纲进度已更新${completedText}。`, '剧情大纲');
+  }
+  if (messageId !== null) {
+    console.info(`[蜃灵助手] 第 ${Number(messageId)} 楼小总结已更新剧情大纲进度。`, result);
+  }
+  refreshSummaryPanelAfterAction();
+  return result;
+}
 export function markSummaryWriteIgnored(messageId, durationMs = 1500) {
   const numericMessageId = Number(messageId);
   summaryWriteIgnoreIds.add(numericMessageId);
@@ -628,8 +670,9 @@ export async function regenerateMemoryForMessage(messageId) {
   try {
     const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
     const emotionPromptSection = buildEmotionUpdatePromptSection(getGlobalSettings());
+    const plotOutlineProgressSection = buildPlotOutlineProgressPromptSection(getChatState());
     const result = await generateSummaryMemory(buildMemorySummaryPrompt(material.promptContent, priorMemories, summary, {
-      extraInstructions: emotionPromptSection,
+      extraInstructions: joinSummaryExtraInstructions(emotionPromptSection, plotOutlineProgressSection),
     }), {
       type: '手动重写小总结',
     });
@@ -644,6 +687,7 @@ export async function regenerateMemoryForMessage(messageId) {
     saveChatState();
     notifySummary('success', `已重写第 ${Number(messageId)} 楼小总结。`, '重写小总结');
     await processEmotionUpdateFromSummaryResult(result, { messageId: Number(messageId) });
+    await processPlotOutlineProgressFromMemory(memoryReplacementResult.text, { messageId: Number(messageId) });
     refreshSummaryPanelAfterAction();
   } catch (error) {
     clearSummaryWriteIgnored(Number(messageId));
@@ -1155,8 +1199,9 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
     const userContent = summary.includeUserInput ? getPreviousUserSummarySource(Number(messageId), summary) : '';
     const promptContent = buildSummaryPromptContent(replacedAiContent, userContent);
     const emotionPromptSection = buildEmotionUpdatePromptSection(settings);
+    const plotOutlineProgressSection = buildPlotOutlineProgressPromptSection(chatState);
     const prompt = buildMemorySummaryPrompt(promptContent, priorMemories, summary, {
-      extraInstructions: emotionPromptSection,
+      extraInstructions: joinSummaryExtraInstructions(emotionPromptSection, plotOutlineProgressSection),
     });
     const result = await generateSummaryMemory(prompt, { type: '自动小总结' });
     const memory = stripMemoryEmotionControlLines(normalizeMemoryBlock(result));
@@ -1186,6 +1231,7 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
     saveChatState();
     notifySummary('success', `已为第 ${Number(messageId)} 楼写入小总结。`);
     await processEmotionUpdateFromSummaryResult(result, { messageId: Number(messageId) });
+    await processPlotOutlineProgressFromMemory(memoryReplacementResult.text, { messageId: Number(messageId) });
     await processAutoGrandMemory();
     refreshSummaryPanelAfterAction();
   } catch (error) {
