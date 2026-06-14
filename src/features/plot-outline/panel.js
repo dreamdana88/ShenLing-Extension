@@ -123,6 +123,30 @@ function renderStoryCoreBlock(storyCore = {}) {
   `;
 }
 
+// 编辑保存后，条件文本/顺序变化的章节，旧 progress 按 Cx 编号的勾选已失去对应关系，清空避免错位。
+// 纯改 title/theme/synopsis（条件逐项不变）的章节保留勾选，符合「纠错不丢进度」初衷。
+function reconcilePlotOutlineProgress(outline, oldConditionTextsById) {
+  if (!isPlainObject(outline.progress)) {
+    outline.progress = {};
+    return;
+  }
+  const validChapterIds = new Set(outline.chapters.map(chapter => chapter.id));
+  Object.keys(outline.progress).forEach(chapterId => {
+    if (!validChapterIds.has(chapterId)) {
+      delete outline.progress[chapterId];
+    }
+  });
+  outline.chapters.forEach(chapter => {
+    const oldTexts = oldConditionTextsById.get(chapter.id) || [];
+    const newTexts = (Array.isArray(chapter.conditions) ? chapter.conditions : []).map(condition => condition.text);
+    const unchanged = oldTexts.length === newTexts.length
+      && oldTexts.every((text, index) => text === newTexts[index]);
+    if (!unchanged) {
+      delete outline.progress[chapter.id];
+    }
+  });
+}
+
 function renderChapterBlock(chapter, { scope = 'saved', progress = {}, readonly = false, isCurrent = false } = {}) {
   const chapterProgress = isPlainObject(progress[chapter.id]) ? progress[chapter.id] : {};
   const totalCount = chapter.conditions?.length || 0;
@@ -165,6 +189,10 @@ function renderChapterBlock(chapter, { scope = 'saved', progress = {}, readonly 
       ${scope === 'saved' && !readonly && !isCurrent ? `
         <div class="slx-outline-btn-row">
           <button class="slx-soft-btn" type="button" data-slx-outline-set-current="${escapeHtml(chapter.id)}">设为当前章节</button>
+        </div>` : ''}
+      ${scope === 'saved' && !readonly && isCurrent && chapter.exitChapterId ? `
+        <div class="slx-outline-btn-row">
+          <button class="slx-soft-btn slx-outline-advance-btn" type="button" data-slx-outline-advance="${escapeHtml(chapter.exitChapterId)}" ${totalCount > 0 && doneCount === totalCount ? '' : 'disabled'} title="${totalCount > 0 && doneCount === totalCount ? '推进到下一章' : '勾选全部推进条件后可推进'}">推进到 ${escapeHtml(chapter.exitChapterId)}</button>
         </div>` : ''}
     </div>
   `;
@@ -444,8 +472,15 @@ function bindEditorEvents(panelRoot) {
     } else {
       const chatState = getChatState();
       const outline = getPlotOutlineState(chatState);
+      const oldConditionTextsById = new Map(
+        (Array.isArray(outline.chapters) ? outline.chapters : []).map(chapter => [
+          chapter.id,
+          (Array.isArray(chapter.conditions) ? chapter.conditions : []).map(condition => condition.text),
+        ]),
+      );
       outline.storyCore = normalized.storyCore;
       outline.chapters = normalized.chapters;
+      reconcilePlotOutlineProgress(outline, oldConditionTextsById);
       if (!outline.chapters.some(chapter => chapter.id === outline.currentChapterId)) {
         outline.currentChapterId = outline.chapters[0]?.id || '';
       }
@@ -620,6 +655,23 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
       outline.updatedAt = formatTimestamp();
       saveChatState();
       scheduleInjectionSync();
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-outline-advance]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
+      const exitChapterId = String(button.dataset.slxOutlineAdvance || '');
+      if (!exitChapterId) return;
+      const chatState = getChatState();
+      const outline = getPlotOutlineState(chatState);
+      if (!outline.chapters.some(chapter => chapter.id === exitChapterId)) return;
+      outline.currentChapterId = exitChapterId;
+      outline.updatedAt = formatTimestamp();
+      saveChatState();
+      scheduleInjectionSync();
+      notifyOutline('success', `已推进至 ${exitChapterId}。`);
       refreshPanel();
     });
   });

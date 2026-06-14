@@ -687,7 +687,7 @@ export async function regenerateMemoryForMessage(messageId) {
     saveChatState();
     notifySummary('success', `已重写第 ${Number(messageId)} 楼小总结。`, '重写小总结');
     await processEmotionUpdateFromSummaryResult(result, { messageId: Number(messageId) });
-    await processPlotOutlineProgressFromMemory(memoryReplacementResult.text, { messageId: Number(messageId) });
+    await processPlotOutlineProgressFromMemory(result, { messageId: Number(messageId) });
     refreshSummaryPanelAfterAction();
   } catch (error) {
     clearSummaryWriteIgnored(Number(messageId));
@@ -1231,7 +1231,7 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
     saveChatState();
     notifySummary('success', `已为第 ${Number(messageId)} 楼写入小总结。`);
     await processEmotionUpdateFromSummaryResult(result, { messageId: Number(messageId) });
-    await processPlotOutlineProgressFromMemory(memoryReplacementResult.text, { messageId: Number(messageId) });
+    await processPlotOutlineProgressFromMemory(result, { messageId: Number(messageId) });
     await processAutoGrandMemory();
     refreshSummaryPanelAfterAction();
   } catch (error) {
