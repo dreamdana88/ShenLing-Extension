@@ -660,20 +660,53 @@ async function generateMiniTheater() {
 }
 
 async function copyTextToClipboard(content) {
-  if (!content) return;
+  const text = String(content || "");
+  if (!text) return false;
+
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(content);
-    return;
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (error) {
+      console.warn("[蜃灵助手] Clipboard API 复制失败，尝试兼容复制。", error);
+    }
   }
+
   const textarea = document.createElement("textarea");
-  textarea.value = content;
+  textarea.value = text;
   textarea.setAttribute("readonly", "true");
   textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
   textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand("copy");
-  textarea.remove();
+  textarea.style.pointerEvents = "none";
+
+  const selection = document.getSelection?.();
+  const previousRange = selection?.rangeCount ? selection.getRangeAt(0) : null;
+
+  let copied = false;
+  try {
+    document.body.appendChild(textarea);
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    copied = document.execCommand("copy");
+  } finally {
+    textarea.remove();
+    if (previousRange && selection) {
+      try {
+        selection.removeAllRanges();
+        selection.addRange(previousRange);
+      } catch {
+        // 移动端 WebView 可能不允许恢复旧选区；复制结果不受影响。
+      }
+    }
+  }
+
+  if (!copied) {
+    throw new Error("复制命令未成功执行。");
+  }
+  return true;
 }
 
 async function copyTheaterResult() {
@@ -1641,7 +1674,7 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
       );
       if (!prompt) return;
       try {
-        await navigator.clipboard.writeText(prompt.content || "");
+        await copyTextToClipboard(prompt.content || "");
         const orig = btn.textContent;
         btn.textContent = "已复制 ✓";
         setTimeout(() => {
