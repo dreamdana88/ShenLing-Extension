@@ -913,9 +913,14 @@ body.slx-panel-open-lock {
 }
 
 .slx-emotion-editor-textarea {
-  min-height: 96px;
-  max-height: 30vh;
+  min-height: 112px;
+  max-height: none;
+  overflow-y: hidden;
   resize: vertical;
+}
+
+.slx-emotion-editor-textarea[data-slx-emotion-edit-change] {
+  min-height: 180px;
 }
 
 .slx-emotion-history {
@@ -3387,9 +3392,13 @@ body.slx-panel-open-lock {
   }
 
   .slx-emotion-editor-textarea {
-    min-height: 120px;
+    min-height: 140px;
     max-height: none;
     resize: none;
+  }
+
+  .slx-emotion-editor-textarea[data-slx-emotion-edit-change] {
+    min-height: 240px;
   }
 
   .slx-diary-editor-card .slx-form-grid {

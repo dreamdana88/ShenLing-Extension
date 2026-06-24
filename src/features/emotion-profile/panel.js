@@ -45,6 +45,21 @@ function refreshPanel() {
   }
 }
 
+function autoSizeEmotionEditorTextareas(panelRoot) {
+  const editorBody = panelRoot.querySelector('.slx-emotion-editor-body');
+  const viewportHeight = globalThis.visualViewport?.height || globalThis.innerHeight || 720;
+  const availableHeight = editorBody?.clientHeight || Math.round(viewportHeight * 0.68);
+  const maxTextareaHeight = Math.max(180, Math.floor(availableHeight * 0.72));
+
+  panelRoot.querySelectorAll('.slx-emotion-editor-textarea').forEach(textarea => {
+    textarea.style.height = 'auto';
+    const contentHeight = textarea.scrollHeight + 4;
+    const nextHeight = Math.min(contentHeight, maxTextareaHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = contentHeight > maxTextareaHeight ? 'auto' : 'hidden';
+  });
+}
+
 function getEmotionProfileStore(chatState) {
   if (!isPlainObject(chatState.emotionProfiles)) {
     chatState.emotionProfiles = {};
@@ -351,6 +366,8 @@ export function renderEmotionProfilePanel(settings, chatState) {
 }
 
 export function bindEmotionProfilePanelEvents(panelRoot, settings) {
+  requestAnimationFrame(() => autoSizeEmotionEditorTextareas(panelRoot));
+
   panelRoot.querySelectorAll('[data-slx-emotion-field]').forEach(input => {
     input.addEventListener('change', () => {
       const field = input.dataset.slxEmotionField;
@@ -406,5 +423,9 @@ export function bindEmotionProfilePanelEvents(panelRoot, settings) {
 
   panelRoot.querySelector('[data-slx-save-emotion-profile]')?.addEventListener('click', () => {
     saveEmotionProfileEditor(panelRoot);
+  });
+
+  panelRoot.querySelectorAll('.slx-emotion-editor-textarea').forEach(textarea => {
+    textarea.addEventListener('input', () => autoSizeEmotionEditorTextareas(panelRoot));
   });
 }
