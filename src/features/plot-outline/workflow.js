@@ -322,7 +322,7 @@ export async function syncPlotOutlineInjection() {
   const content = buildPlotOutlineInjection();
 
   if (!content) {
-    await setExtensionPrompt(PLOT_OUTLINE_PROMPT_ID, '', -1, 0, false, 0, () => false);
+    await clearPlotOutlineInjection(setExtensionPrompt);
     return;
   }
 
@@ -334,6 +334,21 @@ export async function syncPlotOutlineInjection() {
     false,
     0,
     () => Boolean(buildPlotOutlineInjection()),
+  );
+}
+
+async function clearPlotOutlineInjection(setExtensionPrompt) {
+  const disabledFilter = () => false;
+  // 兼容旧版清理写法，同时按实际注入槽位覆盖清空，避免 UI 显示“未注入”但旧 prompt 仍留在正文请求里。
+  await setExtensionPrompt(PLOT_OUTLINE_PROMPT_ID, '', -1, 0, false, 0, disabledFilter);
+  await setExtensionPrompt(
+    PLOT_OUTLINE_PROMPT_ID,
+    '',
+    PLOT_OUTLINE_INJECT_POSITION,
+    PLOT_OUTLINE_INJECT_DEPTH,
+    false,
+    0,
+    disabledFilter,
   );
 }
 

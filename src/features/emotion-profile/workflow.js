@@ -27,6 +27,8 @@ import {
 } from '../../prompts.js';
 
 const EMOTION_PROFILE_PROMPT_ID = 'shenling_assistant_emotion_profile_state';
+const EMOTION_PROFILE_INJECT_POSITION = 1;
+const EMOTION_PROFILE_INJECT_DEPTH = 0;
 const PSYCHOLOGY_BLOCK_RE = /<psychology>[\s\S]*?<\/psychology>/gi;
 const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
 const emotionEventStops = [];
@@ -601,14 +603,37 @@ export async function syncEmotionProfileInjection() {
     : '';
 
   if (!content) {
-    await setExtensionPrompt(EMOTION_PROFILE_PROMPT_ID, '', -1, 0, false, 0, () => false);
+    await clearEmotionProfileInjection(setExtensionPrompt);
     return;
   }
 
-  await setExtensionPrompt(EMOTION_PROFILE_PROMPT_ID, content, 1, 0, false, 0, () => {
-    const latestSettings = getEmotionProfileSettings(getGlobalSettings());
-    return Boolean(latestSettings.enabled && buildEmotionProfileInjection());
-  });
+  await setExtensionPrompt(
+    EMOTION_PROFILE_PROMPT_ID,
+    content,
+    EMOTION_PROFILE_INJECT_POSITION,
+    EMOTION_PROFILE_INJECT_DEPTH,
+    false,
+    0,
+    () => {
+      const latestSettings = getEmotionProfileSettings(getGlobalSettings());
+      return Boolean(latestSettings.enabled && buildEmotionProfileInjection());
+    },
+  );
+}
+
+async function clearEmotionProfileInjection(setExtensionPrompt) {
+  const disabledFilter = () => false;
+  // 兼容旧版清理写法，同时按实际注入槽位覆盖清空，避免关闭后旧 prompt 残留到正文请求。
+  await setExtensionPrompt(EMOTION_PROFILE_PROMPT_ID, '', -1, 0, false, 0, disabledFilter);
+  await setExtensionPrompt(
+    EMOTION_PROFILE_PROMPT_ID,
+    '',
+    EMOTION_PROFILE_INJECT_POSITION,
+    EMOTION_PROFILE_INJECT_DEPTH,
+    false,
+    0,
+    disabledFilter,
+  );
 }
 
 function getTavernEventsSafe() {
