@@ -35,6 +35,10 @@ export function configureEmotionProfilePanel(options = {}) {
   };
 }
 
+export function isEmotionProfileEditorOpen() {
+  return Boolean(emotionProfileEditorState.open);
+}
+
 function refreshPanel() {
   if (typeof panelOptions.refreshPanel === 'function') {
     panelOptions.refreshPanel();
@@ -136,8 +140,8 @@ function renderEmotionProfileEditor(chatState) {
     : getProfileLatestChange(latestRecord);
 
   return `
-    <div class="slx-rule-modal" data-slx-close-emotion-editor>
-      <div class="slx-rule-modal-card slx-emotion-editor-card" data-slx-emotion-editor-card>
+    <div class="slx-emotion-editor-overlay" data-slx-close-emotion-editor role="dialog" aria-modal="true" aria-label="${isPending ? '编辑待确认情感变化' : '编辑情感档案'}">
+      <div class="slx-emotion-editor-card" data-slx-emotion-editor-card>
         <div class="slx-summary-card-head">
           <div>
             <div class="slx-detail-title">${isPending ? '编辑待确认情感变化' : '编辑情感档案'}</div>
@@ -145,17 +149,21 @@ function renderEmotionProfileEditor(chatState) {
           </div>
           <button class="slx-mini-action-btn" type="button" data-slx-close-emotion-editor title="关闭"><i class="fa-solid fa-xmark"></i></button>
         </div>
-        <label class="slx-field slx-field-wide">
-          <span>当前状态</span>
-          <textarea class="slx-emotion-editor-textarea" data-slx-emotion-edit-current>${escapeHtml(currentStatus)}</textarea>
-        </label>
-        <label class="slx-field slx-field-wide">
-          <span>最近变化</span>
-          <textarea class="slx-emotion-editor-textarea" data-slx-emotion-edit-change>${escapeHtml(latestChange)}</textarea>
-        </label>
-        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-save-emotion-profile>
-          <i class="fa-solid fa-floppy-disk"></i><span>保存修改</span>
-        </button>
+        <div class="slx-emotion-editor-body">
+          <label class="slx-field slx-field-wide">
+            <span>当前状态</span>
+            <textarea class="slx-emotion-editor-textarea" data-slx-emotion-edit-current>${escapeHtml(currentStatus)}</textarea>
+          </label>
+          <label class="slx-field slx-field-wide">
+            <span>最近变化</span>
+            <textarea class="slx-emotion-editor-textarea" data-slx-emotion-edit-change>${escapeHtml(latestChange)}</textarea>
+          </label>
+        </div>
+        <div class="slx-emotion-editor-footer">
+          <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-save-emotion-profile>
+            <i class="fa-solid fa-floppy-disk"></i><span>保存修改</span>
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -304,6 +312,7 @@ function renderPendingEmotionPanel(settings) {
 export function renderEmotionProfilePanel(settings, chatState) {
   const store = getEmotionProfileStore(chatState);
   const pendingMessageIds = getCurrentPendingEmotionMessageIds(settings);
+  const editor = renderEmotionProfileEditor(chatState);
   const profiles = Object.entries(store.profiles)
     .filter(([, profile]) => isPlainObject(profile))
     .map(([roleName, profile]) => {
@@ -315,21 +324,29 @@ export function renderEmotionProfilePanel(settings, chatState) {
 
   if (!profiles.length) {
     return `
-      ${renderPendingEmotionPanel(settings)}
-      <div class="slx-detail-card slx-emotion-shell-card">
-        <div class="slx-detail-title">暂无情感档案</div>
-        <p>当角色关系出现显著变化后，会在这里整理成档案。</p>
+      <div class="slx-emotion-root" data-slx-emotion-root>
+        <div class="slx-emotion-main">
+          ${renderPendingEmotionPanel(settings)}
+          <div class="slx-detail-card slx-emotion-shell-card">
+            <div class="slx-detail-title">暂无情感档案</div>
+            <p>当角色关系出现显著变化后，会在这里整理成档案。</p>
+          </div>
+        </div>
+        ${editor}
       </div>
-      ${renderEmotionProfileEditor(chatState)}
     `;
   }
 
   return `
-    ${renderPendingEmotionPanel(settings)}
-    <div class="slx-emotion-profile-list">
-      ${profiles.map(([roleName, profile, records]) => renderProfileCard(roleName, profile, records)).join('')}
+    <div class="slx-emotion-root" data-slx-emotion-root>
+      <div class="slx-emotion-main">
+        ${renderPendingEmotionPanel(settings)}
+        <div class="slx-emotion-profile-list">
+          ${profiles.map(([roleName, profile, records]) => renderProfileCard(roleName, profile, records)).join('')}
+        </div>
+      </div>
+      ${editor}
     </div>
-    ${renderEmotionProfileEditor(chatState)}
   `;
 }
 
@@ -381,7 +398,7 @@ export function bindEmotionProfilePanelEvents(panelRoot, settings) {
 
   panelRoot.querySelectorAll('[data-slx-close-emotion-editor]').forEach(node => {
     node.addEventListener('click', event => {
-      if (node.classList.contains('slx-rule-modal') && event.target.closest?.('[data-slx-emotion-editor-card]')) return;
+      if (node.classList.contains('slx-emotion-editor-overlay') && event.target.closest?.('[data-slx-emotion-editor-card]')) return;
       closeEmotionProfileEditor();
       refreshPanel();
     });

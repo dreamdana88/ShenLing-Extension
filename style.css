@@ -329,6 +329,7 @@ body.slx-panel-open-lock {
   overflow: hidden;
 }
 
+.slx-panel.slx-panel-emotion-editor-only,
 .slx-panel.slx-panel-theater-preview-only,
 .slx-panel.slx-panel-outline-editor-only {
   width: 100%;
@@ -341,6 +342,9 @@ body.slx-panel-open-lock {
   overflow: hidden;
 }
 
+.slx-panel.slx-panel-emotion-editor-only > .slx-bubbles,
+.slx-panel.slx-panel-emotion-editor-only > .slx-header,
+.slx-panel.slx-panel-emotion-editor-only > .slx-communication-log-panel,
 .slx-panel.slx-panel-theater-preview-only > .slx-bubbles,
 .slx-panel.slx-panel-theater-preview-only > .slx-header,
 .slx-panel.slx-panel-theater-preview-only > .slx-communication-log-panel,
@@ -350,6 +354,7 @@ body.slx-panel-open-lock {
   display: none;
 }
 
+.slx-panel.slx-panel-emotion-editor-only > .slx-body,
 .slx-panel.slx-panel-theater-preview-only > .slx-body,
 .slx-panel.slx-panel-outline-editor-only > .slx-body {
   display: block;
@@ -358,6 +363,8 @@ body.slx-panel-open-lock {
   overflow: hidden;
 }
 
+.slx-panel.slx-panel-emotion-editor-only .slx-module-grid,
+.slx-panel.slx-panel-emotion-editor-only .slx-detail > .slx-detail-head,
 .slx-panel.slx-panel-theater-preview-only .slx-module-grid,
 .slx-panel.slx-panel-theater-preview-only .slx-detail > .slx-detail-head,
 .slx-panel.slx-panel-outline-editor-only .slx-module-grid,
@@ -365,6 +372,7 @@ body.slx-panel-open-lock {
   display: none;
 }
 
+.slx-panel.slx-panel-emotion-editor-only .slx-detail,
 .slx-panel.slx-panel-theater-preview-only .slx-detail,
 .slx-panel.slx-panel-outline-editor-only .slx-detail {
   position: absolute;
@@ -376,12 +384,14 @@ body.slx-panel-open-lock {
   overflow: hidden;
 }
 
+.slx-panel.slx-panel-emotion-editor-only .slx-emotion-root,
 .slx-panel.slx-panel-theater-preview-only .slx-theater-root,
 .slx-panel.slx-panel-outline-editor-only .slx-outline-root {
   height: 100%;
   gap: 0;
 }
 
+.slx-panel.slx-panel-emotion-editor-only .slx-emotion-root > :not(.slx-emotion-editor-overlay),
 .slx-panel.slx-panel-theater-preview-only .slx-theater-root > :not(.slx-theater-preview-overlay):not(.slx-theater-modal-overlay),
 .slx-panel.slx-panel-outline-editor-only .slx-outline-root > :not(.slx-outline-editor-overlay) {
   display: none;
@@ -801,6 +811,18 @@ body.slx-panel-open-lock {
   gap: 10px;
 }
 
+.slx-emotion-root,
+.slx-emotion-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 10px;
+}
+
+.slx-emotion-root {
+  position: relative;
+}
+
 .slx-emotion-profile-card {
   border: 1px solid var(--slx-border-dim);
   border-radius: 12px;
@@ -839,10 +861,60 @@ body.slx-panel-open-lock {
 
 .slx-emotion-editor-card {
   width: min(560px, 100%);
+  box-sizing: border-box;
+  border: 1px solid var(--slx-border);
+  border-radius: 16px;
+  background: var(--slx-bg-panel);
+  box-shadow: var(--slx-shadow);
+  color: var(--slx-text);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100% - 12px);
+  min-height: 0;
+  overflow: hidden;
+  padding: 14px;
+}
+
+.slx-emotion-editor-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  padding:
+    max(12px, var(--slx-safe-top))
+    max(12px, var(--slx-safe-right))
+    max(12px, var(--slx-safe-bottom))
+    max(12px, var(--slx-safe-left));
+}
+
+.slx-emotion-editor-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+.slx-emotion-editor-footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--slx-border-dim);
+  padding-top: 10px;
 }
 
 .slx-emotion-editor-textarea {
   min-height: 96px;
+  max-height: 30vh;
   resize: vertical;
 }
 
@@ -3295,6 +3367,29 @@ body.slx-panel-open-lock {
     max-height: calc(100% - 8px);
     padding: 12px;
     gap: 10px;
+  }
+
+  .slx-emotion-editor-overlay {
+    align-items: stretch;
+    padding:
+      max(8px, var(--slx-safe-top))
+      max(8px, var(--slx-safe-right))
+      max(8px, var(--slx-safe-bottom))
+      max(8px, var(--slx-safe-left));
+  }
+
+  .slx-emotion-editor-card {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 14px;
+    padding: 12px;
+  }
+
+  .slx-emotion-editor-textarea {
+    min-height: 120px;
+    max-height: none;
+    resize: none;
   }
 
   .slx-diary-editor-card .slx-form-grid {
@@ -6826,4 +6921,3 @@ button.slx-outline-check-item:active {
   background: rgba(118, 180, 120, 0.18);
   color: #4e8a52;
 }
-

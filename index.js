@@ -59,6 +59,7 @@ import {
 import {
   bindEmotionProfilePanelEvents,
   configureEmotionProfilePanel,
+  isEmotionProfileEditorOpen,
   renderEmotionProfilePanel,
 } from './src/features/emotion-profile/panel.js';
 import {
@@ -712,6 +713,7 @@ function renderFloatingPanel(options = {}) {
 
   const panelClasses = [
     'slx-panel',
+    activeModule.id === 'profile' && isEmotionProfileEditorOpen() ? 'slx-panel-emotion-editor-only' : '',
     activeModule.id === 'diary' && isDiaryNotebookOpen() ? 'slx-panel-diary-book-only' : '',
     activeModule.id === 'theater' && isMiniTheaterOverlayOpen() ? 'slx-panel-theater-preview-only' : '',
     activeModule.id === 'outline' && isPlotOutlineEditorOpen() ? 'slx-panel-outline-editor-only' : '',
@@ -1204,4 +1206,3 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
-
