@@ -72,11 +72,11 @@ export const defaultGlobalSettings = Object.freeze({
       injectEnabled: true,
     },
     chatBeautify: {
-      enabled: false,
-      renderMemory: false,
+      enabled: true,
+      renderMemory: true,
       renderGrandMemory: false,
-      hideRawBlocks: false,
-      rendererVersion: 1,
+      showRawAlongside: false,
+      rendererVersion: 2,
     },
     miniTheater: {
       apiMode: 'secondary_api',
@@ -368,6 +368,14 @@ export function getChatBeautifySettings(settings = getGlobalSettings()) {
     settings.modules.chatBeautify,
     cloneData(defaultGlobalSettings.modules.chatBeautify),
   );
+  const chatBeautify = settings.modules.chatBeautify;
+  if (Number(chatBeautify.rendererVersion || 0) < 2) {
+    chatBeautify.enabled = true;
+    chatBeautify.renderMemory = true;
+    chatBeautify.showRawAlongside = false;
+    delete chatBeautify.hideRawBlocks;
+    chatBeautify.rendererVersion = 2;
+  }
   return settings.modules.chatBeautify;
 }
 

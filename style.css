@@ -6930,3 +6930,253 @@ button.slx-outline-check-item:active {
   background: rgba(118, 180, 120, 0.18);
   color: #4e8a52;
 }
+
+/* ==========================================================
+   Chat Beautify / Memory Card
+   ========================================================== */
+
+.slx-memory-wrap {
+  --slx-mc-bg: rgba(255, 255, 255, 0.56);
+  --slx-mc-border: rgba(255, 255, 255, 0.72);
+  --slx-mc-shadow: 0 6px 22px rgba(120, 120, 150, 0.14);
+  --slx-mc-row-bg: rgba(255, 255, 255, 0.42);
+  --slx-mc-text: #4a4a52;
+  --slx-mc-muted: #84848e;
+  --slx-mc-accent: #8a9bb0;
+  --slx-mc-strong: #6f8298;
+  margin: 10px 0;
+  color: var(--slx-mc-text);
+  font-size: 13px;
+}
+
+body.dark .slx-memory-wrap,
+[data-theme='dark'] .slx-memory-wrap {
+  --slx-mc-bg: rgba(48, 48, 60, 0.5);
+  --slx-mc-border: rgba(255, 255, 255, 0.1);
+  --slx-mc-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+  --slx-mc-row-bg: rgba(255, 255, 255, 0.05);
+  --slx-mc-text: #dcdae3;
+  --slx-mc-muted: #9a98a6;
+  --slx-mc-accent: #9aabc2;
+  --slx-mc-strong: #aebfd4;
+}
+
+.slx-memory-card {
+  position: relative;
+  overflow: hidden;
+  margin: 8px 0;
+  border: 1px solid var(--slx-mc-border);
+  border-left: 4px solid var(--slx-mc-accent);
+  border-radius: 18px;
+  background: var(--slx-mc-bg);
+  box-shadow: var(--slx-mc-shadow);
+  backdrop-filter: blur(14px) saturate(1.25);
+}
+
+.slx-memory-card__title {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 15px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.slx-memory-card__title:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.slx-memory-card__title:focus-visible {
+  outline: 2px solid var(--slx-mc-accent);
+  outline-offset: -3px;
+}
+
+.slx-memory-card__title-content {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.slx-mc-title-field,
+.slx-mc-row,
+.slx-mc-block-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slx-mc-title-value,
+.slx-mc-value,
+.slx-mc-block-text,
+.slx-mc-part {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.slx-mc-sep,
+.slx-mc-label {
+  color: var(--slx-mc-muted);
+}
+
+.slx-mc-icon {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  color: var(--slx-mc-strong);
+}
+
+.slx-mc-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.slx-mc-toggle {
+  flex: 0 0 auto;
+  color: var(--slx-mc-muted);
+  font-size: 13px;
+  transition: transform 0.25s ease;
+}
+
+.slx-memory-card--collapsed .slx-mc-toggle {
+  transform: rotate(-90deg);
+}
+
+.slx-memory-card__body {
+  display: grid;
+  gap: 9px;
+  padding: 4px 15px 15px;
+}
+
+.slx-memory-card--collapsed .slx-memory-card__body {
+  display: none;
+}
+
+.slx-mc-row,
+.slx-mc-block,
+.slx-mc-list-block {
+  border-radius: 12px;
+  background: var(--slx-mc-row-bg);
+  padding: 9px 10px;
+}
+
+.slx-mc-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.slx-mc-label {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.slx-mc-value {
+  flex: 1 1 auto;
+  line-height: 1.6;
+}
+
+.slx-mc-block-title {
+  margin-bottom: 6px;
+  color: var(--slx-mc-strong);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.slx-mc-block-text {
+  margin: 0;
+  line-height: 1.75;
+}
+
+.slx-mc-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.slx-mc-list-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  line-height: 1.6;
+}
+
+.slx-mc-part {
+  border-radius: 999px;
+  background: rgba(138, 155, 176, 0.14);
+  padding: 2px 8px;
+}
+
+.slx-mc-part-1 {
+  color: var(--slx-mc-strong);
+  font-weight: 700;
+}
+
+.slx-mc-list--quote .slx-mc-part-2,
+.slx-mc-list--db .slx-mc-part-2,
+.slx-mc-list--emotion .slx-mc-part-4,
+.slx-mc-list--progress .slx-mc-part-2 {
+  flex: 1 1 180px;
+  border-radius: 10px;
+}
+
+.slx-mc-empty {
+  color: var(--slx-mc-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .slx-memory-wrap {
+    margin: 8px 0;
+    font-size: 12.5px;
+  }
+
+  .slx-memory-card {
+    border-radius: 14px;
+  }
+
+  .slx-memory-card__title {
+    padding: 11px 12px;
+  }
+
+  .slx-memory-card__title-content,
+  .slx-mc-row,
+  .slx-mc-list-item {
+    align-items: flex-start;
+  }
+
+  .slx-mc-row {
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .slx-memory-card__body {
+    padding: 4px 12px 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slx-memory-card__title,
+  .slx-mc-toggle {
+    transition: none;
+  }
+}
