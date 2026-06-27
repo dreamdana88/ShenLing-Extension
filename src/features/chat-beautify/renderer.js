@@ -13,7 +13,7 @@ import {
 } from '../../core/tavern-events.js';
 import { renderMemoryCard } from './render-memory.js';
 
-const MEMORY_RENDER_DELAY_MS = 120;
+const MEMORY_RENDER_DELAY_MS = 220;
 const MEMORY_FIELD_KEYS = new Set([
   'number',
   'time',
@@ -29,7 +29,7 @@ const MEMORY_FIELD_KEYS = new Set([
   'affection',
   'progress',
 ]);
-const MEMORY_FIELD_LINE_RE = /^\s*\[([A-Za-z][\w-]*)\s*:\s*[\s\S]*?\]\s*$/;
+const MEMORY_FIELD_LINE_RE = /^\s*\[([A-Za-z][\w-]*)\s*:\s*([^\[\]]*?)\]\s*$/;
 
 let rendererRegistered = false;
 let eventStops = [];
@@ -202,10 +202,7 @@ function renderMessageElement(messageElement) {
   const mesText = messageElement.querySelector('.mes_text');
   if (!mesText) return;
 
-  const blocks = [
-    ...extractLooseMemoryBlocks(getMessageText(messageId)),
-    ...extractLooseMemoryBlocks(mesText.textContent || ''),
-  ].filter((block, index, all) => all.indexOf(block) === index);
+  const blocks = extractLooseMemoryBlocks(getMessageText(messageId));
   if (!blocks.length) {
     clearMessageElement(messageElement);
     return;
