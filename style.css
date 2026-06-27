@@ -7019,10 +7019,37 @@ body.dark .slx-memory-wrap,
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-wrap: wrap;
-  font-size: 13.5px;
-  font-weight: 650;
+  font-size: 12.8px;
+  font-weight: 560;
+  line-height: 1.45;
+}
+
+.slx-mc-title-field {
+  border-radius: 999px;
+  background: rgba(138, 155, 176, 0.12);
+  padding: 3px 8px;
+  color: var(--slx-mc-strong);
+}
+
+.slx-mc-title-field--number {
+  color: var(--slx-mc-title-number, #6f8298);
+}
+
+.slx-mc-title-field--time {
+  background: rgba(155, 187, 220, 0.14);
+  color: #6f93bf;
+}
+
+.slx-mc-title-field--task {
+  background: rgba(196, 179, 147, 0.14);
+  color: #7d6f55;
+}
+
+body.dark .slx-mc-title-field--task,
+[data-theme='dark'] .slx-mc-title-field--task {
+  color: #c7b58e;
 }
 
 .slx-mc-title-field,
@@ -7134,8 +7161,11 @@ body.dark .slx-mc-list-block,
 }
 
 .slx-mc-row {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 6px;
+  row-gap: 4px;
 }
 
 .slx-mc-label {
@@ -7146,6 +7176,7 @@ body.dark .slx-mc-list-block,
 
 .slx-mc-value {
   flex: 1 1 auto;
+  min-width: 0;
   line-height: 1.6;
 }
 
@@ -7175,6 +7206,13 @@ body.dark .slx-mc-list-block,
   gap: 8px;
   align-items: center;
   line-height: 1.6;
+}
+
+.slx-mc-list-item--quote,
+.slx-mc-list-item--db {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
 }
 
 .slx-mc-part {
@@ -7229,16 +7267,21 @@ body.dark .slx-mc-list-block,
 }
 
 .slx-mc-list--quote .slx-mc-part-2,
-.slx-mc-list--db .slx-mc-part-2,
 .slx-mc-list--emotion .slx-mc-part-4,
 .slx-mc-list--progress .slx-mc-part-2 {
   flex: 1 1 180px;
   border-radius: 10px;
 }
 
+.slx-mc-list--db .slx-mc-part-2 {
+  width: 100%;
+  border-radius: 12px;
+}
+
 .slx-mc-list--quote .slx-mc-part-2 {
   position: relative;
-  flex: 1 1 220px;
+  width: 100%;
+  flex: none;
   border-radius: 14px 14px 14px 6px;
   padding: 7px 11px;
   box-shadow: 0 2px 8px rgba(120, 120, 150, 0.06);
@@ -7283,6 +7326,21 @@ body.dark .slx-mc-list-block,
     padding: 11px 12px;
   }
 
+  .slx-memory-card__title-content {
+    gap: 5px;
+    font-size: 12.4px;
+    font-weight: 540;
+  }
+
+  .slx-mc-title-field {
+    padding: 2px 7px;
+  }
+
+  .slx-mc-title-field--task {
+    flex-basis: 100%;
+    border-radius: 12px;
+  }
+
   .slx-memory-card__title-content,
   .slx-mc-row,
   .slx-mc-list-item {
@@ -7290,8 +7348,14 @@ body.dark .slx-mc-list-block,
   }
 
   .slx-mc-row {
-    flex-direction: column;
-    gap: 5px;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    column-gap: 6px;
+    row-gap: 4px;
+  }
+
+  .slx-mc-row .slx-mc-value {
+    grid-column: 1 / -1;
+    padding-left: 21px;
   }
 
   .slx-memory-card__body {
