@@ -14,6 +14,22 @@ import {
 import { renderMemoryCard } from './render-memory.js';
 
 const MEMORY_RENDER_DELAY_MS = 120;
+const MEMORY_FIELD_KEYS = new Set([
+  'number',
+  'time',
+  'location',
+  'characters',
+  'task',
+  'plot',
+  'quote',
+  'db',
+  'emotion_changed',
+  'emotion',
+  'affection_changed',
+  'affection',
+  'progress',
+]);
+const MEMORY_FIELD_LINE_RE = /^\s*\[([A-Za-z][\w-]*)\s*:\s*[\s\S]*?\]\s*$/;
 
 let rendererRegistered = false;
 let eventStops = [];
@@ -55,6 +71,34 @@ function getMessageText(messageId) {
   return String(message?.message || message?.mes || '');
 }
 
+function isMemoryFieldLine(line) {
+  const match = String(line || '').match(MEMORY_FIELD_LINE_RE);
+  return Boolean(match && MEMORY_FIELD_KEYS.has(match[1].trim().toLowerCase()));
+}
+
+function extractLooseMemoryBlocks(content) {
+  const strictBlocks = extractMemoryBlocks(content);
+  if (strictBlocks.length) return strictBlocks;
+
+  const blocks = [];
+  let current = [];
+  String(content || '').split(/\r?\n/).forEach(line => {
+    if (isMemoryFieldLine(line)) {
+      current.push(line.trim());
+      return;
+    }
+    if (current.length) {
+      blocks.push(`<memory>\n${current.join('\n')}\n</memory>`);
+      current = [];
+    }
+  });
+  if (current.length) {
+    blocks.push(`<memory>\n${current.join('\n')}\n</memory>`);
+  }
+
+  return blocks.filter(block => /\[number\s*:/i.test(block) || /\[plot\s*:/i.test(block));
+}
+
 function ensureOriginalHtml(mesText) {
   if (!mesText || mesText.dataset.slxMemoryOriginalHtml !== undefined) return;
   mesText.dataset.slxMemoryOriginalHtml = mesText.innerHTML;
@@ -82,15 +126,34 @@ function removeMemoryTextNodes(mesText) {
     const original = textNode.textContent || '';
     const cleaned = original
       .replace(/<memory\b[^>]*>[\s\S]*?<\/memory>/gi, '')
-      .replace(/<\/?memory\b[^>]*>/gi, '');
+      .replace(/<\/?memory\b[^>]*>/gi, '')
+      .split(/\r?\n/)
+      .filter(line => !isMemoryFieldLine(line))
+      .join('\n');
     if (cleaned !== original) {
       textNode.textContent = cleaned;
     }
   });
 }
 
+function removeMemoryFieldParagraphs(mesText) {
+  Array.from(mesText.querySelectorAll('p, div')).forEach(element => {
+    if (element.classList?.contains('slx-memory-wrap')) return;
+    const lines = String(element.innerText || element.textContent || '')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+    if (!lines.length) return;
+    const memoryLineCount = lines.filter(isMemoryFieldLine).length;
+    if (memoryLineCount >= 2 && memoryLineCount === lines.length) {
+      element.remove();
+    }
+  });
+}
+
 function cleanupLeakedMemoryText(mesText) {
   removeMemoryGhostElements(mesText);
+  removeMemoryFieldParagraphs(mesText);
   removeMemoryTextNodes(mesText);
 }
 
@@ -98,7 +161,8 @@ function hasMemoryDisplaySource(mesText) {
   if (!mesText) return false;
   return Boolean(mesText.querySelector('memory'))
     || /<\/?memory\b/i.test(mesText.textContent || '')
-    || /&lt;\/?memory\b/i.test(mesText.innerHTML || '');
+    || /&lt;\/?memory\b/i.test(mesText.innerHTML || '')
+    || extractLooseMemoryBlocks(mesText.innerText || mesText.textContent || '').length > 0;
 }
 
 function removeExistingCards(messageElement) {
@@ -138,7 +202,10 @@ function renderMessageElement(messageElement) {
   const mesText = messageElement.querySelector('.mes_text');
   if (!mesText) return;
 
-  const blocks = extractMemoryBlocks(getMessageText(messageId));
+  const blocks = [
+    ...extractLooseMemoryBlocks(getMessageText(messageId)),
+    ...extractLooseMemoryBlocks(mesText.textContent || ''),
+  ].filter((block, index, all) => all.indexOf(block) === index);
   if (!blocks.length) {
     clearMessageElement(messageElement);
     return;
@@ -155,11 +222,9 @@ function renderMessageElement(messageElement) {
   ensureOriginalHtml(mesText);
   restoreOriginalHtml(mesText);
   removeExistingCards(messageElement);
-  if (!beautifySettings.showRawAlongside && !hasMemoryDisplaySource(mesText)) {
-    return;
-  }
+  const hadDisplaySource = hasMemoryDisplaySource(mesText);
 
-  if (!beautifySettings.showRawAlongside) {
+  if (!beautifySettings.showRawAlongside && hadDisplaySource) {
     cleanupLeakedMemoryText(mesText);
   }
 
@@ -181,7 +246,7 @@ function refreshVisibleMessages() {
   }
 
   getChatMessagesSafe(undefined, { hide_state: 'all' })
-    .filter(message => extractMemoryBlocks(message.message).length > 0)
+    .filter(message => extractLooseMemoryBlocks(message.message).length > 0)
     .forEach(message => {
       const element = getMessageElementById(message.message_id);
       if (element) renderMessageElement(element);
