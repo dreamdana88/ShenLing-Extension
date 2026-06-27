@@ -6984,7 +6984,6 @@ body.dark .slx-memory-wrap,
   overflow: hidden;
   margin: 8px 0;
   border: 1px solid var(--slx-mc-border);
-  border-left: 4px solid var(--slx-mc-accent);
   border-radius: 18px;
   background: var(--slx-mc-bg);
   box-shadow: var(--slx-mc-shadow);
@@ -7095,7 +7094,6 @@ body.dark .slx-memory-wrap,
 }
 
 .slx-mc-block--plot {
-  border-left: 3px solid var(--slx-mc-plot-c);
   background: var(--slx-mc-plot-bg);
 }
 
@@ -7241,35 +7239,29 @@ body.dark .slx-mc-list-block,
 .slx-mc-list--quote .slx-mc-part-2 {
   position: relative;
   flex: 1 1 220px;
-  border-radius: 14px;
+  border-radius: 14px 14px 14px 6px;
   padding: 7px 11px;
-  background: rgba(255, 255, 255, 0.62);
-  box-shadow: 0 2px 8px rgba(120, 120, 150, 0.08);
-}
-
-body.dark .slx-mc-list--quote .slx-mc-part-2,
-[data-theme='dark'] .slx-mc-list--quote .slx-mc-part-2 {
-  background: rgba(255, 255, 255, 0.09);
-}
-
-.slx-mc-list--quote .slx-mc-part-2::before {
-  content: '';
-  position: absolute;
-  left: -6px;
-  top: 12px;
-  width: 10px;
-  height: 10px;
-  transform: rotate(45deg);
-  background: inherit;
-  box-shadow: -1px 1px 2px rgba(120, 120, 150, 0.04);
+  box-shadow: 0 2px 8px rgba(120, 120, 150, 0.06);
 }
 
 .slx-mc-list-item--quote-user .slx-mc-part-2 {
-  border-left: 3px solid var(--slx-mc-quote-user-c);
+  background: var(--slx-mc-quote-user-bg);
 }
 
 .slx-mc-list-item--quote-character .slx-mc-part-2 {
-  border-left: 3px solid var(--slx-mc-quote-char-c);
+  background: var(--slx-mc-quote-char-bg);
+}
+
+.slx-mc-list--db .slx-mc-part-2 {
+  background: var(--slx-mc-db-bg);
+}
+
+.slx-mc-list--emotion .slx-mc-part-4 {
+  background: var(--slx-mc-emotion-bg);
+}
+
+.slx-mc-list--progress .slx-mc-part-2 {
+  background: var(--slx-mc-progress-bg);
 }
 
 .slx-mc-empty {
