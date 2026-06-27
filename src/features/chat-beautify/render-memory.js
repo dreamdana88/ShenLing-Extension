@@ -93,9 +93,17 @@ function createMultiRow(key, config, values) {
   block.append(title);
 
   const list = createElement('ul', `slx-mc-list slx-mc-list--${key}`);
-  values.forEach(value => {
-    const item = createElement('li', 'slx-mc-list-item');
+  values.forEach((value, valueIndex) => {
+    const item = createElement('li', `slx-mc-list-item slx-mc-list-item--${key} slx-mc-list-item-${valueIndex + 1}`);
     const parts = parsePipeFields(value, config.pipe || 0).filter(part => part !== '');
+    if (key === 'quote') {
+      const speaker = String(parts[0] || '').trim();
+      if (speaker === '{{user}}') {
+        item.classList.add('slx-mc-list-item--quote-user');
+      } else {
+        item.classList.add('slx-mc-list-item--quote-character');
+      }
+    }
     if (parts.length <= 1) {
       item.append(createElement('span', 'slx-mc-value', parts[0] || value));
     } else {

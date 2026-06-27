@@ -6944,6 +6944,24 @@ button.slx-outline-check-item:active {
   --slx-mc-muted: #84848e;
   --slx-mc-accent: #8a9bb0;
   --slx-mc-strong: #6f8298;
+  --slx-mc-plot-c: #c4b393;
+  --slx-mc-plot-bg: rgba(196, 179, 147, 0.15);
+  --slx-mc-plot-strong: #a8915f;
+  --slx-mc-quote-user-c: #93c9b0;
+  --slx-mc-quote-user-bg: rgba(147, 201, 176, 0.16);
+  --slx-mc-quote-user-strong: #5fa98a;
+  --slx-mc-quote-char-c: #e0a8bd;
+  --slx-mc-quote-char-bg: rgba(224, 168, 189, 0.16);
+  --slx-mc-quote-char-strong: #c07e98;
+  --slx-mc-db-c: #a9c592;
+  --slx-mc-db-bg: rgba(169, 197, 146, 0.15);
+  --slx-mc-db-strong: #7fa05f;
+  --slx-mc-emotion-c: #e0a99a;
+  --slx-mc-emotion-bg: rgba(224, 169, 154, 0.16);
+  --slx-mc-emotion-strong: #c2806f;
+  --slx-mc-progress-c: #9bbbdc;
+  --slx-mc-progress-bg: rgba(155, 187, 220, 0.16);
+  --slx-mc-progress-strong: #6f93bf;
   margin: 10px 0;
   color: var(--slx-mc-text);
   font-size: 13px;
@@ -7076,6 +7094,47 @@ body.dark .slx-memory-wrap,
   padding: 9px 10px;
 }
 
+.slx-mc-block--plot {
+  border-left: 3px solid var(--slx-mc-plot-c);
+  background: var(--slx-mc-plot-bg);
+}
+
+.slx-mc-block--plot .slx-mc-block-title,
+.slx-mc-block--plot .slx-mc-icon {
+  color: var(--slx-mc-plot-strong);
+}
+
+.slx-mc-list-block {
+  display: grid;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+body.dark .slx-mc-list-block,
+[data-theme='dark'] .slx-mc-list-block {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.slx-mc-list-block--quote .slx-mc-block-title,
+.slx-mc-list-block--quote .slx-mc-icon {
+  color: var(--slx-mc-quote-user-strong);
+}
+
+.slx-mc-list-block--db .slx-mc-block-title,
+.slx-mc-list-block--db .slx-mc-icon {
+  color: var(--slx-mc-db-strong);
+}
+
+.slx-mc-list-block--emotion .slx-mc-block-title,
+.slx-mc-list-block--emotion .slx-mc-icon {
+  color: var(--slx-mc-emotion-strong);
+}
+
+.slx-mc-list-block--progress .slx-mc-block-title,
+.slx-mc-list-block--progress .slx-mc-icon {
+  color: var(--slx-mc-progress-strong);
+}
+
 .slx-mc-row {
   display: flex;
   align-items: flex-start;
@@ -7106,7 +7165,7 @@ body.dark .slx-memory-wrap,
 
 .slx-mc-list {
   display: grid;
-  gap: 6px;
+  gap: 7px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -7115,20 +7174,60 @@ body.dark .slx-memory-wrap,
 .slx-mc-list-item {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  align-items: baseline;
+  gap: 8px;
+  align-items: center;
   line-height: 1.6;
 }
 
 .slx-mc-part {
   border-radius: 999px;
-  background: rgba(138, 155, 176, 0.14);
-  padding: 2px 8px;
+  background: rgba(138, 155, 176, 0.16);
+  padding: 3px 9px;
 }
 
 .slx-mc-part-1 {
   color: var(--slx-mc-strong);
   font-weight: 700;
+}
+
+.slx-mc-list-item--quote-user .slx-mc-part {
+  background: var(--slx-mc-quote-user-bg);
+}
+
+.slx-mc-list-item--quote-user .slx-mc-part-1 {
+  color: var(--slx-mc-quote-user-strong);
+}
+
+.slx-mc-list-item--quote-character .slx-mc-part {
+  background: var(--slx-mc-quote-char-bg);
+}
+
+.slx-mc-list-item--quote-character .slx-mc-part-1 {
+  color: var(--slx-mc-quote-char-strong);
+}
+
+.slx-mc-list-item--db .slx-mc-part {
+  background: var(--slx-mc-db-bg);
+}
+
+.slx-mc-list-item--db .slx-mc-part-1 {
+  color: var(--slx-mc-db-strong);
+}
+
+.slx-mc-list-item--emotion .slx-mc-part {
+  background: var(--slx-mc-emotion-bg);
+}
+
+.slx-mc-list-item--emotion .slx-mc-part-1 {
+  color: var(--slx-mc-emotion-strong);
+}
+
+.slx-mc-list-item--progress .slx-mc-part {
+  background: var(--slx-mc-progress-bg);
+}
+
+.slx-mc-list-item--progress .slx-mc-part-1 {
+  color: var(--slx-mc-progress-strong);
 }
 
 .slx-mc-list--quote .slx-mc-part-2,
@@ -7137,6 +7236,40 @@ body.dark .slx-memory-wrap,
 .slx-mc-list--progress .slx-mc-part-2 {
   flex: 1 1 180px;
   border-radius: 10px;
+}
+
+.slx-mc-list--quote .slx-mc-part-2 {
+  position: relative;
+  flex: 1 1 220px;
+  border-radius: 14px;
+  padding: 7px 11px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 2px 8px rgba(120, 120, 150, 0.08);
+}
+
+body.dark .slx-mc-list--quote .slx-mc-part-2,
+[data-theme='dark'] .slx-mc-list--quote .slx-mc-part-2 {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.slx-mc-list--quote .slx-mc-part-2::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 12px;
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+  background: inherit;
+  box-shadow: -1px 1px 2px rgba(120, 120, 150, 0.04);
+}
+
+.slx-mc-list-item--quote-user .slx-mc-part-2 {
+  border-left: 3px solid var(--slx-mc-quote-user-c);
+}
+
+.slx-mc-list-item--quote-character .slx-mc-part-2 {
+  border-left: 3px solid var(--slx-mc-quote-char-c);
 }
 
 .slx-mc-empty {
