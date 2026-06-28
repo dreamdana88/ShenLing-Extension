@@ -45,6 +45,10 @@ function getSettings() {
   };
 }
 
+function getMemoryTheme(globalSettings = getGlobalSettings()) {
+  return globalSettings.theme === 'dark' ? 'dark' : 'light';
+}
+
 function hashMemoryBlocks(blocks) {
   const text = blocks.join('\n\n');
   return `${blocks.length}:${text.length}:${text.slice(0, 80)}:${text.slice(-80)}`;
@@ -180,10 +184,19 @@ function clearMessageElement(messageElement, { restore = true } = {}) {
   }
 }
 
-function createMemoryWrap(blocks) {
+function syncMemoryWrapTheme(messageElement, theme) {
+  messageElement
+    ?.querySelectorAll?.(':scope .slx-memory-wrap')
+    ?.forEach(element => {
+      element.dataset.theme = theme;
+    });
+}
+
+function createMemoryWrap(blocks, theme) {
   const wrap = document.createElement('div');
   wrap.className = 'slx-memory-wrap';
   wrap.dataset.slxMemoryWrap = 'true';
+  wrap.dataset.theme = theme;
   blocks.forEach(block => {
     wrap.append(renderMemoryCard(block));
   });
@@ -191,7 +204,7 @@ function createMemoryWrap(blocks) {
 }
 
 function renderMessageElement(messageElement) {
-  const { beautifySettings, active } = getSettings();
+  const { globalSettings, beautifySettings, active } = getSettings();
   if (!active) {
     clearMessageElement(messageElement);
     return;
@@ -209,10 +222,12 @@ function renderMessageElement(messageElement) {
   }
 
   const hash = hashMemoryBlocks(blocks);
+  const theme = getMemoryTheme(globalSettings);
   if (
     messageElement.dataset.slxMemoryRendered === hash
     && messageElement.querySelector(':scope .slx-memory-wrap')
   ) {
+    syncMemoryWrapTheme(messageElement, theme);
     return;
   }
 
@@ -225,7 +240,7 @@ function renderMessageElement(messageElement) {
     cleanupLeakedMemoryText(mesText);
   }
 
-  const wrap = createMemoryWrap(blocks);
+  const wrap = createMemoryWrap(blocks, theme);
   wrap.dataset.slxMemoryHash = hash;
   mesText.append(wrap);
   messageElement.dataset.slxMemoryRendered = hash;
