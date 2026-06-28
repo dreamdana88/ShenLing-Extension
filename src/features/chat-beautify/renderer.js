@@ -6,6 +6,7 @@ import { extractMemoryBlocks } from '../../core/summary.js';
 import {
   getChatBeautifySettings,
   getGlobalSettings,
+  saveGlobalSettings,
 } from '../../core/settings.js';
 import {
   getTavernEventsSafe,
@@ -45,8 +46,8 @@ function getSettings() {
   };
 }
 
-function getMemoryTheme(globalSettings = getGlobalSettings()) {
-  return globalSettings.theme === 'dark' ? 'dark' : 'light';
+function getMemoryTheme(beautifySettings = getChatBeautifySettings()) {
+  return beautifySettings.theme === 'dark' ? 'dark' : 'light';
 }
 
 function hashMemoryBlocks(blocks) {
@@ -189,6 +190,7 @@ function syncMemoryWrapTheme(messageElement, theme) {
     ?.querySelectorAll?.(':scope .slx-memory-wrap')
     ?.forEach(element => {
       element.dataset.theme = theme;
+      syncMemoryThemeControls(element, theme);
     });
 }
 
@@ -198,13 +200,37 @@ function createMemoryWrap(blocks, theme) {
   wrap.dataset.slxMemoryWrap = 'true';
   wrap.dataset.theme = theme;
   blocks.forEach(block => {
-    wrap.append(renderMemoryCard(block));
+    wrap.append(renderMemoryCard(block, theme));
   });
   return wrap;
 }
 
+function syncMemoryThemeControls(root = document, theme = getMemoryTheme()) {
+  const nextTheme = theme === 'dark' ? 'light' : 'dark';
+  root.querySelectorAll?.('[data-slx-memory-theme-toggle]')?.forEach(button => {
+    button.textContent = theme === 'dark' ? '☀️' : '🌙';
+    button.setAttribute('aria-label', `切换小总结为${nextTheme === 'dark' ? '深色' : '浅色'}主题`);
+    button.title = `切换小总结为${nextTheme === 'dark' ? '深色' : '浅色'}主题`;
+  });
+}
+
+function applyMemoryTheme(theme) {
+  document.querySelectorAll('.slx-memory-wrap').forEach(element => {
+    element.dataset.theme = theme;
+    syncMemoryThemeControls(element, theme);
+  });
+}
+
+function toggleMemoryTheme() {
+  const settings = getGlobalSettings();
+  const beautifySettings = getChatBeautifySettings(settings);
+  beautifySettings.theme = getMemoryTheme(beautifySettings) === 'dark' ? 'light' : 'dark';
+  saveGlobalSettings();
+  applyMemoryTheme(beautifySettings.theme);
+}
+
 function renderMessageElement(messageElement) {
-  const { globalSettings, beautifySettings, active } = getSettings();
+  const { beautifySettings, active } = getSettings();
   if (!active) {
     clearMessageElement(messageElement);
     return;
@@ -222,7 +248,7 @@ function renderMessageElement(messageElement) {
   }
 
   const hash = hashMemoryBlocks(blocks);
-  const theme = getMemoryTheme(globalSettings);
+  const theme = getMemoryTheme(beautifySettings);
   if (
     messageElement.dataset.slxMemoryRendered === hash
     && messageElement.querySelector(':scope .slx-memory-wrap')
@@ -289,6 +315,14 @@ function bindCardToggle(event) {
   title.setAttribute('aria-expanded', String(!collapsed));
 }
 
+function bindMemoryThemeToggle(event) {
+  const button = event.target.closest?.('[data-slx-memory-theme-toggle]');
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  toggleMemoryTheme();
+}
+
 function registerRendererEvents() {
   const events = getTavernEventsSafe();
   const eventNames = [
@@ -308,6 +342,7 @@ function registerRendererEvents() {
     .map(eventName => registerTavernEvent(eventName, () => scheduleRefresh()))
     .filter(Boolean);
   document.addEventListener('click', bindCardToggle);
+  document.addEventListener('click', bindMemoryThemeToggle);
 }
 
 export function registerChatBeautifyRenderer() {
@@ -335,6 +370,7 @@ export function clearChatBeautifyRenderer(options = {}) {
     eventStops.forEach(stop => stop?.stop?.());
     eventStops = [];
     document.removeEventListener('click', bindCardToggle);
+    document.removeEventListener('click', bindMemoryThemeToggle);
     rendererRegistered = false;
   }
 }

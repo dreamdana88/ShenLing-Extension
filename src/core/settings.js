@@ -73,6 +73,7 @@ export const defaultGlobalSettings = Object.freeze({
     },
     chatBeautify: {
       enabled: true,
+      theme: 'light',
       renderMemory: true,
       renderGrandMemory: false,
       showRawAlongside: false,
@@ -375,6 +376,9 @@ export function getChatBeautifySettings(settings = getGlobalSettings()) {
     chatBeautify.showRawAlongside = false;
     delete chatBeautify.hideRawBlocks;
     chatBeautify.rendererVersion = 2;
+  }
+  if (!['light', 'dark'].includes(chatBeautify.theme)) {
+    chatBeautify.theme = 'light';
   }
   return settings.modules.chatBeautify;
 }

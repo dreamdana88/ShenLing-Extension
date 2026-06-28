@@ -70,6 +70,16 @@ function createTitleField(key, config, value) {
   return field;
 }
 
+function createThemeToggle(theme = 'light') {
+  const nextTheme = theme === 'dark' ? 'light' : 'dark';
+  const button = createElement('button', 'slx-mc-theme-toggle', theme === 'dark' ? '☀️' : '🌙');
+  button.type = 'button';
+  button.dataset.slxMemoryThemeToggle = 'true';
+  button.setAttribute('aria-label', `切换小总结为${nextTheme === 'dark' ? '深色' : '浅色'}主题`);
+  button.title = `切换小总结为${nextTheme === 'dark' ? '深色' : '浅色'}主题`;
+  return button;
+}
+
 function createSingleRow(key, config, value) {
   const row = createElement('div', `slx-mc-row slx-mc-row--${key}`);
   appendIconLabel(row, config);
@@ -143,10 +153,11 @@ function createUnknownRows(memoryText) {
   return block;
 }
 
-export function renderMemoryCard(memoryText) {
+export function renderMemoryCard(memoryText, theme = 'light') {
   const card = createElement('section', 'slx-memory-card slx-memory-card--collapsed');
   card.dataset.slxMemoryCard = 'true';
 
+  const headerWrap = createElement('div', 'slx-memory-card__header');
   const header = createElement('button', 'slx-memory-card__title');
   header.type = 'button';
   header.setAttribute('aria-expanded', 'false');
@@ -167,7 +178,8 @@ export function renderMemoryCard(memoryText) {
 
   const toggle = createElement('span', 'slx-mc-toggle', '▾');
   header.append(titleContent, toggle);
-  card.append(header);
+  headerWrap.append(header, createThemeToggle(theme));
+  card.append(headerWrap);
 
   const body = createElement('div', 'slx-memory-card__body');
   getOrderedConfigEntries('body').forEach(([key, config]) => {
