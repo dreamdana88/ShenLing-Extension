@@ -150,7 +150,7 @@ function removeMemoryFieldParagraphs(mesText) {
       .filter(Boolean);
     if (!lines.length) return;
     const memoryLineCount = lines.filter(isMemoryFieldLine).length;
-    if (memoryLineCount >= 2 && memoryLineCount === lines.length) {
+    if (memoryLineCount > 0 && memoryLineCount === lines.length) {
       element.remove();
     }
   });
@@ -253,6 +253,9 @@ function renderMessageElement(messageElement) {
     messageElement.dataset.slxMemoryRendered === hash
     && messageElement.querySelector(':scope .slx-memory-wrap')
   ) {
+    if (!beautifySettings.showRawAlongside) {
+      cleanupLeakedMemoryText(mesText);
+    }
     syncMemoryWrapTheme(messageElement, theme);
     return;
   }
