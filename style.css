@@ -7381,13 +7381,47 @@ body.dark .slx-memory-wrap,
   }
 
   .slx-memory-card__header {
-    gap: 2px;
+    position: relative;
+    display: block;
+    gap: 0;
   }
 
   .slx-mc-theme-toggle {
-    width: 34px;
-    flex-basis: 34px;
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 2;
+    width: 36px;
+    height: 50%;
+    min-height: 34px;
+    flex-basis: 36px;
+    border-bottom: 1px solid var(--slx-mc-border);
     font-size: 13px;
+  }
+
+  .slx-memory-card__title {
+    position: relative;
+    width: 100%;
+    min-height: 76px;
+    padding-right: 44px;
+  }
+
+  .slx-memory-card__title-content {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .slx-mc-toggle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 36px;
+    height: 50%;
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-left: 1px solid var(--slx-mc-border);
   }
 
   .slx-memory-card__title-content {
