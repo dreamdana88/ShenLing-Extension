@@ -12,6 +12,7 @@ import {
   getTavernEventsSafe,
   registerTavernEvent,
 } from '../../core/tavern-events.js';
+import { renderGrandMemoryCard } from './render-grand-memory.js';
 import { renderMemoryCard } from './render-memory.js';
 
 const MEMORY_RENDER_DELAY_MS = 220;
@@ -29,6 +30,17 @@ const MEMORY_FIELD_KEYS = new Set([
   'affection_changed',
   'affection',
   'progress',
+]);
+const GRAND_MEMORY_FIELD_KEYS = new Set([
+  'volume',
+  'span',
+  'chronicle',
+  'plot',
+  'arc',
+  'db',
+  'task',
+  'faction',
+  'next',
 ]);
 const MEMORY_FIELD_LINE_RE = /^\s*\[([A-Za-z][\w-]*)\s*:\s*([^\[\]]*?)\]\s*$/;
 
@@ -51,7 +63,7 @@ function getMemoryTheme(beautifySettings = getChatBeautifySettings()) {
 }
 
 function hashMemoryBlocks(blocks) {
-  const text = blocks.join('\n\n');
+  const text = blocks.map(block => `${block.type}:${block.text}`).join('\n\n');
   return `${blocks.length}:${text.length}:${text.slice(0, 80)}:${text.slice(-80)}`;
 }
 
@@ -79,6 +91,20 @@ function getMessageText(messageId) {
 function isMemoryFieldLine(line) {
   const match = String(line || '').match(MEMORY_FIELD_LINE_RE);
   return Boolean(match && MEMORY_FIELD_KEYS.has(match[1].trim().toLowerCase()));
+}
+
+function isGrandMemoryFieldLine(line) {
+  const match = String(line || '').match(MEMORY_FIELD_LINE_RE);
+  return Boolean(match && GRAND_MEMORY_FIELD_KEYS.has(match[1].trim().toLowerCase()));
+}
+
+function isBeautifyFieldLine(line) {
+  return isMemoryFieldLine(line) || isGrandMemoryFieldLine(line);
+}
+
+function extractGrandMemoryBlocks(content) {
+  return Array.from(String(content || '').matchAll(/<grand_memory\b[^>]*>[\s\S]*?<\/grand_memory>/gi))
+    .map(match => match[0].trim());
 }
 
 function extractLooseMemoryBlocks(content) {
@@ -114,6 +140,16 @@ function extractLooseMemoryBlocks(content) {
   ));
 }
 
+function extractBeautifyBlocks(content) {
+  const source = String(content || '');
+  const grandMemoryBlocks = extractGrandMemoryBlocks(source);
+  const memoryBlocks = grandMemoryBlocks.length ? extractMemoryBlocks(source) : extractLooseMemoryBlocks(source);
+  return [
+    ...memoryBlocks.map(text => ({ type: 'memory', text })),
+    ...grandMemoryBlocks.map(text => ({ type: 'grand_memory', text })),
+  ];
+}
+
 function ensureOriginalHtml(mesText) {
   if (!mesText || mesText.dataset.slxMemoryOriginalHtml !== undefined) return;
   if (!String(mesText.innerHTML || '').trim()) return;
@@ -131,6 +167,7 @@ function restoreOriginalHtml(mesText) {
 
 function removeMemoryGhostElements(mesText) {
   mesText.querySelectorAll('memory').forEach(element => element.remove());
+  mesText.querySelectorAll('grand_memory').forEach(element => element.remove());
   mesText.normalize();
 }
 
@@ -146,9 +183,11 @@ function removeMemoryTextNodes(mesText) {
     const original = textNode.textContent || '';
     const cleaned = original
       .replace(/<memory\b[^>]*>[\s\S]*?<\/memory>/gi, '')
+      .replace(/<grand_memory\b[^>]*>[\s\S]*?<\/grand_memory>/gi, '')
       .replace(/<\/?memory\b[^>]*>/gi, '')
+      .replace(/<\/?grand_memory\b[^>]*>/gi, '')
       .split(/\r?\n/)
-      .filter(line => !isMemoryFieldLine(line))
+      .filter(line => !isBeautifyFieldLine(line))
       .join('\n');
     if (cleaned !== original) {
       textNode.textContent = cleaned;
@@ -164,7 +203,7 @@ function removeMemoryFieldParagraphs(mesText) {
       .map(line => line.trim())
       .filter(Boolean);
     if (!lines.length) return;
-    const memoryLineCount = lines.filter(isMemoryFieldLine).length;
+    const memoryLineCount = lines.filter(isBeautifyFieldLine).length;
     if (memoryLineCount > 0 && memoryLineCount === lines.length) {
       element.remove();
     }
@@ -180,9 +219,12 @@ function cleanupLeakedMemoryText(mesText) {
 function hasMemoryDisplaySource(mesText) {
   if (!mesText) return false;
   return Boolean(mesText.querySelector('memory'))
+    || Boolean(mesText.querySelector('grand_memory'))
     || /<\/?memory\b/i.test(mesText.textContent || '')
+    || /<\/?grand_memory\b/i.test(mesText.textContent || '')
     || /&lt;\/?memory\b/i.test(mesText.innerHTML || '')
-    || extractLooseMemoryBlocks(mesText.innerText || mesText.textContent || '').length > 0;
+    || /&lt;\/?grand_memory\b/i.test(mesText.innerHTML || '')
+    || extractBeautifyBlocks(mesText.innerText || mesText.textContent || '').length > 0;
 }
 
 function removeExistingCards(messageElement) {
@@ -215,7 +257,9 @@ function createMemoryWrap(blocks, theme) {
   wrap.dataset.slxMemoryWrap = 'true';
   wrap.dataset.theme = theme;
   blocks.forEach(block => {
-    wrap.append(renderMemoryCard(block, theme));
+    wrap.append(block.type === 'grand_memory'
+      ? renderGrandMemoryCard(block.text, theme)
+      : renderMemoryCard(block.text, theme));
   });
   return wrap;
 }
@@ -257,7 +301,7 @@ function renderMessageElement(messageElement) {
   if (!mesText) return;
 
   const rawMessageText = getMessageText(messageId);
-  const blocks = extractLooseMemoryBlocks(rawMessageText);
+  const blocks = extractBeautifyBlocks(rawMessageText);
   if (!blocks.length) {
     clearMessageElement(messageElement, { restore: false });
     return;
@@ -303,7 +347,7 @@ function refreshVisibleMessages() {
   }
 
   getChatMessagesSafe(undefined, { hide_state: 'all' })
-    .filter(message => extractLooseMemoryBlocks(message.message).length > 0)
+    .filter(message => extractBeautifyBlocks(message.message).length > 0)
     .forEach(message => {
       const element = getMessageElementById(message.message_id);
       if (element) renderMessageElement(element);

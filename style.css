@@ -7089,6 +7089,11 @@ body.dark .slx-memory-wrap,
   color: var(--slx-mc-title-task);
 }
 
+.slx-mc-title-field--volume {
+  background: var(--slx-mc-title-time-bg);
+  color: var(--slx-mc-title-time);
+}
+
 .slx-mc-title-field,
 .slx-mc-row,
 .slx-mc-block-title {
@@ -7214,6 +7219,25 @@ body.dark .slx-memory-wrap,
   color: var(--slx-mc-progress-strong);
 }
 
+.slx-mc-list-block--span .slx-mc-block-title,
+.slx-mc-list-block--span .slx-mc-icon,
+.slx-mc-list-block--chronicle .slx-mc-block-title,
+.slx-mc-list-block--chronicle .slx-mc-icon {
+  color: var(--slx-mc-plot-strong);
+}
+
+.slx-mc-list-block--arc .slx-mc-block-title,
+.slx-mc-list-block--arc .slx-mc-icon {
+  color: var(--slx-mc-emotion-strong);
+}
+
+.slx-mc-list-block--faction .slx-mc-block-title,
+.slx-mc-list-block--faction .slx-mc-icon,
+.slx-mc-list-block--next .slx-mc-block-title,
+.slx-mc-list-block--next .slx-mc-icon {
+  color: var(--slx-mc-progress-strong);
+}
+
 .slx-mc-row {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
@@ -7263,7 +7287,11 @@ body.dark .slx-memory-wrap,
 }
 
 .slx-mc-list-item--quote,
-.slx-mc-list-item--db {
+.slx-mc-list-item--db,
+.slx-mc-list-item--chronicle,
+.slx-mc-list-item--arc,
+.slx-mc-list-item--faction,
+.slx-mc-list-item--next {
   flex-direction: column;
   align-items: flex-start;
   gap: 5px;
@@ -7320,6 +7348,33 @@ body.dark .slx-memory-wrap,
   color: var(--slx-mc-progress-strong);
 }
 
+.slx-mc-list-item--chronicle .slx-mc-part {
+  background: var(--slx-mc-plot-bg);
+}
+
+.slx-mc-list-item--chronicle .slx-mc-part-1,
+.slx-mc-list-item--chronicle .slx-mc-part-2 {
+  color: var(--slx-mc-plot-strong);
+}
+
+.slx-mc-list-item--arc .slx-mc-part {
+  background: var(--slx-mc-emotion-bg);
+}
+
+.slx-mc-list-item--arc .slx-mc-part-1 {
+  color: var(--slx-mc-emotion-strong);
+}
+
+.slx-mc-list-item--faction .slx-mc-part,
+.slx-mc-list-item--next .slx-mc-part {
+  background: var(--slx-mc-progress-bg);
+}
+
+.slx-mc-list-item--faction .slx-mc-part-1,
+.slx-mc-list-item--next .slx-mc-part-1 {
+  color: var(--slx-mc-progress-strong);
+}
+
 .slx-mc-list--quote .slx-mc-part-2,
 .slx-mc-list--emotion .slx-mc-part-4,
 .slx-mc-list--progress .slx-mc-part-2 {
@@ -7359,6 +7414,21 @@ body.dark .slx-memory-wrap,
 
 .slx-mc-list--progress .slx-mc-part-2 {
   background: var(--slx-mc-progress-bg);
+}
+
+.slx-grand-plot-text {
+  width: 100%;
+  border-radius: 12px;
+  background: var(--slx-mc-plot-bg);
+  padding: 7px 10px;
+}
+
+.slx-mc-list--chronicle .slx-mc-part-5,
+.slx-mc-list--arc .slx-mc-part-4,
+.slx-mc-list--db .slx-mc-part-2,
+.slx-mc-list--faction .slx-mc-part-3 {
+  width: 100%;
+  border-radius: 12px;
 }
 
 .slx-mc-empty {
