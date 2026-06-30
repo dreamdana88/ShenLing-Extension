@@ -300,6 +300,10 @@ export function getDefaultSummaryPromptTemplate() {
   return DEFAULT_MEMORY_PROMPT_TEMPLATE;
 }
 
+export function getDefaultGrandMemoryPromptTemplate() {
+  return DEFAULT_GRAND_MEMORY_TEMPLATE;
+}
+
 export function shouldResetSummaryPromptTemplate(summary) {
   const prompt = String(summary.promptTemplate || '');
   return (
@@ -309,6 +313,16 @@ export function shouldResetSummaryPromptTemplate(summary) {
     prompt.includes('<list>') ||
     !prompt.includes('##浓缩梦境') ||
     !prompt.includes('[number:')
+  );
+}
+
+export function shouldResetGrandMemoryPromptTemplate(summary) {
+  const prompt = String(summary.grandPromptTemplate || '');
+  return (
+    !prompt.includes('[volume:') ||
+    !prompt.includes('[chronicle:') ||
+    !prompt.includes('[arc:') ||
+    !prompt.includes('[faction:')
   );
 }
 
@@ -325,6 +339,10 @@ export function getSummarySettings(settings = getGlobalSettings()) {
   if (shouldResetSummaryPromptTemplate(summary)) {
     summary.promptTemplate = getDefaultSummaryPromptTemplate();
     summary.promptTemplateVersion = SUMMARY_PROMPT_VERSION;
+    getContextSafe()?.saveSettingsDebounced?.();
+  }
+  if (shouldResetGrandMemoryPromptTemplate(summary)) {
+    summary.grandPromptTemplate = getDefaultGrandMemoryPromptTemplate();
     getContextSafe()?.saveSettingsDebounced?.();
   }
   getSummarySourceTags(summary);

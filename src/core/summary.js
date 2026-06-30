@@ -127,23 +127,18 @@ export function normalizeGrandMemoryBlock(content) {
 }
 
 export function forceGrandMemoryRange(content, memoryFrom, memoryTo) {
-  const summaryText = `<summary>【梦境档案：第${memoryFrom}-${memoryTo}卷】</summary>`;
-  const rangeText = `编号范围：${memoryFrom}-${memoryTo}`;
+  const volumeLine = `[volume:${memoryFrom}-${memoryTo}]`;
   let grandMemory = normalizeGrandMemoryBlock(content);
 
-  if (/<summary>[\s\S]*?<\/summary>/i.test(grandMemory)) {
-    grandMemory = grandMemory.replace(/<summary>[\s\S]*?<\/summary>/i, summaryText);
-  } else if (/<details>/i.test(grandMemory)) {
-    grandMemory = grandMemory.replace(/<details>/i, `<details>\n${summaryText}`);
-  } else {
-    grandMemory = grandMemory.replace(/<grand_memory>/i, `<grand_memory>\n${summaryText}`);
+  if (/^\s*\[volume\s*:[^\r\n]*\]\s*$/im.test(grandMemory)) {
+    return grandMemory.replace(/^\s*\[volume\s*:[^\r\n]*\]\s*$/im, volumeLine).trim();
   }
 
-  if (/编号范围[:：][^\r\n]*/i.test(grandMemory)) {
-    return grandMemory.replace(/编号范围[:：][^\r\n]*/i, rangeText).trim();
+  if (/<grand_memory\b[^>]*>/i.test(grandMemory)) {
+    return grandMemory.replace(/<grand_memory\b[^>]*>/i, match => `${match}\n${volumeLine}`).trim();
   }
 
-  return grandMemory.replace(/(<summary>[\s\S]*?<\/summary>)/i, `$1\n\n${rangeText}`).trim();
+  return `<grand_memory>\n${volumeLine}\n${String(content || '').trim()}\n</grand_memory>`;
 }
 
 export function isGrandMemoryOnly(content) {
@@ -165,8 +160,8 @@ export function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMate
   const verb = regenerate ? '重新生成' : '生成';
   const cleanExtraInstructions = String(extraInstructions || '').trim();
   const outputRule = cleanExtraInstructions
-    ? '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>，并按附加要求输出其他独立块。'
-    : '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。';
+    ? '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>；<grand_memory> 内只能使用 [key:...] 行，并按附加要求输出其他独立块。'
+    : '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>；<grand_memory> 内只能使用 [key:...] 行。';
   const systemContent = [
     '蜃灵处于梦境档案编制状态。',
     '现在是梦境大归档模块，只负责把给定小总结素材压缩为可追溯的大总结，不续写剧情。',
@@ -193,7 +188,7 @@ export function buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiv
     '现在请根据用户提供的多个已有大总结，生成一份覆盖完整范围的全新完整大总结。',
     '请按剧情发展重新整合精炼，不要机械拼接旧大总结。',
     '请只依据素材内容归纳，不要续写剧情。',
-    '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>。',
+    '请不要输出 <content>，只输出完整的 <grand_memory>...</grand_memory>；<grand_memory> 内只能使用 [key:...] 行。',
   ].filter(Boolean).join('\n\n');
   const userContent = `【已有大总结素材】\n${archiveMaterial}`;
   return createPromptBundle(systemContent, userContent);
