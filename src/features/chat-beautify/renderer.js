@@ -16,6 +16,7 @@ import { renderGrandMemoryCard } from './render-grand-memory.js';
 import { renderMemoryCard } from './render-memory.js';
 
 const MEMORY_RENDER_DELAY_MS = 220;
+const MEMORY_RENDER_FORMAT_VERSION = 2;
 const MEMORY_FIELD_KEYS = new Set([
   'number',
   'time',
@@ -64,7 +65,7 @@ function getMemoryTheme(beautifySettings = getChatBeautifySettings()) {
 
 function hashMemoryBlocks(blocks) {
   const text = blocks.map(block => `${block.type}:${block.text}`).join('\n\n');
-  return `${blocks.length}:${text.length}:${text.slice(0, 80)}:${text.slice(-80)}`;
+  return `${MEMORY_RENDER_FORMAT_VERSION}:${blocks.length}:${text.length}:${text.slice(0, 80)}:${text.slice(-80)}`;
 }
 
 function getMessageIdFromElement(messageElement) {
