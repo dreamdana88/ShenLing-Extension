@@ -7094,6 +7094,11 @@ body.dark .slx-memory-wrap,
   color: var(--slx-mc-title-time);
 }
 
+.slx-mc-title-field--volume .slx-mc-title-value {
+  display: inline-block;
+  min-width: max-content;
+}
+
 .slx-mc-title-field,
 .slx-mc-row,
 .slx-mc-block-title {

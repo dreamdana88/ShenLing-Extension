@@ -4,7 +4,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "dreamdana88",
-  "version": "0.16.26",
+  "version": "0.16.27",
   "homePage": "https://github.com/dreamdana88/ShenLing-Extension",
   "auto_update": true,
   "minimum_client_version": "1.0.0"

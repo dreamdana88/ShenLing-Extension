@@ -65,6 +65,13 @@ function getGrandField(lines, key) {
   return getGrandFields(lines, key)[0] ?? '';
 }
 
+function extractGrandVolume(grandMemoryText, lines) {
+  const fromParsedLines = getGrandField(lines, 'volume').trim();
+  if (fromParsedLines) return fromParsedLines;
+  const match = String(grandMemoryText || '').match(/\[\s*volume\s*:\s*([^\]\r\n]+?)\s*\]/i);
+  return match?.[1]?.trim() || '未标注';
+}
+
 function createThemeToggle(theme = 'light') {
   const nextTheme = theme === 'dark' ? 'light' : 'dark';
   const button = createElement('button', 'slx-mc-theme-toggle', theme === 'dark' ? '☀️' : '🌙');
@@ -200,7 +207,7 @@ function createUnknownRows(lines) {
 
 export function renderGrandMemoryCard(grandMemoryText, theme = 'light') {
   const lines = parseGrandLines(grandMemoryText);
-  const volume = getGrandField(lines, 'volume') || '未标注';
+  const volume = extractGrandVolume(grandMemoryText, lines);
   const card = createElement('section', 'slx-memory-card slx-grand-memory-card slx-memory-card--collapsed');
   card.dataset.slxGrandMemoryCard = 'true';
 
