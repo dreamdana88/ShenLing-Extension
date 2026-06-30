@@ -208,6 +208,27 @@ body.slx-panel-open-lock {
 }
 
 /* ==========================================================================
+   Icon System (Lucide inline SVG, 见 src/icons.js)
+   统一 1.5 描边 + currentColor，自动跟随容器文本色与深浅主题。
+   ========================================================================== */
+
+.slx-ico {
+  width: 1em;
+  height: 1em;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: -0.125em;
+}
+
+/* kicker 等图标 + 文字内联场景的间距由父级控制；
+   这里仅保证图标在 flex 容器内不被压缩、垂直居中。 */
+
+/* ==========================================================================
    Main Panel Shell
    ========================================================================== */
 
@@ -247,7 +268,9 @@ body.slx-panel-open-lock {
   --slx-border: rgba(186, 148, 133, 0.28);
   --slx-border-dim: rgba(186, 148, 133, 0.16);
   --slx-text: rgba(80, 52, 44, 0.96);
-  --slx-muted: rgba(128, 95, 86, 0.68);
+  /* muted 改用不透明色：原 rgba(...,0.68) 透出米白底，实测仅 2.79:1 不达标；
+     #74544a 在 panel 底上实测 6.21:1，满足 WCAG AA 正文 4.5:1。 */
+  --slx-muted: #74544a;
   --slx-accent: #b4866a;
   --slx-shadow: 0 18px 56px rgba(80, 52, 44, 0.28);
   --slx-input-bg: rgba(255, 250, 246, 0.78);
@@ -281,7 +304,7 @@ body.slx-panel-open-lock {
   --slx-border: rgba(100, 180, 210, 0.22);
   --slx-border-dim: rgba(100, 180, 210, 0.12);
   --slx-text: rgba(210, 235, 245, 0.95);
-  --slx-muted: rgba(150, 198, 220, 0.64);
+  --slx-muted: rgba(168, 206, 224, 0.82);
   --slx-accent: #64b4d2;
   --slx-shadow: 0 18px 56px rgba(0, 0, 0, 0.55);
   --slx-input-bg: rgba(12, 31, 50, 0.86);
@@ -444,6 +467,8 @@ body.slx-panel-open-lock {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  color: var(--slx-accent);
+  font-size: 20px;
 }
 
 .slx-brand b,
@@ -468,15 +493,18 @@ body.slx-panel-open-lock {
 }
 
 .slx-icon-btn {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border: none;
   border-radius: 9px;
   background: var(--slx-bg-btn);
   color: var(--slx-muted);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: background 0.2s, color 0.2s;
 }
 
@@ -562,10 +590,12 @@ body.slx-panel-open-lock {
 }
 
 .slx-module-icon {
-  font-size: 17px;
+  font-size: 18px;
   width: 22px;
   flex-shrink: 0;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .slx-module-short {
@@ -655,8 +685,15 @@ body.slx-panel-open-lock {
 }
 
 .slx-detail-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--slx-muted);
   font-size: 11px;
+}
+
+.slx-detail-icon {
+  color: var(--slx-accent);
 }
 
 .slx-detail-title {
@@ -5202,7 +5239,9 @@ body.slx-panel-open-lock {
   --slx-border: rgba(186, 148, 133, 0.28);
   --slx-border-dim: rgba(186, 148, 133, 0.16);
   --slx-text: rgba(80, 52, 44, 0.96);
-  --slx-muted: rgba(128, 95, 86, 0.68);
+  /* muted 改用不透明色：原 rgba(...,0.68) 透出米白底，实测仅 2.79:1 不达标；
+     #74544a 在 panel 底上实测 6.21:1，满足 WCAG AA 正文 4.5:1。 */
+  --slx-muted: #74544a;
   --slx-accent: #b4866a;
   --slx-input-bg: rgba(255, 250, 246, 0.88);
   --slx-input-bg-focus: rgba(255, 253, 250, 0.96);

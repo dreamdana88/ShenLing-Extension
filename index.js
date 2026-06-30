@@ -2,6 +2,7 @@ import {
   MODULES,
   PLUGIN_VERSION,
 } from './src/constants.js';
+import { slxIcon } from './src/icons.js';
 import {
   cloneData,
   escapeHtml,
@@ -474,7 +475,7 @@ function createModuleButton(module, settings) {
   button.title = module.title;
   button.setAttribute('aria-label', module.title);
   button.innerHTML = `
-    <span class="slx-module-icon">${module.icon}</span>
+    <span class="slx-module-icon">${slxIcon(module.icon)}</span>
     <span class="slx-module-short">${escapeHtml(module.shortTitle || module.title)}</span>
     <span class="slx-module-text">
       <b>${escapeHtml(module.title)}</b>
@@ -510,7 +511,7 @@ function renderCommunicationLogPanel(settings) {
   const failedCount = logs.filter(log => log.status === 'failure').length;
   const emptyContent = `
     <div class="slx-log-empty">
-      <div class="slx-log-empty-icon">📡</div>
+      <div class="slx-log-empty-icon">${slxIcon('log')}</div>
       <b>暂无通讯记录</b>
       <p>后续插件自己调用 API 时，请求、响应和报错会统一写到这里。</p>
     </div>
@@ -688,7 +689,7 @@ function renderModuleDetail(module, settings) {
 
   return `
     <div class="slx-detail-card">
-      <div class="slx-detail-kicker">${module.icon} ${escapeHtml(module.title)}</div>
+      <div class="slx-detail-kicker">${slxIcon(module.icon)} ${escapeHtml(module.title)}</div>
       <div class="slx-detail-title">待接入</div>
       <p>${escapeHtml(module.desc)}</p>
     </div>
@@ -725,16 +726,16 @@ function renderFloatingPanel(options = {}) {
       <div class="slx-bubbles"><span></span><span></span><span></span><span></span></div>
       <header class="slx-header">
         <div class="slx-brand">
-          <span class="slx-brand-mark">🫧</span>
+          <span class="slx-brand-mark">${slxIcon('brand')}</span>
           <span>
             <b>蜃灵助手</b>
             <small>ShenLing Extension</small>
           </span>
         </div>
         <div class="slx-header-actions">
-          <button class="slx-icon-btn slx-log-toggle${hasFailedCommunicationLog(settings) ? ' slx-log-toggle-alert' : ''}" type="button" data-slx-log-toggle title="通讯日志">📡</button>
-          <button class="slx-icon-btn" type="button" data-slx-theme title="切换主题">${settings.theme === 'dark' ? '☀️' : '🌙'}</button>
-          <button class="slx-icon-btn" type="button" data-slx-close="true" title="关闭">×</button>
+          <button class="slx-icon-btn slx-log-toggle${hasFailedCommunicationLog(settings) ? ' slx-log-toggle-alert' : ''}" type="button" data-slx-log-toggle title="通讯日志" aria-label="通讯日志">${slxIcon('log')}</button>
+          <button class="slx-icon-btn" type="button" data-slx-theme title="切换主题" aria-label="切换主题">${slxIcon(settings.theme === 'dark' ? 'sun' : 'moon')}</button>
+          <button class="slx-icon-btn" type="button" data-slx-close="true" title="关闭" aria-label="关闭面板">${slxIcon('close')}</button>
         </div>
       </header>
       <main class="slx-body">
@@ -744,7 +745,7 @@ function renderFloatingPanel(options = {}) {
         <section class="slx-detail">
           <div class="slx-detail-head">
             <div class="slx-detail-main">
-              <span class="slx-detail-icon">${activeModule.icon}</span>
+              <span class="slx-detail-icon">${slxIcon(activeModule.icon)}</span>
               <div>
                 <div class="slx-detail-name">${escapeHtml(activeModule.title)}</div>
                 <div class="slx-detail-desc">${escapeHtml(activeModule.desc)}</div>
