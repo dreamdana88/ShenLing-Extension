@@ -403,7 +403,7 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结' }
 }
 
 export function parseGrandMemoryRange(content) {
-  const match = String(content || '').match(/编号范围[:：]\s*(\d+)\s*[-~—–]\s*(\d+)/);
+  const match = String(content || '').match(/^\s*\[volume\s*:\s*(\d+)\s*[-~—–]\s*(\d+)\s*\]\s*$/im);
   if (!match) return null;
   const archiveFrom = Number(match[1]);
   const archiveTo = Number(match[2]);

@@ -84,6 +84,7 @@ function isMemoryFieldLine(line) {
 function extractLooseMemoryBlocks(content) {
   const strictBlocks = extractMemoryBlocks(content);
   if (strictBlocks.length) return strictBlocks;
+  if (/<grand_memory\b[\s\S]*?<\/grand_memory>/i.test(String(content || ''))) return [];
 
   const blocks = [];
   let current = [];
@@ -101,7 +102,16 @@ function extractLooseMemoryBlocks(content) {
     blocks.push(`<memory>\n${current.join('\n')}\n</memory>`);
   }
 
-  return blocks.filter(block => /\[number\s*:/i.test(block) || /\[plot\s*:/i.test(block));
+  return blocks.filter(block => (
+    /\[number\s*:/i.test(block) ||
+    (
+      /\[time\s*:/i.test(block) &&
+      /\[location\s*:/i.test(block) &&
+      /\[characters\s*:/i.test(block) &&
+      /\[task\s*:/i.test(block) &&
+      /\[plot\s*:/i.test(block)
+    )
+  ));
 }
 
 function ensureOriginalHtml(mesText) {
