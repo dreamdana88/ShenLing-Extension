@@ -12,11 +12,11 @@ import {
   getTavernEventsSafe,
   registerTavernEvent,
 } from '../../core/tavern-events.js';
-import { renderGrandMemoryCard } from './render-grand-memory.js?v=0.16.30';
+import { renderGrandMemoryCard } from './render-grand-memory.js?v=0.16.31';
 import { renderMemoryCard } from './render-memory.js';
 
 const MEMORY_RENDER_DELAY_MS = 220;
-const MEMORY_RENDER_FORMAT_VERSION = 4;
+const MEMORY_RENDER_FORMAT_VERSION = 5;
 const MEMORY_FIELD_KEYS = new Set([
   'number',
   'time',
@@ -401,6 +401,24 @@ function scheduleRefresh(messageId = null) {
 }
 
 function bindCardToggle(event) {
+  const sectionHead = event.target.closest?.('.slx-grand-section__head');
+  if (sectionHead) {
+    const section = sectionHead.closest('.slx-grand-section');
+    if (!section) return;
+    const collapsed = section.classList.toggle('slx-grand-section--collapsed');
+    sectionHead.setAttribute('aria-expanded', String(!collapsed));
+    return;
+  }
+
+  const eventHead = event.target.closest?.('.slx-grand-event__head');
+  if (eventHead) {
+    const grandEvent = eventHead.closest('.slx-grand-event');
+    if (!grandEvent) return;
+    const collapsed = grandEvent.classList.toggle('slx-grand-event--collapsed');
+    eventHead.setAttribute('aria-expanded', String(!collapsed));
+    return;
+  }
+
   const title = event.target.closest?.('.slx-memory-card__title');
   if (!title) return;
   const card = title.closest('.slx-memory-card');
