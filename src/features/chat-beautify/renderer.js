@@ -106,11 +106,16 @@ function extractLooseMemoryBlocks(content) {
 
 function ensureOriginalHtml(mesText) {
   if (!mesText || mesText.dataset.slxMemoryOriginalHtml !== undefined) return;
+  if (!String(mesText.innerHTML || '').trim()) return;
   mesText.dataset.slxMemoryOriginalHtml = mesText.innerHTML;
 }
 
 function restoreOriginalHtml(mesText) {
   if (!mesText || mesText.dataset.slxMemoryOriginalHtml === undefined) return;
+  if (!String(mesText.dataset.slxMemoryOriginalHtml || '').trim()) {
+    delete mesText.dataset.slxMemoryOriginalHtml;
+    return;
+  }
   mesText.innerHTML = mesText.dataset.slxMemoryOriginalHtml;
 }
 
@@ -241,9 +246,10 @@ function renderMessageElement(messageElement) {
   const mesText = messageElement.querySelector('.mes_text');
   if (!mesText) return;
 
-  const blocks = extractLooseMemoryBlocks(getMessageText(messageId));
+  const rawMessageText = getMessageText(messageId);
+  const blocks = extractLooseMemoryBlocks(rawMessageText);
   if (!blocks.length) {
-    clearMessageElement(messageElement);
+    clearMessageElement(messageElement, { restore: false });
     return;
   }
 
