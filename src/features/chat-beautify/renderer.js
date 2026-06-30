@@ -12,11 +12,11 @@ import {
   getTavernEventsSafe,
   registerTavernEvent,
 } from '../../core/tavern-events.js';
-import { renderGrandMemoryCard } from './render-grand-memory.js?v=0.16.29';
+import { renderGrandMemoryCard } from './render-grand-memory.js?v=0.16.30';
 import { renderMemoryCard } from './render-memory.js';
 
 const MEMORY_RENDER_DELAY_MS = 220;
-const MEMORY_RENDER_FORMAT_VERSION = 3;
+const MEMORY_RENDER_FORMAT_VERSION = 4;
 const MEMORY_FIELD_KEYS = new Set([
   'number',
   'time',
@@ -268,7 +268,7 @@ function createMemoryWrap(blocks, theme) {
 function extractGrandVolumeTitle(blockText) {
   const match = String(blockText || '').match(/\[\s*volume\s*:\s*([^\]\r\n]+?)\s*\]/i);
   const volume = match?.[1]?.trim();
-  return volume ? `[volume:${volume}]` : '';
+  return volume || '';
 }
 
 function repairGrandMemoryTitles(wrap, blocks) {
@@ -337,10 +337,12 @@ function renderMessageElement(messageElement) {
 
   const hash = hashMemoryBlocks(blocks);
   const theme = getMemoryTheme(beautifySettings);
+  const existingWrap = messageElement.querySelector(':scope .slx-memory-wrap');
   if (
     messageElement.dataset.slxMemoryRendered === hash
-    && messageElement.querySelector(':scope .slx-memory-wrap')
+    && existingWrap
   ) {
+    repairGrandMemoryTitles(existingWrap, blocks);
     if (!beautifySettings.showRawAlongside) {
       cleanupLeakedMemoryText(mesText);
     }

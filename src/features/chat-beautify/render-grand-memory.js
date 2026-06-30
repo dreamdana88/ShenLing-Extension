@@ -220,7 +220,7 @@ export function renderGrandMemoryCard(grandMemoryText, theme = 'light') {
   const titleContent = createElement('span', 'slx-memory-card__title-content');
   const volumeField = createElement('span', 'slx-mc-title-field slx-mc-title-field--volume');
   volumeField.append(createIcon('archive'));
-  volumeField.append(createElement('span', 'slx-mc-title-value', `[volume:${volume}]`));
+  volumeField.append(createElement('span', 'slx-mc-title-value', volume));
   titleContent.append(volumeField);
 
   const toggle = createElement('span', 'slx-mc-toggle', '▾');
