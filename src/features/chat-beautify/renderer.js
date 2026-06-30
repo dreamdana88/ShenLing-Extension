@@ -12,11 +12,11 @@ import {
   getTavernEventsSafe,
   registerTavernEvent,
 } from '../../core/tavern-events.js';
-import { renderGrandMemoryCard } from './render-grand-memory.js';
+import { renderGrandMemoryCard } from './render-grand-memory.js?v=0.16.29';
 import { renderMemoryCard } from './render-memory.js';
 
 const MEMORY_RENDER_DELAY_MS = 220;
-const MEMORY_RENDER_FORMAT_VERSION = 2;
+const MEMORY_RENDER_FORMAT_VERSION = 3;
 const MEMORY_FIELD_KEYS = new Set([
   'number',
   'time',
@@ -265,6 +265,33 @@ function createMemoryWrap(blocks, theme) {
   return wrap;
 }
 
+function extractGrandVolumeTitle(blockText) {
+  const match = String(blockText || '').match(/\[\s*volume\s*:\s*([^\]\r\n]+?)\s*\]/i);
+  const volume = match?.[1]?.trim();
+  return volume ? `[volume:${volume}]` : '';
+}
+
+function repairGrandMemoryTitles(wrap, blocks) {
+  const grandBlocks = blocks.filter(block => block.type === 'grand_memory');
+  if (!grandBlocks.length) return;
+  wrap.querySelectorAll(':scope .slx-grand-memory-card').forEach((card, index) => {
+    const title = extractGrandVolumeTitle(grandBlocks[index]?.text);
+    if (!title) return;
+    const field = card.querySelector('.slx-mc-title-field--volume')
+      || card.querySelector('.slx-memory-card__title-content');
+    if (!field) return;
+    let value = field.querySelector('.slx-mc-title-value');
+    if (!value) {
+      value = document.createElement('span');
+      value.className = 'slx-mc-title-value';
+      field.append(value);
+    }
+    if (!String(value.textContent || '').trim()) {
+      value.textContent = title;
+    }
+  });
+}
+
 function syncMemoryThemeControls(root = document, theme = getMemoryTheme()) {
   const nextTheme = theme === 'dark' ? 'light' : 'dark';
   root.querySelectorAll?.('[data-slx-memory-theme-toggle]')?.forEach(button => {
@@ -331,6 +358,7 @@ function renderMessageElement(messageElement) {
   }
 
   const wrap = createMemoryWrap(blocks, theme);
+  repairGrandMemoryTitles(wrap, blocks);
   wrap.dataset.slxMemoryHash = hash;
   mesText.append(wrap);
   messageElement.dataset.slxMemoryRendered = hash;
