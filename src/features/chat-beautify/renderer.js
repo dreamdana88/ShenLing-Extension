@@ -12,11 +12,11 @@ import {
   getTavernEventsSafe,
   registerTavernEvent,
 } from '../../core/tavern-events.js';
-import { renderGrandMemoryCard } from './render-grand-memory.js?v=0.16.31';
+import { renderGrandMemoryCard } from './render-grand-memory.js?v=0.16.34';
 import { renderMemoryCard } from './render-memory.js';
 
 const MEMORY_RENDER_DELAY_MS = 220;
-const MEMORY_RENDER_FORMAT_VERSION = 5;
+const MEMORY_RENDER_FORMAT_VERSION = 7;
 const MEMORY_FIELD_KEYS = new Set([
   'number',
   'time',
@@ -66,6 +66,28 @@ function getMemoryTheme(beautifySettings = getChatBeautifySettings()) {
 function hashMemoryBlocks(blocks) {
   const text = blocks.map(block => `${block.type}:${block.text}`).join('\n\n');
   return `${MEMORY_RENDER_FORMAT_VERSION}:${blocks.length}:${text.length}:${text.slice(0, 80)}:${text.slice(-80)}`;
+}
+
+function hashTextFingerprint(text) {
+  let hash = 2166136261;
+  String(text || '').split('').forEach(char => {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  });
+  return (hash >>> 0).toString(36);
+}
+
+function getMessageSwipeId(messageElement) {
+  return String(
+    messageElement?.getAttribute?.('swipeid')
+      ?? messageElement?.dataset?.swipeid
+      ?? '',
+  );
+}
+
+function createMessageSourceKey(messageElement, rawMessageText) {
+  const text = String(rawMessageText || '');
+  return `${getMessageSwipeId(messageElement)}:${text.length}:${hashTextFingerprint(text)}`;
 }
 
 function getMessageIdFromElement(messageElement) {
@@ -151,19 +173,10 @@ function extractBeautifyBlocks(content) {
   ];
 }
 
-function ensureOriginalHtml(mesText) {
-  if (!mesText || mesText.dataset.slxMemoryOriginalHtml !== undefined) return;
-  if (!String(mesText.innerHTML || '').trim()) return;
-  mesText.dataset.slxMemoryOriginalHtml = mesText.innerHTML;
-}
-
-function restoreOriginalHtml(mesText) {
-  if (!mesText || mesText.dataset.slxMemoryOriginalHtml === undefined) return;
-  if (!String(mesText.dataset.slxMemoryOriginalHtml || '').trim()) {
-    delete mesText.dataset.slxMemoryOriginalHtml;
-    return;
-  }
-  mesText.innerHTML = mesText.dataset.slxMemoryOriginalHtml;
+function clearLegacyOriginalHtmlSnapshot(mesText) {
+  if (!mesText) return;
+  delete mesText.dataset.slxMemoryOriginalHtml;
+  delete mesText.dataset.slxMemoryOriginalSourceKey;
 }
 
 function removeMemoryGhostElements(mesText) {
@@ -233,14 +246,11 @@ function removeExistingCards(messageElement) {
   messageElement.removeAttribute('data-slx-memory-rendered');
 }
 
-function clearMessageElement(messageElement, { restore = true } = {}) {
+function clearMessageElement(messageElement) {
   if (!messageElement) return;
   removeExistingCards(messageElement);
   const mesText = messageElement.querySelector('.mes_text');
-  if (restore && mesText?.dataset.slxMemoryOriginalHtml !== undefined) {
-    restoreOriginalHtml(mesText);
-    delete mesText.dataset.slxMemoryOriginalHtml;
-  }
+  clearLegacyOriginalHtmlSnapshot(mesText);
 }
 
 function syncMemoryWrapTheme(messageElement, theme) {
@@ -263,33 +273,6 @@ function createMemoryWrap(blocks, theme) {
       : renderMemoryCard(block.text, theme));
   });
   return wrap;
-}
-
-function extractGrandVolumeTitle(blockText) {
-  const match = String(blockText || '').match(/\[\s*volume\s*:\s*([^\]\r\n]+?)\s*\]/i);
-  const volume = match?.[1]?.trim();
-  return volume || '';
-}
-
-function repairGrandMemoryTitles(wrap, blocks) {
-  const grandBlocks = blocks.filter(block => block.type === 'grand_memory');
-  if (!grandBlocks.length) return;
-  wrap.querySelectorAll(':scope .slx-grand-memory-card').forEach((card, index) => {
-    const title = extractGrandVolumeTitle(grandBlocks[index]?.text);
-    if (!title) return;
-    const field = card.querySelector('.slx-mc-title-field--volume')
-      || card.querySelector('.slx-memory-card__title-content');
-    if (!field) return;
-    let value = field.querySelector('.slx-mc-title-value');
-    if (!value) {
-      value = document.createElement('span');
-      value.className = 'slx-mc-title-value';
-      field.append(value);
-    }
-    if (!String(value.textContent || '').trim()) {
-      value.textContent = title;
-    }
-  });
 }
 
 function syncMemoryThemeControls(root = document, theme = getMemoryTheme()) {
@@ -331,18 +314,18 @@ function renderMessageElement(messageElement) {
   const rawMessageText = getMessageText(messageId);
   const blocks = extractBeautifyBlocks(rawMessageText);
   if (!blocks.length) {
-    clearMessageElement(messageElement, { restore: false });
+    clearMessageElement(messageElement);
     return;
   }
 
-  const hash = hashMemoryBlocks(blocks);
+  const sourceKey = createMessageSourceKey(messageElement, rawMessageText);
+  const hash = `${sourceKey}:${hashMemoryBlocks(blocks)}`;
   const theme = getMemoryTheme(beautifySettings);
   const existingWrap = messageElement.querySelector(':scope .slx-memory-wrap');
   if (
     messageElement.dataset.slxMemoryRendered === hash
     && existingWrap
   ) {
-    repairGrandMemoryTitles(existingWrap, blocks);
     if (!beautifySettings.showRawAlongside) {
       cleanupLeakedMemoryText(mesText);
     }
@@ -350,8 +333,7 @@ function renderMessageElement(messageElement) {
     return;
   }
 
-  ensureOriginalHtml(mesText);
-  restoreOriginalHtml(mesText);
+  clearLegacyOriginalHtmlSnapshot(mesText);
   removeExistingCards(messageElement);
   const hadDisplaySource = hasMemoryDisplaySource(mesText);
 
@@ -360,7 +342,6 @@ function renderMessageElement(messageElement) {
   }
 
   const wrap = createMemoryWrap(blocks, theme);
-  repairGrandMemoryTitles(wrap, blocks);
   wrap.dataset.slxMemoryHash = hash;
   mesText.append(wrap);
   messageElement.dataset.slxMemoryRendered = hash;
