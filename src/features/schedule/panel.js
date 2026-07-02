@@ -1,12 +1,22 @@
 import { escapeHtml } from '../../utils/text.js';
 import {
   getChatState,
+  getGlobalSettings,
+  getScheduleSettings,
   getScheduleState,
   saveChatState,
+  saveGlobalSettings,
 } from '../../core/settings.js';
+import { runScheduleGeneration } from './workflow.js';
 
 let schedulePanelOptions = {
   refreshPanel: () => {},
+};
+
+let schedulePanelState = {
+  generationStatus: 'idle',
+  generationError: '',
+  userDirection: '',
 };
 
 export function configureSchedulePanel(options = {}) {
@@ -14,6 +24,36 @@ export function configureSchedulePanel(options = {}) {
     ...schedulePanelOptions,
     ...options,
   };
+}
+
+function refreshPanel() {
+  schedulePanelOptions.refreshPanel();
+}
+
+function notifySchedule(type, message, title = '日程表') {
+  const toast = globalThis.toastr || globalThis.parent?.toastr;
+  if (toast && typeof toast[type] === 'function') {
+    toast[type](message, title);
+    return;
+  }
+  console[type === 'error' ? 'warn' : 'info'](`[${title}] ${message}`);
+}
+
+function appendToChatInput(text) {
+  const textarea = document.querySelector('#send_textarea');
+  if (!textarea) {
+    notifySchedule('error', '没有找到聊天输入框。');
+    return false;
+  }
+  const current = String(textarea.value || '').trimEnd();
+  textarea.value = current ? `${current}\n\n${text}` : text;
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  textarea.dispatchEvent(new Event('change', { bubbles: true }));
+  requestAnimationFrame(() => {
+    textarea.focus?.();
+    textarea.setSelectionRange?.(textarea.value.length, textarea.value.length);
+  });
+  return true;
 }
 
 function normalizeOptionText(option) {
@@ -46,7 +86,7 @@ function renderScheduleDay(day, index, hasCurrent) {
         <span>${escapeHtml(day.mainOpportunity || '暂无主剧情机会')}</span>
         ${entryOptions.length ? `
           <div class="slx-schedule-chip-list">
-            ${entryOptions.map(option => `<button class="slx-schedule-chip" type="button" disabled>${escapeHtml(option)}</button>`).join('')}
+            ${entryOptions.map(option => `<button class="slx-schedule-chip" type="button" data-slx-schedule-send="${escapeHtml(option)}" title="填入聊天输入框">${escapeHtml(option)}</button>`).join('')}
           </div>
         ` : ''}
         ${movements.length ? `<small>${escapeHtml(movements.length)} 条角色动向</small>` : ''}
@@ -57,12 +97,39 @@ function renderScheduleDay(day, index, hasCurrent) {
 
 export function renderSchedulePanel(settings, chatState) {
   const schedule = getScheduleState(chatState);
+  const scheduleSettings = getScheduleSettings(settings);
   const current = schedule.current;
   const hasCurrent = Boolean(current);
-  const days = hasCurrent ? current.days : [null, null, null, null, null, null, null];
+  const days = hasCurrent && current.days.length
+    ? current.days
+    : [null, null, null, null, null, null, null];
+  const isRunning = schedulePanelState.generationStatus === 'running';
+  const disabled = isRunning ? 'disabled' : '';
 
   return `
     <div class="slx-schedule-root">
+      <div class="slx-detail-card slx-schedule-generate-card">
+        <div class="slx-detail-title">Roll 日程表</div>
+        <label class="slx-field">
+          <span>短期方向</span>
+          <textarea rows="3" data-slx-schedule-direction placeholder="可写想看的短期推进、角色动向、冲突方向；也可以留空。" ${disabled}>${escapeHtml(schedulePanelState.userDirection)}</textarea>
+        </label>
+        <div class="slx-form-grid">
+          <div class="slx-field">
+            <span>API 模式</span>
+            <div class="slx-segment-row slx-schedule-api-segment" role="group" aria-label="日程表 API 模式">
+              <button class="slx-segment-btn ${scheduleSettings.apiMode === 'secondary_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-schedule-api-mode="secondary_api" ${disabled}>副 API</button>
+              <button class="slx-segment-btn ${scheduleSettings.apiMode === 'main_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-schedule-api-mode="main_api" ${disabled}>主 API</button>
+            </div>
+          </div>
+        </div>
+        <div class="slx-schedule-btn-row">
+          <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-schedule-generate ${isRunning ? 'disabled' : ''}>${isRunning ? '生成中...' : hasCurrent ? '重 Roll 日程表' : '生成日程表'}</button>
+        </div>
+        ${schedulePanelState.generationStatus === 'success' ? '<div class="slx-field-hint">日程表已生成，并覆盖当前 Roll 结果。</div>' : ''}
+        ${schedulePanelState.generationError ? `<div class="slx-schedule-error">${escapeHtml(schedulePanelState.generationError)}</div>` : ''}
+      </div>
+
       <div class="slx-detail-card slx-schedule-hero">
         <div>
           <div class="slx-detail-title">日程表</div>
@@ -97,6 +164,47 @@ export function renderSchedulePanel(settings, chatState) {
 
 export function bindSchedulePanelEvents(panelRoot) {
   if (!panelRoot) return;
+  panelRoot.querySelector('[data-slx-schedule-direction]')?.addEventListener('change', event => {
+    schedulePanelState.userDirection = String(event.currentTarget.value || '').trim();
+  });
+
+  panelRoot.querySelectorAll('[data-slx-schedule-api-mode]').forEach(button => {
+    button.addEventListener('click', event => {
+      const settings = getGlobalSettings();
+      const scheduleSettings = getScheduleSettings(settings);
+      scheduleSettings.apiMode = event.currentTarget.dataset.slxScheduleApiMode === 'main_api' ? 'main_api' : 'secondary_api';
+      saveGlobalSettings();
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-schedule-generate]')?.addEventListener('click', async () => {
+    if (schedulePanelState.generationStatus === 'running') return;
+    schedulePanelState.userDirection = String(panelRoot.querySelector('[data-slx-schedule-direction]')?.value || '').trim();
+    schedulePanelState.generationStatus = 'running';
+    schedulePanelState.generationError = '';
+    refreshPanel();
+    try {
+      const result = await runScheduleGeneration({ userDirection: schedulePanelState.userDirection });
+      const chatState = getChatState();
+      const schedule = getScheduleState(chatState);
+      schedule.current = result.schedule;
+      schedule.lastGeneratedAt = result.schedule.updatedAt || result.schedule.createdAt || '';
+      saveChatState();
+      schedulePanelState.generationStatus = 'success';
+      if (result.replacements > 0) {
+        notifySchedule('success', `日程表生成结果已替换 ${result.replacements} 处。`, '禁词替换');
+      } else {
+        notifySchedule('success', '日程表已生成。');
+      }
+    } catch (error) {
+      schedulePanelState.generationStatus = 'failed';
+      schedulePanelState.generationError = error.message || String(error);
+      notifySchedule('error', schedulePanelState.generationError);
+    }
+    refreshPanel();
+  });
+
   panelRoot.querySelector('[data-slx-schedule-clear]')?.addEventListener('click', () => {
     if (!confirm('清空当前日程表？')) return;
     const chatState = getChatState();
@@ -104,6 +212,18 @@ export function bindSchedulePanelEvents(panelRoot) {
     schedule.current = null;
     schedule.lastGeneratedAt = '';
     saveChatState();
-    schedulePanelOptions.refreshPanel();
+    schedulePanelState.generationStatus = 'idle';
+    schedulePanelState.generationError = '';
+    refreshPanel();
+  });
+
+  panelRoot.querySelectorAll('[data-slx-schedule-send]').forEach(button => {
+    button.addEventListener('click', () => {
+      const text = String(button.dataset.slxScheduleSend || '').trim();
+      if (!text) return;
+      if (appendToChatInput(text)) {
+        notifySchedule('success', '已填入聊天输入框。');
+      }
+    });
   });
 }

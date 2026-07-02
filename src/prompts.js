@@ -234,6 +234,80 @@ ${directionSection}
 - conditions 的 id 按 C1、C2 顺序编号。
 - 末章 exitChapterId 填空字符串。`;
 }
+
+export function buildSchedulePrompt({
+  userDirection,
+  contextMaterial,
+  outlineMaterial,
+}) {
+  const directionSection = String(userDirection || "").trim()
+    ? `\n【用户期望的短期推进方向】\n${String(userDirection).trim()}\n生成日程表时必须参考，但不要替 {{user}}决定行动。\n`
+    : "";
+  const outlineSection = String(outlineMaterial || "").trim()
+    ? `\n【当前剧情大纲参考】\n${String(outlineMaterial).trim()}\n`
+    : "";
+  return `当前蜃灵已进入日程表编织状态。
+
+请根据下方梦境上下文素材，为当前聊天生成一份「七日剧情机会表」。它不是生活作息表，而是未来七天可用的短期剧情菜单。
+
+以下是本次可参考的梦境上下文素材：
+
+${contextMaterial || "（未读取到额外上下文）"}
+${outlineSection}${directionSection}
+在剧情中 {{user}} 将作为用户扮演的角色。
+
+【日程表定位】
+- 日程表只提供剧情机会、介入入口与场外角色动向，不强制接管正文。
+- 每一天只有一个最值得推进的主剧情机会。
+- 介入入口是给用户点击填入输入框的建议，不表示 {{user}} 已经采取行动。
+- 角色动向是场外参考，也可作为后续平行事件种子。
+
+【叙事约束】
+- 禁止替 {{user}}决定行动、台词、心理、选择、成长或情绪反应。
+- 涉及 {{user}} 时，只描述摆在其面前的机会、局势、压力或可介入方向。
+- 角色动向优先使用不在场角色，不要让所有事件都围着 {{user}} 原地发生。
+- 不让角色无视距离、时间、作息或当前处境凭空出现。
+- 私密场景或性爱事件中，角色动向不得打断、偷窥、敲门、打电话或制造潜在干扰。
+- 已发生的剧情不要重新编排成未来日程，应从当前状态自然向后延伸。
+
+【输出格式】
+必须只输出合法 JSON，不要输出 Markdown 代码块，不要输出解释文字：
+{
+  "title": "七日剧情机会表",
+  "days": [
+    {
+      "day": 1,
+      "label": "第一天",
+      "theme": "当天剧情主题",
+      "mainOpportunity": "当天最值得推进的主剧情机会",
+      "entryOptions": [
+        "用户可点击填入输入框的介入方式"
+      ],
+      "characterMovements": [
+        {
+          "character": "角色名",
+          "location": "地点",
+          "summary": "场外角色动向",
+          "startsAt": "开始时间",
+          "durationMinutes": 120,
+          "remainingMinutes": 120,
+          "status": "pending",
+          "mainlineImpact": "如果用户不介入，可能产生的影响"
+        }
+      ],
+      "note": "当天补充提醒，可为空"
+    }
+  ]
+}
+
+字段规则：
+- days 必须正好 7 天，day 从 1 到 7。
+- 每天 entryOptions 输出 2 到 3 条。
+- 每天 characterMovements 输出 0 到 3 条。
+- status 只能是 pending / active / engaged / done 之一，默认 pending。
+- durationMinutes 与 remainingMinutes 必须是数字；不确定时写 0。
+- 不要输出空 day，不要输出多余字段。`;
+}
 export const DEFAULT_MEMORY_PROMPT_TEMPLATE = [
   "##浓缩梦境",
   "",

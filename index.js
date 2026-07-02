@@ -100,6 +100,9 @@ import {
   renderSchedulePanel,
 } from './src/features/schedule/panel.js';
 import {
+  configureScheduleWorkflow,
+} from './src/features/schedule/workflow.js';
+import {
   configurePlotOutlineWorkflow,
   registerPlotOutlineEvents,
 } from './src/features/plot-outline/workflow.js';
@@ -1185,6 +1188,11 @@ function init() {
   });
   configureSchedulePanel({
     refreshPanel: renderFloatingPanel,
+  });
+  configureScheduleWorkflow({
+    addCommunicationLog,
+    getActiveApiProfile,
+    getGenerateRawFunction,
   });
   configurePlotOutlineWorkflow({
     addCommunicationLog,

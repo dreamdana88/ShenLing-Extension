@@ -89,6 +89,9 @@ export const defaultGlobalSettings = Object.freeze({
       apiMode: 'secondary_api',
       chapterCount: 'auto',
     },
+    schedule: {
+      apiMode: 'secondary_api',
+    },
   },
   communicationLog: {
     maxEntries: 10,
@@ -414,6 +417,21 @@ export function getPlotOutlineSettings(settings = getGlobalSettings()) {
     plotOutline.chapterCount = 'auto';
   }
   return plotOutline;
+}
+
+export function getScheduleSettings(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.modules)) {
+    settings.modules = {};
+  }
+  settings.modules.schedule = mergeDefaults(
+    settings.modules.schedule,
+    cloneData(defaultGlobalSettings.modules.schedule),
+  );
+  const schedule = settings.modules.schedule;
+  if (!['secondary_api', 'main_api'].includes(schedule.apiMode)) {
+    schedule.apiMode = 'secondary_api';
+  }
+  return schedule;
 }
 
 export function getPlotOutlineState(chatState = getChatState()) {

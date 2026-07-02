@@ -7008,6 +7008,30 @@ button.slx-outline-check-item:active {
   line-height: 1.1;
 }
 
+.slx-schedule-generate-card {
+  gap: 10px;
+}
+
+.slx-schedule-api-segment {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.slx-schedule-api-segment .slx-segment-btn {
+  min-width: 72px;
+}
+
+.slx-schedule-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.slx-schedule-error {
+  font-size: 12px;
+  color: #c25f5f;
+}
+
 .slx-schedule-card-head {
   display: flex;
   justify-content: space-between;
@@ -7084,6 +7108,14 @@ button.slx-outline-check-item:active {
   padding: 3px 8px;
   font-size: 11px;
   line-height: 1.4;
+  cursor: pointer;
+  text-align: left;
+}
+
+.slx-schedule-chip:hover {
+  border-color: var(--slx-border);
+  color: var(--slx-text);
+  background: var(--slx-bg-card);
 }
 
 @media (max-width: 760px) {
