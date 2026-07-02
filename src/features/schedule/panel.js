@@ -62,14 +62,62 @@ function normalizeOptionText(option) {
   return '';
 }
 
+function normalizeMovement(movement) {
+  const source = movement && typeof movement === 'object' ? movement : {};
+  return {
+    character: String(source.character || '未命名角色').trim(),
+    location: String(source.location || '').trim(),
+    summary: String(source.summary || '').trim(),
+    startsAt: String(source.startsAt || '').trim(),
+    durationMinutes: Number.isFinite(Number(source.durationMinutes)) ? Number(source.durationMinutes) : 0,
+    remainingMinutes: Number.isFinite(Number(source.remainingMinutes)) ? Number(source.remainingMinutes) : 0,
+    status: String(source.status || 'pending').trim(),
+    mainlineImpact: String(source.mainlineImpact || '').trim(),
+  };
+}
+
+function renderScheduleMovement(movement) {
+  const item = normalizeMovement(movement);
+  const statusText = {
+    pending: '待发生',
+    active: '进行中',
+    engaged: '已介入',
+    done: '已结束',
+  }[item.status] || item.status || '待发生';
+  const metaItems = [
+    item.startsAt,
+    item.durationMinutes > 0 ? `${item.durationMinutes} 分钟` : '',
+    item.remainingMinutes > 0 ? `剩余 ${item.remainingMinutes} 分钟` : '',
+    statusText,
+  ].filter(Boolean);
+
+  return `
+    <div class="slx-schedule-movement">
+      <div class="slx-schedule-movement-head">
+        <strong>${escapeHtml(item.character)}</strong>
+        ${item.location ? `<span>${escapeHtml(item.location)}</span>` : ''}
+      </div>
+      ${item.summary ? `<p>${escapeHtml(item.summary)}</p>` : ''}
+      ${metaItems.length ? `<div class="slx-schedule-movement-meta">${metaItems.map(meta => `<span>${escapeHtml(meta)}</span>`).join('')}</div>` : ''}
+      ${item.mainlineImpact ? `<div class="slx-schedule-impact">${escapeHtml(item.mainlineImpact)}</div>` : ''}
+    </div>
+  `;
+}
+
 function renderScheduleDay(day, index, hasCurrent) {
   if (!hasCurrent) {
     return `
       <div class="slx-schedule-day-card">
-        <div class="slx-schedule-day-index">D${index + 1}</div>
-        <div class="slx-schedule-day-body">
-          <b>剧情机会待生成</b>
-          <span>主机会、介入入口与角色动向会在这里展开。</span>
+        <div class="slx-schedule-day-head">
+          <div class="slx-schedule-day-index">D${index + 1}</div>
+          <div>
+            <b>剧情机会待生成</b>
+            <span>${escapeHtml(`第${index + 1}天`)}</span>
+          </div>
+        </div>
+        <div class="slx-schedule-section">
+          <div class="slx-schedule-section-label">主机会</div>
+          <p>主机会、介入入口与角色动向会在这里展开。</p>
         </div>
       </div>
     `;
@@ -80,17 +128,39 @@ function renderScheduleDay(day, index, hasCurrent) {
   const movements = Array.isArray(day.characterMovements) ? day.characterMovements : [];
   return `
     <div class="slx-schedule-day-card">
-      <div class="slx-schedule-day-index">D${escapeHtml(day.day || index + 1)}</div>
-      <div class="slx-schedule-day-body">
-        <b>${escapeHtml(day.theme || day.label || `第${index + 1}天`)}</b>
-        <span>${escapeHtml(day.mainOpportunity || '暂无主剧情机会')}</span>
-        ${entryOptions.length ? `
+      <div class="slx-schedule-day-head">
+        <div class="slx-schedule-day-index">D${escapeHtml(day.day || index + 1)}</div>
+        <div>
+          <b>${escapeHtml(day.theme || day.label || `第${index + 1}天`)}</b>
+          <span>${escapeHtml(day.label || `第${index + 1}天`)}</span>
+        </div>
+      </div>
+      <div class="slx-schedule-section slx-schedule-main">
+        <div class="slx-schedule-section-label">主机会</div>
+        <p>${escapeHtml(day.mainOpportunity || '暂无主剧情机会')}</p>
+      </div>
+      ${entryOptions.length ? `
+        <div class="slx-schedule-section">
+          <div class="slx-schedule-section-label">可介入</div>
           <div class="slx-schedule-chip-list">
             ${entryOptions.map(option => `<button class="slx-schedule-chip" type="button" data-slx-schedule-send="${escapeHtml(option)}" title="填入聊天输入框">${escapeHtml(option)}</button>`).join('')}
           </div>
-        ` : ''}
-        ${movements.length ? `<small>${escapeHtml(movements.length)} 条角色动向</small>` : ''}
-      </div>
+        </div>
+      ` : ''}
+      ${movements.length ? `
+        <div class="slx-schedule-section">
+          <div class="slx-schedule-section-label">角色动向</div>
+          <div class="slx-schedule-movement-list">
+            ${movements.map(renderScheduleMovement).join('')}
+          </div>
+        </div>
+      ` : ''}
+      ${day.note ? `
+        <div class="slx-schedule-section slx-schedule-note">
+          <div class="slx-schedule-section-label">备注</div>
+          <p>${escapeHtml(day.note)}</p>
+        </div>
+      ` : ''}
     </div>
   `;
 }

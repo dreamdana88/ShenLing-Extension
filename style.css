@@ -7041,27 +7041,33 @@ button.slx-outline-check-item:active {
 
 .slx-schedule-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: 1fr;
+  gap: 10px;
   margin-top: 12px;
 }
 
 .slx-schedule-day-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(118, 159, 180, 0.1), transparent 52%),
+    var(--slx-bg-card);
+  padding: 11px;
+}
+
+.slx-schedule-day-head {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
   gap: 9px;
-  align-items: start;
-  border: 1px solid var(--slx-border-dim);
-  border-radius: 10px;
-  background:
-    linear-gradient(135deg, rgba(118, 159, 180, 0.12), transparent 58%),
-    var(--slx-bg-card);
-  padding: 10px;
 }
 
 .slx-schedule-day-index {
   min-width: 34px;
-  border-radius: 8px;
+  border-radius: 7px;
   background: rgba(118, 159, 180, 0.14);
   color: var(--slx-accent);
   font-size: 12px;
@@ -7070,27 +7076,46 @@ button.slx-outline-check-item:active {
   text-align: center;
 }
 
-.slx-schedule-day-body {
+.slx-schedule-day-head b {
+  display: block;
+  color: var(--slx-text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.slx-schedule-day-head span {
+  display: block;
+  color: var(--slx-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  margin-top: 1px;
+}
+
+.slx-schedule-section {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 6px;
 }
 
-.slx-schedule-day-body b {
-  color: var(--slx-text);
+.slx-schedule-section-label {
+  color: var(--slx-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.slx-schedule-section p {
+  margin: 0;
+  color: var(--slx-muted);
   font-size: 12px;
+  line-height: 1.55;
 }
 
-.slx-schedule-day-body span {
-  color: var(--slx-muted);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.slx-schedule-day-body small {
-  color: var(--slx-muted);
-  font-size: 11px;
+.slx-schedule-main {
+  border-radius: 8px;
+  background: rgba(118, 159, 180, 0.08);
+  padding: 8px 10px;
 }
 
 .slx-schedule-chip-list {
@@ -7102,12 +7127,12 @@ button.slx-outline-check-item:active {
 
 .slx-schedule-chip {
   border: 1px solid var(--slx-border-dim);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--slx-bg-soft);
   color: var(--slx-muted);
-  padding: 3px 8px;
+  padding: 5px 8px;
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.45;
   cursor: pointer;
   text-align: left;
 }
@@ -7116,6 +7141,69 @@ button.slx-outline-check-item:active {
   border-color: var(--slx-border);
   color: var(--slx-text);
   background: var(--slx-bg-card);
+}
+
+.slx-schedule-movement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.slx-schedule-movement {
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 8px;
+  background: var(--slx-bg-soft);
+  padding: 8px 9px;
+}
+
+.slx-schedule-movement-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.slx-schedule-movement-head strong {
+  color: var(--slx-text);
+  font-size: 12px;
+}
+
+.slx-schedule-movement-head span,
+.slx-schedule-movement-meta span {
+  border-radius: 999px;
+  background: rgba(118, 159, 180, 0.12);
+  color: var(--slx-muted);
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.slx-schedule-movement p {
+  margin: 5px 0 0;
+  color: var(--slx-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.slx-schedule-movement-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.slx-schedule-impact {
+  margin-top: 6px;
+  border-left: 2px solid rgba(118, 159, 180, 0.36);
+  padding-left: 7px;
+  color: var(--slx-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.slx-schedule-note {
+  border-top: 1px solid var(--slx-border-dim);
+  padding-top: 8px;
 }
 
 @media (max-width: 760px) {
@@ -7133,10 +7221,6 @@ button.slx-outline-check-item:active {
 
   .slx-schedule-stats span {
     flex: 1 1 0;
-  }
-
-  .slx-schedule-grid {
-    grid-template-columns: 1fr;
   }
 }
 
