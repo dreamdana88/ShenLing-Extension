@@ -7008,6 +7008,13 @@ button.slx-outline-check-item:active {
   line-height: 1.1;
 }
 
+.slx-schedule-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
 .slx-schedule-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -7057,9 +7064,35 @@ button.slx-outline-check-item:active {
   line-height: 1.45;
 }
 
+.slx-schedule-day-body small {
+  color: var(--slx-muted);
+  font-size: 11px;
+}
+
+.slx-schedule-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.slx-schedule-chip {
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 999px;
+  background: var(--slx-bg-soft);
+  color: var(--slx-muted);
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 @media (max-width: 760px) {
   .slx-schedule-hero {
     grid-template-columns: 1fr;
+  }
+
+  .slx-schedule-card-head {
+    flex-direction: column;
   }
 
   .slx-schedule-stats {
