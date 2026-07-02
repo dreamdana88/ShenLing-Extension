@@ -104,19 +104,21 @@ function normalizeMovement(movement) {
   };
 }
 
+const MOVEMENT_STATUS_SET = new Set(['pending', 'active', 'engaged', 'done']);
+
 function renderScheduleMovement(movement, dayIndex, movementIndex) {
   const item = normalizeMovement(movement);
+  const safeStatus = MOVEMENT_STATUS_SET.has(item.status) ? item.status : 'pending';
   const statusText = {
     pending: '待发生',
     active: '进行中',
     engaged: '已介入',
     done: '已结束',
-  }[item.status] || item.status || '待发生';
+  }[safeStatus];
   const metaItems = [
     item.startsAt,
     item.durationMinutes > 0 ? `${item.durationMinutes} 分钟` : '',
     item.remainingMinutes > 0 ? `剩余 ${item.remainingMinutes} 分钟` : '',
-    statusText,
   ].filter(Boolean);
 
   return `
@@ -124,6 +126,7 @@ function renderScheduleMovement(movement, dayIndex, movementIndex) {
       <div class="slx-schedule-movement-head">
         <strong>${escapeHtml(item.character)}</strong>
         ${item.location ? `<span>${escapeHtml(item.location)}</span>` : ''}
+        <span class="slx-schedule-status slx-schedule-status-${safeStatus}">${statusText}</span>
       </div>
       ${item.summary ? `<p>${escapeHtml(item.summary)}</p>` : ''}
       ${metaItems.length ? `<div class="slx-schedule-movement-meta">${metaItems.map(meta => `<span>${escapeHtml(meta)}</span>`).join('')}</div>` : ''}
@@ -133,24 +136,16 @@ function renderScheduleMovement(movement, dayIndex, movementIndex) {
   `;
 }
 
-function renderScheduleDay(day, index, hasCurrent) {
-  if (!hasCurrent) {
-    return `
-      <div class="slx-schedule-day-card">
-        <div class="slx-schedule-day-head">
-          <div class="slx-schedule-day-index">D${index + 1}</div>
-          <div>
-            <b>剧情机会待生成</b>
-            <span>${escapeHtml(`第${index + 1}天`)}</span>
-          </div>
-        </div>
-        <div class="slx-schedule-section">
-          <div class="slx-schedule-section-label">主机会</div>
-          <p>主机会、介入入口与角色动向会在这里展开。</p>
-        </div>
-      </div>
-    `;
-  }
+function renderScheduleEmpty() {
+  return `
+    <div class="slx-schedule-empty">
+      <div class="slx-schedule-empty-mark">七日剧情菜单</div>
+      <p>还没有日程表。写下短期方向（也可以留空），点击「生成日程表」，未来七天的剧情机会、介入入口与角色动向会在这里展开。</p>
+    </div>
+  `;
+}
+
+function renderScheduleDay(day, index) {
   const entryOptions = (Array.isArray(day.entryOptions) ? day.entryOptions : [])
     .map(normalizeOptionText)
     .filter(Boolean);
@@ -158,7 +153,7 @@ function renderScheduleDay(day, index, hasCurrent) {
   return `
     <div class="slx-schedule-day-card">
       <div class="slx-schedule-day-head">
-        <div class="slx-schedule-day-index">D${escapeHtml(day.day || index + 1)}</div>
+        <div class="slx-schedule-day-index"><i>DAY</i><b>${escapeHtml(day.day || index + 1)}</b></div>
         <div>
           <b>${escapeHtml(day.theme || day.label || `第${index + 1}天`)}</b>
           <span>${escapeHtml(day.label || `第${index + 1}天`)}</span>
@@ -217,10 +212,7 @@ export function renderSchedulePanel(settings, chatState) {
   const schedule = getScheduleState(chatState);
   const scheduleSettings = getScheduleSettings(settings);
   const current = schedule.current;
-  const hasCurrent = Boolean(current);
-  const days = hasCurrent && current.days.length
-    ? current.days
-    : [null, null, null, null, null, null, null];
+  const hasCurrent = Boolean(current) && Array.isArray(current.days) && current.days.length > 0;
   const isRunning = schedulePanelState.generationStatus === 'running';
   const disabled = isRunning ? 'disabled' : '';
 
@@ -256,9 +248,11 @@ export function renderSchedulePanel(settings, chatState) {
           </div>
           ${hasCurrent ? '<button class="slx-soft-btn" type="button" data-slx-schedule-clear>清空</button>' : ''}
         </div>
-        <div class="slx-schedule-grid">
-          ${days.map((day, index) => renderScheduleDay(day || {}, index, hasCurrent)).join('')}
-        </div>
+        ${hasCurrent ? `
+          <div class="slx-schedule-grid">
+            ${current.days.map((day, index) => renderScheduleDay(day, index)).join('')}
+          </div>
+        ` : renderScheduleEmpty()}
       </div>
       ${renderScheduleClearConfirm()}
     </div>

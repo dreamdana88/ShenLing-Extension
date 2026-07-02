@@ -278,6 +278,14 @@ body.slx-panel-open-lock {
   --slx-input-text: rgba(80, 52, 44, 0.96);
   --slx-input-placeholder: rgba(128, 95, 86, 0.56);
   --slx-input-disabled: rgba(235, 220, 212, 0.48);
+  /* 语义令牌：accent 的 RGB 分量供 rgba() 混色使用；bg-soft/danger 补齐避免各模块靠 fallback。 */
+  --slx-accent-rgb: 180, 134, 106;
+  --slx-accent-text: #8a5a40;
+  --slx-bg-soft: rgba(186, 148, 133, 0.08);
+  --slx-danger: #b8503f;
+  --slx-danger-soft: rgba(184, 80, 63, 0.1);
+  --slx-status-live: #c8794a;
+  --slx-status-done: #9a8a80;
   position: relative;
   z-index: 1;
   box-sizing: border-box;
@@ -312,6 +320,13 @@ body.slx-panel-open-lock {
   --slx-input-text: rgba(222, 244, 250, 0.96);
   --slx-input-placeholder: rgba(150, 198, 220, 0.52);
   --slx-input-disabled: rgba(12, 31, 50, 0.46);
+  --slx-accent-rgb: 100, 180, 210;
+  --slx-accent-text: #7cc4de;
+  --slx-bg-soft: rgba(100, 180, 210, 0.08);
+  --slx-danger: #e5847a;
+  --slx-danger-soft: rgba(229, 132, 122, 0.12);
+  --slx-status-live: #64b4d2;
+  --slx-status-done: #7b93a0;
   color-scheme: dark;
 }
 
@@ -6997,8 +7012,13 @@ button.slx-outline-check-item:active {
 }
 
 .slx-schedule-error {
+  border-left: 3px solid var(--slx-danger);
+  border-radius: 0 8px 8px 0;
+  background: var(--slx-danger-soft);
+  padding: 7px 10px;
+  color: var(--slx-danger);
   font-size: 12px;
-  color: #c25f5f;
+  line-height: 1.5;
 }
 
 .slx-schedule-card-head {
@@ -7011,48 +7031,98 @@ button.slx-outline-check-item:active {
 .slx-schedule-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
+  gap: 12px;
   margin-top: 12px;
 }
+
+/* —— 空状态 —— */
+
+.slx-schedule-empty {
+  margin-top: 12px;
+  border: 1px dashed var(--slx-border);
+  border-radius: 12px;
+  padding: 30px 18px;
+  text-align: center;
+}
+
+.slx-schedule-empty-mark {
+  display: inline-block;
+  color: var(--slx-accent-text);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  margin-left: 0.3em; /* 视觉抵消末字符字距 */
+  margin-bottom: 8px;
+}
+
+.slx-schedule-empty p {
+  margin: 0 auto;
+  max-width: 320px;
+  color: var(--slx-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* —— 日卡：一天一页 —— */
 
 .slx-schedule-day-card {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
   border: 1px solid var(--slx-border-dim);
-  border-radius: 8px;
+  border-radius: 12px;
   background:
-    linear-gradient(135deg, rgba(118, 159, 180, 0.1), transparent 52%),
-    var(--slx-bg-card);
-  padding: 11px;
+    linear-gradient(165deg, rgba(var(--slx-accent-rgb), 0.06), rgba(var(--slx-accent-rgb), 0) 46%),
+    var(--slx-input-bg);
+  padding: 12px;
 }
 
 .slx-schedule-day-head {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
 }
 
+/* 日历签：DAY + 数字 */
 .slx-schedule-day-index {
-  min-width: 34px;
-  border-radius: 7px;
-  background: rgba(118, 159, 180, 0.14);
-  color: var(--slx-accent);
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 24px;
-  text-align: center;
+  width: 42px;
+  min-height: 42px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 10px;
+  background: rgba(var(--slx-accent-rgb), 0.13);
+  color: var(--slx-accent-text);
 }
 
-.slx-schedule-day-head b {
+.slx-schedule-day-index i {
+  font-style: normal;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  margin-left: 0.24em;
+  opacity: 0.75;
+  line-height: 1;
+}
+
+.slx-schedule-day-index b {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.slx-schedule-day-head > div > b {
   display: block;
   color: var(--slx-text);
   font-size: 13px;
+  font-weight: 700;
   line-height: 1.35;
 }
 
-.slx-schedule-day-head span {
+.slx-schedule-day-head > div > span {
   display: block;
   color: var(--slx-muted);
   font-size: 11px;
@@ -7069,73 +7139,129 @@ button.slx-outline-check-item:active {
 
 .slx-schedule-section-label {
   color: var(--slx-muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  opacity: 0.85;
 }
 
 .slx-schedule-section p {
   margin: 0;
   color: var(--slx-muted);
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
+/* 主机会：当天的核心，accent 竖线 + 正文用主文字色 */
 .slx-schedule-main {
-  border-radius: 8px;
-  background: rgba(118, 159, 180, 0.08);
-  padding: 8px 10px;
+  border-left: 3px solid var(--slx-accent);
+  border-radius: 4px 10px 10px 4px;
+  background: rgba(var(--slx-accent-rgb), 0.07);
+  padding: 9px 11px;
 }
 
+.slx-schedule-main .slx-schedule-section-label {
+  color: var(--slx-accent-text);
+  opacity: 1;
+}
+
+.slx-schedule-main p {
+  color: var(--slx-text);
+  font-size: 12.5px;
+}
+
+/* 介入入口：竖排菜单项，前缀 › */
 .slx-schedule-chip-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 4px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .slx-schedule-chip {
-  border: 1px solid var(--slx-border-dim);
-  border-radius: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 9px;
   background: var(--slx-bg-soft);
-  color: var(--slx-muted);
-  padding: 5px 8px;
-  font-size: 11px;
-  line-height: 1.45;
-  cursor: pointer;
+  color: var(--slx-text);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
   text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.slx-schedule-chip::before {
+  content: '›';
+  flex-shrink: 0;
+  color: var(--slx-accent-text);
+  font-weight: 800;
 }
 
 .slx-schedule-chip:hover {
-  border-color: var(--slx-border);
-  color: var(--slx-text);
-  background: var(--slx-bg-card);
+  border-color: rgba(var(--slx-accent-rgb), 0.4);
+  background: rgba(var(--slx-accent-rgb), 0.1);
 }
 
+.slx-schedule-chip:active {
+  transform: scale(0.985);
+}
+
+/* 载入按钮：单条为幽灵文字钮，整天为 accent 药丸钮 */
 .slx-schedule-load-btn {
   align-self: flex-start;
-  margin-top: 6px;
-  border: 1px solid var(--slx-accent, var(--slx-border));
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  border: 0;
   border-radius: 8px;
-  background: rgba(118, 159, 180, 0.12);
-  color: var(--slx-text);
-  padding: 4px 10px;
+  background: transparent;
+  color: var(--slx-accent-text);
+  padding: 4px 8px;
+  margin-left: -8px;
   font-size: 11px;
-  line-height: 1.45;
+  font-weight: 700;
+  line-height: 1.4;
   cursor: pointer;
-  text-align: left;
-  white-space: normal;
+  transition: background 0.16s ease, transform 0.16s ease;
+}
+
+.slx-schedule-load-btn::before {
+  content: '↳';
+  font-weight: 800;
 }
 
 .slx-schedule-load-btn:hover {
-  background: rgba(118, 159, 180, 0.22);
+  background: rgba(var(--slx-accent-rgb), 0.12);
+}
+
+.slx-schedule-load-btn:active {
+  transform: scale(0.96);
 }
 
 .slx-schedule-load-day-btn {
-  margin-top: 0;
-  margin-left: auto;
+  margin-left: 0;
+  border-radius: 999px;
+  background: rgba(var(--slx-accent-rgb), 0.14);
+  padding: 5px 12px;
   flex-shrink: 0;
+  white-space: nowrap;
 }
+
+.slx-schedule-load-day-btn::before {
+  content: none;
+}
+
+.slx-schedule-load-day-btn:hover {
+  background: rgba(var(--slx-accent-rgb), 0.24);
+}
+
+/* —— 角色动向 —— */
 
 .slx-schedule-movement-list {
   display: flex;
@@ -7145,9 +7271,9 @@ button.slx-outline-check-item:active {
 
 .slx-schedule-movement {
   border: 1px solid var(--slx-border-dim);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--slx-bg-soft);
-  padding: 8px 9px;
+  padding: 9px 10px;
 }
 
 .slx-schedule-movement-head {
@@ -7162,21 +7288,66 @@ button.slx-outline-check-item:active {
   font-size: 12px;
 }
 
-.slx-schedule-movement-head span,
-.slx-schedule-movement-meta span {
-  border-radius: 999px;
-  background: rgba(118, 159, 180, 0.12);
+.slx-schedule-movement-head > span:not(.slx-schedule-status) {
   color: var(--slx-muted);
-  padding: 2px 6px;
   font-size: 10px;
   line-height: 1.4;
+}
+
+.slx-schedule-movement-head > span:not(.slx-schedule-status)::before {
+  content: '· ';
+  opacity: 0.6;
+}
+
+/* 状态点：颜色语义化 + 文字，不只靠颜色 */
+.slx-schedule-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--slx-muted);
+}
+
+.slx-schedule-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.slx-schedule-status-active {
+  color: var(--slx-status-live);
+  font-weight: 700;
+}
+
+.slx-schedule-status-engaged {
+  color: var(--slx-accent-text);
+}
+
+.slx-schedule-status-done {
+  color: var(--slx-status-done);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .slx-schedule-status-active::before {
+    animation: slx-schedule-pulse 2.2s ease-in-out infinite;
+  }
+}
+
+@keyframes slx-schedule-pulse {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.3; }
 }
 
 .slx-schedule-movement p {
   margin: 5px 0 0;
   color: var(--slx-muted);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .slx-schedule-movement-meta {
@@ -7186,13 +7357,22 @@ button.slx-outline-check-item:active {
   margin-top: 6px;
 }
 
+.slx-schedule-movement-meta span {
+  border-radius: 999px;
+  background: rgba(var(--slx-accent-rgb), 0.09);
+  color: var(--slx-muted);
+  padding: 2px 7px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .slx-schedule-impact {
   margin-top: 6px;
-  border-left: 2px solid rgba(118, 159, 180, 0.36);
-  padding-left: 7px;
+  border-left: 2px solid rgba(var(--slx-accent-rgb), 0.4);
+  padding-left: 8px;
   color: var(--slx-muted);
   font-size: 11px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 .slx-schedule-note {
@@ -7200,20 +7380,22 @@ button.slx-outline-check-item:active {
   padding-top: 8px;
 }
 
+/* —— 清空确认 —— */
+
 .slx-schedule-confirm-overlay {
   position: absolute;
   inset: 0;
   z-index: 30;
   display: grid;
-  align-items: start;
+  align-items: center;
   justify-items: center;
   padding:
     max(16px, env(safe-area-inset-top))
     max(14px, env(safe-area-inset-right))
     max(16px, env(safe-area-inset-bottom))
     max(14px, env(safe-area-inset-left));
-  background: rgba(28, 28, 34, 0.18);
-  backdrop-filter: blur(2px);
+  background: rgba(15, 15, 20, 0.44);
+  backdrop-filter: blur(3px);
 }
 
 .slx-schedule-confirm-card {
@@ -7221,10 +7403,10 @@ button.slx-outline-check-item:active {
   max-height: 100%;
   overflow: auto;
   border: 1px solid var(--slx-border);
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--slx-bg-panel);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.2);
-  padding: 14px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
+  padding: 16px;
 }
 
 .slx-schedule-confirm-card p {
@@ -7242,17 +7424,31 @@ button.slx-outline-check-item:active {
 }
 
 .slx-schedule-danger-btn {
-  color: var(--slx-danger, #c0392b) !important;
+  color: var(--slx-danger) !important;
 }
 
 .slx-schedule-danger-btn:hover {
-  border-color: rgba(192, 57, 43, 0.36);
-  background: rgba(192, 57, 43, 0.08);
+  border-color: var(--slx-danger);
+  background: var(--slx-danger-soft);
 }
 
 @media (max-width: 760px) {
   .slx-schedule-card-head {
     flex-direction: column;
+  }
+
+  /* 触控密度：入口/载入钮加高，避免误触 */
+  .slx-schedule-chip {
+    min-height: 38px;
+    gap: 8px;
+  }
+
+  .slx-schedule-chip-list {
+    gap: 8px;
+  }
+
+  .slx-schedule-load-btn {
+    min-height: 34px;
   }
 }
 
