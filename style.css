@@ -6996,17 +6996,18 @@ button.slx-outline-check-item:active {
   gap: 10px;
 }
 
-.slx-schedule-api-row {
+.slx-schedule-label-row {
   display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 12px;
+  margin-bottom: 6px;
 }
 
-.slx-schedule-api-label {
+.slx-schedule-label-row > span {
   color: var(--slx-label);
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
-  flex-shrink: 0;
 }
 
 .slx-schedule-api-toggle {
@@ -7047,13 +7048,6 @@ button.slx-outline-check-item:active {
 .slx-schedule-api-toggle button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-@media (max-width: 580px) {
-  .slx-schedule-api-row {
-    flex-direction: column;
-    align-items: flex-start;
-  }
 }
 
 .slx-schedule-api-segment .slx-segment-btn {
