@@ -1,4 +1,4 @@
-import { escapeHtml } from '../../utils.js';
+import { escapeHtml } from '../../utils/text.js';
 
 let schedulePanelOptions = {
   refreshPanel: () => {},
