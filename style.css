@@ -6970,6 +6970,111 @@ button.slx-outline-check-item:active {
   color: #4e8a52;
 }
 
+.slx-schedule-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.slx-schedule-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.slx-schedule-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.slx-schedule-stats span {
+  min-width: 68px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: var(--slx-bg-soft);
+  color: var(--slx-muted);
+  padding: 7px 9px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.slx-schedule-stats b {
+  display: block;
+  color: var(--slx-text);
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.slx-schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.slx-schedule-day-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(118, 159, 180, 0.12), transparent 58%),
+    var(--slx-bg-card);
+  padding: 10px;
+}
+
+.slx-schedule-day-index {
+  min-width: 34px;
+  border-radius: 8px;
+  background: rgba(118, 159, 180, 0.14);
+  color: var(--slx-accent);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 24px;
+  text-align: center;
+}
+
+.slx-schedule-day-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.slx-schedule-day-body b {
+  color: var(--slx-text);
+  font-size: 12px;
+}
+
+.slx-schedule-day-body span {
+  color: var(--slx-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .slx-schedule-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .slx-schedule-stats {
+    justify-content: stretch;
+  }
+
+  .slx-schedule-stats span {
+    flex: 1 1 0;
+  }
+
+  .slx-schedule-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ==========================================================
    Chat Beautify / Memory Card
    ========================================================== */

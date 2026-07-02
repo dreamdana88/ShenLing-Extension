@@ -95,6 +95,11 @@ import {
   renderPlotOutlinePanel,
 } from './src/features/plot-outline/panel.js';
 import {
+  bindSchedulePanelEvents,
+  configureSchedulePanel,
+  renderSchedulePanel,
+} from './src/features/schedule/panel.js';
+import {
   configurePlotOutlineWorkflow,
   registerPlotOutlineEvents,
 } from './src/features/plot-outline/workflow.js';
@@ -645,6 +650,10 @@ function renderModuleDetail(module, settings) {
     return renderPlotOutlinePanel(settings, chatState);
   }
 
+  if (module.id === 'schedule') {
+    return renderSchedulePanel(settings, chatState);
+  }
+
   if (module.id === 'theater') {
     return renderMiniTheaterPanel();
   }
@@ -898,6 +907,7 @@ function renderFloatingPanel(options = {}) {
   bindContextDiagnosticsPanelEvents(panelRoot);
   bindMiniTheaterPanelEvents(panelRoot);
   bindPlotOutlinePanelEvents(panelRoot);
+  bindSchedulePanelEvents(panelRoot);
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
     button.addEventListener('click', () => {
@@ -1172,6 +1182,9 @@ function init() {
       moduleScrollTop: panelRoot?.querySelector('.slx-module-grid')?.scrollTop,
       detailScrollTop: panelRoot?.querySelector('.slx-detail')?.scrollTop,
     }),
+  });
+  configureSchedulePanel({
+    refreshPanel: renderFloatingPanel,
   });
   configurePlotOutlineWorkflow({
     addCommunicationLog,
