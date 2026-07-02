@@ -23,6 +23,9 @@ import {
   isPlainObject,
 } from '../../utils/text.js';
 import { applyWordReplacementToGeneratedContent } from '../word-replace/generated.js';
+import { normalizeScheduleResult } from './model.js';
+
+export { normalizeScheduleResult } from './model.js';
 
 let workflowOptions = {
   addCommunicationLog: null,
@@ -66,76 +69,6 @@ function extractJsonObjectText(text) {
     return raw.slice(start, end + 1).trim();
   }
   return '';
-}
-
-function cleanText(value) {
-  return String(value ?? '').trim();
-}
-
-function normalizeEntryOption(option, index) {
-  const text = cleanText(isPlainObject(option) ? option.text : option);
-  if (!text) return null;
-  return {
-    id: `E${index + 1}`,
-    text,
-  };
-}
-
-function normalizeMovement(movement, index) {
-  const source = isPlainObject(movement) ? movement : {};
-  const summary = cleanText(source.summary);
-  const character = cleanText(source.character);
-  if (!summary && !character) return null;
-  const durationMinutes = Number(source.durationMinutes);
-  return {
-    id: `M${index + 1}`,
-    character,
-    location: cleanText(source.location),
-    summary,
-    startsAt: cleanText(source.startsAt),
-    durationMinutes: Number.isFinite(durationMinutes) ? Math.max(0, Math.round(durationMinutes)) : 0,
-    status: 'pending',
-    mainlineImpact: cleanText(source.mainlineImpact),
-  };
-}
-
-export function normalizeScheduleResult(raw) {
-  if (!isPlainObject(raw)) {
-    throw new Error('生成结果不是有效的日程表 JSON 对象。');
-  }
-  const rawDays = Array.isArray(raw.days) ? raw.days : [];
-  if (!rawDays.length) {
-    throw new Error('生成结果中没有日程天数。');
-  }
-
-  const days = Array.from({ length: 7 }, (_, index) => {
-    const source = isPlainObject(rawDays[index]) ? rawDays[index] : {};
-    const entryOptions = (Array.isArray(source.entryOptions) ? source.entryOptions : [])
-      .map(normalizeEntryOption)
-      .filter(Boolean)
-      .slice(0, 3)
-      .map((option, optionIndex) => ({ ...option, id: `E${optionIndex + 1}` }));
-    const characterMovements = (Array.isArray(source.characterMovements) ? source.characterMovements : [])
-      .map(normalizeMovement)
-      .filter(Boolean)
-      .slice(0, 3)
-      .map((movement, movementIndex) => ({ ...movement, id: `M${movementIndex + 1}` }));
-
-    return {
-      day: index + 1,
-      theme: cleanText(source.theme) || `第${index + 1}天`,
-      mainOpportunity: cleanText(source.mainOpportunity),
-      entryOptions,
-      characterMovements,
-    };
-  });
-
-  return {
-    title: cleanText(raw.title) || '七日剧情机会表',
-    days,
-    createdAt: formatTimestamp(),
-    updatedAt: formatTimestamp(),
-  };
 }
 
 function getActiveOutlineChapter(outline) {

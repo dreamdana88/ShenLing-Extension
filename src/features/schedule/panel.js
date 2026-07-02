@@ -8,6 +8,10 @@ import {
   saveChatState,
   saveGlobalSettings,
 } from '../../core/settings.js';
+import {
+  normalizeScheduleEntryOption,
+  normalizeScheduleMovement,
+} from './model.js';
 import { runScheduleGeneration } from './workflow.js';
 
 let schedulePanelOptions = {
@@ -84,26 +88,13 @@ function appendToChatInput(text) {
   return true;
 }
 
-function normalizeOptionText(option) {
-  if (typeof option === 'string') return option;
-  if (option && typeof option === 'object') return option.text || option.summary || '';
-  return '';
-}
-
-function normalizeMovement(movement) {
-  const source = movement && typeof movement === 'object' ? movement : {};
-  return {
-    character: String(source.character || '未命名角色').trim(),
-    location: String(source.location || '').trim(),
-    summary: String(source.summary || '').trim(),
-    startsAt: String(source.startsAt || '').trim(),
-    durationMinutes: Number.isFinite(Number(source.durationMinutes)) ? Number(source.durationMinutes) : 0,
-    mainlineImpact: String(source.mainlineImpact || '').trim(),
-  };
+function getScheduleOptionText(option) {
+  return normalizeScheduleEntryOption(option)?.text || '';
 }
 
 function renderScheduleMovement(movement, dayIndex, movementIndex) {
-  const item = normalizeMovement(movement);
+  const item = normalizeScheduleMovement(movement, movementIndex);
+  if (!item) return '';
   const metaItems = [
     item.startsAt,
     item.durationMinutes > 0 ? `${item.durationMinutes} 分钟` : '',
@@ -112,7 +103,7 @@ function renderScheduleMovement(movement, dayIndex, movementIndex) {
   return `
     <div class="slx-schedule-movement">
       <div class="slx-schedule-movement-head">
-        <strong>${escapeHtml(item.character)}</strong>
+        <strong>${escapeHtml(item.character || '未命名角色')}</strong>
         ${item.location ? `<span>${escapeHtml(item.location)}</span>` : ''}
       </div>
       ${item.summary ? `<p>${escapeHtml(item.summary)}</p>` : ''}
@@ -134,7 +125,7 @@ function renderScheduleEmpty() {
 
 function renderScheduleDay(day, index) {
   const entryOptions = (Array.isArray(day.entryOptions) ? day.entryOptions : [])
-    .map(normalizeOptionText)
+    .map(getScheduleOptionText)
     .filter(Boolean);
   const movements = Array.isArray(day.characterMovements) ? day.characterMovements : [];
   return `
@@ -343,10 +334,15 @@ export function bindSchedulePanelEvents(panelRoot) {
   panelRoot.querySelectorAll('[data-slx-schedule-load-mv]').forEach(button => {
     button.addEventListener('click', () => {
       const [dayIndex, movementIndex] = String(button.dataset.slxScheduleLoadMv || '').split(':').map(Number);
-      const movement = normalizeMovement(getCurrentDays()[dayIndex]?.characterMovements?.[movementIndex]);
-      if (!movement.summary) return;
+      const movement = normalizeScheduleMovement(getCurrentDays()[dayIndex]?.characterMovements?.[movementIndex], movementIndex);
+      if (!movement?.summary) return;
       const where = movement.location ? `在${movement.location}` : '';
-      loadTextToInput(`（场外动向：${movement.character}${where}，${movement.summary}）`);
+      const timeParts = [
+        movement.startsAt ? `开始：${movement.startsAt}` : '',
+        movement.durationMinutes > 0 ? `耗时：${movement.durationMinutes}分钟` : '',
+      ].filter(Boolean);
+      const timeText = timeParts.length ? `；${timeParts.join('；')}` : '';
+      loadTextToInput(`（场外动向：${movement.character || '未命名角色'}${where}${timeText}，${movement.summary}）`);
     });
   });
 
@@ -355,7 +351,7 @@ export function bindSchedulePanelEvents(panelRoot) {
       const day = getCurrentDays()[Number(button.dataset.slxScheduleLoadDay)];
       if (!day) return;
       const entryOptions = (Array.isArray(day.entryOptions) ? day.entryOptions : [])
-        .map(normalizeOptionText)
+        .map(getScheduleOptionText)
         .filter(Boolean);
       const lines = [];
       if (day.mainOpportunity) {

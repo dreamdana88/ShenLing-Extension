@@ -23,6 +23,7 @@ import {
   normalizeReplacementRules,
   REPLACEMENT_DEFAULTS_VERSION,
 } from '../features/word-replace/core.js';
+import { normalizeScheduleCurrent } from '../features/schedule/model.js';
 
 export const defaultGlobalSettings = Object.freeze({
   schemaVersion: STORAGE_VERSION,
@@ -468,25 +469,7 @@ export function getScheduleState(chatState = getChatState()) {
   }
 
   if (isPlainObject(chatState.schedule.current)) {
-    const current = chatState.schedule.current;
-    current.title = String(current.title || '当前日程表');
-    current.days = Array.isArray(current.days) ? current.days : [];
-    current.days = current.days
-      .filter(day => isPlainObject(day))
-      .slice(0, 7)
-      .map((day, index) => ({
-        ...day,
-        day: Number.isFinite(Number(day.day)) ? Number(day.day) : index + 1,
-        label: String(day.label || `第${index + 1}天`),
-        theme: String(day.theme || ''),
-        mainOpportunity: String(day.mainOpportunity || ''),
-        entryOptions: Array.isArray(day.entryOptions) ? day.entryOptions : [],
-        characterMovements: Array.isArray(day.characterMovements) ? day.characterMovements : [],
-        note: String(day.note || ''),
-      }));
-    if (!current.days.length) {
-      chatState.schedule.current = null;
-    }
+    chatState.schedule.current = normalizeScheduleCurrent(chatState.schedule.current);
   } else {
     chatState.schedule.current = null;
   }
