@@ -31,7 +31,6 @@ let workflowOptions = {
 };
 
 const SCHEDULE_GENERATION_TIMEOUT_MS = 180000;
-const VALID_MOVEMENT_STATUS = new Set(['pending', 'active', 'engaged', 'done']);
 
 export function configureScheduleWorkflow(options = {}) {
   workflowOptions = { ...workflowOptions, ...options };
@@ -87,9 +86,6 @@ function normalizeMovement(movement, index) {
   const summary = cleanText(source.summary);
   const character = cleanText(source.character);
   if (!summary && !character) return null;
-  const status = VALID_MOVEMENT_STATUS.has(cleanText(source.status))
-    ? cleanText(source.status)
-    : 'pending';
   const durationMinutes = Number(source.durationMinutes);
   const remainingMinutes = Number(source.remainingMinutes);
   return {
@@ -100,7 +96,7 @@ function normalizeMovement(movement, index) {
     startsAt: cleanText(source.startsAt),
     durationMinutes: Number.isFinite(durationMinutes) ? Math.max(0, Math.round(durationMinutes)) : 0,
     remainingMinutes: Number.isFinite(remainingMinutes) ? Math.max(0, Math.round(remainingMinutes)) : 0,
-    status,
+    status: 'pending',
     mainlineImpact: cleanText(source.mainlineImpact),
   };
 }

@@ -1,6 +1,7 @@
 import { escapeHtml } from '../../utils/text.js';
 import {
   getChatState,
+  getContextInfo,
   getGlobalSettings,
   getScheduleSettings,
   getScheduleState,
@@ -14,6 +15,8 @@ let schedulePanelOptions = {
 };
 
 let schedulePanelState = {
+  activeChatKey: '',
+  confirmClearOpen: false,
   generationStatus: 'idle',
   generationError: '',
   userDirection: '',
@@ -28,6 +31,31 @@ export function configureSchedulePanel(options = {}) {
 
 function refreshPanel() {
   schedulePanelOptions.refreshPanel();
+}
+
+function getSchedulePanelChatKey() {
+  const info = getContextInfo();
+  return [
+    info.characterName || '',
+    info.chatId || info.chatName || '',
+  ].join('::');
+}
+
+function resetSchedulePanelTransientState(chatKey = getSchedulePanelChatKey()) {
+  schedulePanelState = {
+    activeChatKey: chatKey,
+    confirmClearOpen: false,
+    generationStatus: 'idle',
+    generationError: '',
+    userDirection: '',
+  };
+}
+
+function syncSchedulePanelChatState() {
+  const chatKey = getSchedulePanelChatKey();
+  if (schedulePanelState.activeChatKey !== chatKey) {
+    resetSchedulePanelTransientState(chatKey);
+  }
 }
 
 function notifySchedule(type, message, title = '日程表') {
@@ -168,7 +196,24 @@ function renderScheduleDay(day, index, hasCurrent) {
   `;
 }
 
+function renderScheduleClearConfirm() {
+  if (!schedulePanelState.confirmClearOpen) return '';
+  return `
+    <div class="slx-schedule-confirm-overlay" role="dialog" aria-modal="true" aria-label="清空当前日程表">
+      <div class="slx-schedule-confirm-card">
+        <div class="slx-detail-title">清空当前日程表？</div>
+        <p>这会移除当前聊天里正在显示的七日日程内容，不影响剧情大纲和其他模块。</p>
+        <div class="slx-schedule-confirm-actions">
+          <button class="slx-soft-btn" type="button" data-slx-schedule-clear-cancel>取消</button>
+          <button class="slx-soft-btn slx-schedule-danger-btn" type="button" data-slx-schedule-clear-confirm>清空</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderSchedulePanel(settings, chatState) {
+  syncSchedulePanelChatState();
   const schedule = getScheduleState(chatState);
   const scheduleSettings = getScheduleSettings(settings);
   const current = schedule.current;
@@ -215,6 +260,7 @@ export function renderSchedulePanel(settings, chatState) {
           ${days.map((day, index) => renderScheduleDay(day || {}, index, hasCurrent)).join('')}
         </div>
       </div>
+      ${renderScheduleClearConfirm()}
     </div>
   `;
 }
@@ -237,12 +283,20 @@ export function bindSchedulePanelEvents(panelRoot) {
 
   panelRoot.querySelector('[data-slx-schedule-generate]')?.addEventListener('click', async () => {
     if (schedulePanelState.generationStatus === 'running') return;
+    const requestChatKey = getSchedulePanelChatKey();
     schedulePanelState.userDirection = String(panelRoot.querySelector('[data-slx-schedule-direction]')?.value || '').trim();
     schedulePanelState.generationStatus = 'running';
     schedulePanelState.generationError = '';
+    schedulePanelState.confirmClearOpen = false;
     refreshPanel();
     try {
       const result = await runScheduleGeneration({ userDirection: schedulePanelState.userDirection });
+      if (getSchedulePanelChatKey() !== requestChatKey) {
+        resetSchedulePanelTransientState();
+        notifySchedule('warning', '聊天已切换，本次日程表结果未写入。');
+        refreshPanel();
+        return;
+      }
       const chatState = getChatState();
       const schedule = getScheduleState(chatState);
       schedule.current = result.schedule;
@@ -263,7 +317,17 @@ export function bindSchedulePanelEvents(panelRoot) {
   });
 
   panelRoot.querySelector('[data-slx-schedule-clear]')?.addEventListener('click', () => {
-    if (!confirm('清空当前日程表？')) return;
+    schedulePanelState.confirmClearOpen = true;
+    schedulePanelState.generationError = '';
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-schedule-clear-cancel]')?.addEventListener('click', () => {
+    schedulePanelState.confirmClearOpen = false;
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-schedule-clear-confirm]')?.addEventListener('click', () => {
     const chatState = getChatState();
     const schedule = getScheduleState(chatState);
     schedule.current = null;
@@ -271,6 +335,7 @@ export function bindSchedulePanelEvents(panelRoot) {
     saveChatState();
     schedulePanelState.generationStatus = 'idle';
     schedulePanelState.generationError = '';
+    schedulePanelState.confirmClearOpen = false;
     refreshPanel();
   });
 

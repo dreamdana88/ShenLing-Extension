@@ -291,7 +291,6 @@ ${outlineSection}${directionSection}
           "startsAt": "开始时间",
           "durationMinutes": 120,
           "remainingMinutes": 120,
-          "status": "pending",
           "mainlineImpact": "如果用户不介入，可能产生的影响"
         }
       ],
@@ -304,7 +303,6 @@ ${outlineSection}${directionSection}
 - days 必须正好 7 天，day 从 1 到 7。
 - 每天 entryOptions 输出 2 到 3 条。
 - 每天 characterMovements 输出 0 到 3 条。
-- status 只能是 pending / active / engaged / done 之一，默认 pending。
 - durationMinutes 与 remainingMinutes 必须是数字；不确定时写 0。
 - 不要输出空 day，不要输出多余字段。
 

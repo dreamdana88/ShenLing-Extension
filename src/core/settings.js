@@ -462,7 +462,9 @@ export function getScheduleState(chatState = getChatState()) {
     const activeId = String(chatState.schedule.activeScheduleId || '');
     const legacyCurrent = legacyEntries.find(item => isPlainObject(item) && String(item.id || '') === activeId)
       || legacyEntries.find(item => isPlainObject(item));
-    chatState.schedule.current = isPlainObject(legacyCurrent) ? legacyCurrent : null;
+    chatState.schedule.current = isPlainObject(legacyCurrent) && Array.isArray(legacyCurrent.days) && legacyCurrent.days.length
+      ? legacyCurrent
+      : null;
   }
 
   if (isPlainObject(chatState.schedule.current)) {
@@ -482,6 +484,9 @@ export function getScheduleState(chatState = getChatState()) {
         characterMovements: Array.isArray(day.characterMovements) ? day.characterMovements : [],
         note: String(day.note || ''),
       }));
+    if (!current.days.length) {
+      chatState.schedule.current = null;
+    }
   } else {
     chatState.schedule.current = null;
   }
