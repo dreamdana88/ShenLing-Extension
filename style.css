@@ -7060,7 +7060,7 @@ button.slx-outline-check-item:active {
 
 .slx-schedule-day-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
 }
@@ -7141,6 +7141,31 @@ button.slx-outline-check-item:active {
   border-color: var(--slx-border);
   color: var(--slx-text);
   background: var(--slx-bg-card);
+}
+
+.slx-schedule-load-btn {
+  align-self: flex-start;
+  margin-top: 6px;
+  border: 1px solid var(--slx-accent, var(--slx-border));
+  border-radius: 8px;
+  background: rgba(118, 159, 180, 0.12);
+  color: var(--slx-text);
+  padding: 4px 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  cursor: pointer;
+  text-align: left;
+  white-space: normal;
+}
+
+.slx-schedule-load-btn:hover {
+  background: rgba(118, 159, 180, 0.22);
+}
+
+.slx-schedule-load-day-btn {
+  margin-top: 0;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .slx-schedule-movement-list {

@@ -306,7 +306,12 @@ ${outlineSection}${directionSection}
 - 每天 characterMovements 输出 0 到 3 条。
 - status 只能是 pending / active / engaged / done 之一，默认 pending。
 - durationMinutes 与 remainingMinutes 必须是数字；不确定时写 0。
-- 不要输出空 day，不要输出多余字段。`;
+- 不要输出空 day，不要输出多余字段。
+
+【文本形态要求】（这些内容会被用户一键填入聊天输入框，请写成可直接使用的形态）
+- mainOpportunity：写成摆在 {{user}} 面前的情境、局势、压力或可推进方向，只描述"机会本身"，不要写 {{user}} 已经做出的动作或选择。
+- entryOptions：写成第一人称、可直接发送的行动句（如"我去…""我先…""我试着…"），供 {{user}} 点击后当作自己的发言，但仍只是建议，不代替 {{user}} 最终决定。
+- characterMovements.summary：保持第三人称场外客观视角，描述该角色此刻在做什么，因为它会以旁白形态被引用。`;
 }
 export const DEFAULT_MEMORY_PROMPT_TEMPLATE = [
   "##浓缩梦境",

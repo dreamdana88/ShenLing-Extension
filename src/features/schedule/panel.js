@@ -76,7 +76,7 @@ function normalizeMovement(movement) {
   };
 }
 
-function renderScheduleMovement(movement) {
+function renderScheduleMovement(movement, dayIndex, movementIndex) {
   const item = normalizeMovement(movement);
   const statusText = {
     pending: '待发生',
@@ -100,6 +100,7 @@ function renderScheduleMovement(movement) {
       ${item.summary ? `<p>${escapeHtml(item.summary)}</p>` : ''}
       ${metaItems.length ? `<div class="slx-schedule-movement-meta">${metaItems.map(meta => `<span>${escapeHtml(meta)}</span>`).join('')}</div>` : ''}
       ${item.mainlineImpact ? `<div class="slx-schedule-impact">${escapeHtml(item.mainlineImpact)}</div>` : ''}
+      ${item.summary ? `<button class="slx-schedule-load-btn" type="button" data-slx-schedule-load-mv="${dayIndex}:${movementIndex}" title="以旁白形态填入聊天输入框">引用动向</button>` : ''}
     </div>
   `;
 }
@@ -134,10 +135,12 @@ function renderScheduleDay(day, index, hasCurrent) {
           <b>${escapeHtml(day.theme || day.label || `第${index + 1}天`)}</b>
           <span>${escapeHtml(day.label || `第${index + 1}天`)}</span>
         </div>
+        ${day.mainOpportunity || entryOptions.length ? `<button class="slx-schedule-load-btn slx-schedule-load-day-btn" type="button" data-slx-schedule-load-day="${index}" title="把本日主机会与介入入口填入聊天输入框">载入本日</button>` : ''}
       </div>
       <div class="slx-schedule-section slx-schedule-main">
         <div class="slx-schedule-section-label">主机会</div>
         <p>${escapeHtml(day.mainOpportunity || '暂无主剧情机会')}</p>
+        ${day.mainOpportunity ? `<button class="slx-schedule-load-btn" type="button" data-slx-schedule-load-main="${index}" title="以旁白形态填入聊天输入框">推进此机会</button>` : ''}
       </div>
       ${entryOptions.length ? `
         <div class="slx-schedule-section">
@@ -151,7 +154,7 @@ function renderScheduleDay(day, index, hasCurrent) {
         <div class="slx-schedule-section">
           <div class="slx-schedule-section-label">角色动向</div>
           <div class="slx-schedule-movement-list">
-            ${movements.map(renderScheduleMovement).join('')}
+            ${movements.map((movement, movementIndex) => renderScheduleMovement(movement, index, movementIndex)).join('')}
           </div>
         </div>
       ` : ''}
@@ -294,6 +297,55 @@ export function bindSchedulePanelEvents(panelRoot) {
       if (appendToChatInput(text)) {
         notifySchedule('success', '已填入聊天输入框。');
       }
+    });
+  });
+
+  const getCurrentDays = () => {
+    const current = getScheduleState(getChatState()).current;
+    return current && Array.isArray(current.days) ? current.days : [];
+  };
+
+  const loadTextToInput = text => {
+    const value = String(text || '').trim();
+    if (!value) return;
+    if (appendToChatInput(value)) {
+      notifySchedule('success', '已填入聊天输入框。');
+    }
+  };
+
+  panelRoot.querySelectorAll('[data-slx-schedule-load-main]').forEach(button => {
+    button.addEventListener('click', () => {
+      const day = getCurrentDays()[Number(button.dataset.slxScheduleLoadMain)];
+      if (!day || !day.mainOpportunity) return;
+      const theme = String(day.theme || '').trim();
+      loadTextToInput(theme ? `（推进剧情：${theme} —— ${day.mainOpportunity}）` : `（推进剧情：${day.mainOpportunity}）`);
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-schedule-load-mv]').forEach(button => {
+    button.addEventListener('click', () => {
+      const [dayIndex, movementIndex] = String(button.dataset.slxScheduleLoadMv || '').split(':').map(Number);
+      const movement = normalizeMovement(getCurrentDays()[dayIndex]?.characterMovements?.[movementIndex]);
+      if (!movement.summary) return;
+      const where = movement.location ? `在${movement.location}` : '';
+      loadTextToInput(`（场外动向：${movement.character}${where}，${movement.summary}）`);
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-schedule-load-day]').forEach(button => {
+    button.addEventListener('click', () => {
+      const day = getCurrentDays()[Number(button.dataset.slxScheduleLoadDay)];
+      if (!day) return;
+      const entryOptions = (Array.isArray(day.entryOptions) ? day.entryOptions : [])
+        .map(normalizeOptionText)
+        .filter(Boolean);
+      const lines = [];
+      if (day.mainOpportunity) {
+        const theme = String(day.theme || '').trim();
+        lines.push(theme ? `（推进剧情：${theme} —— ${day.mainOpportunity}）` : `（推进剧情：${day.mainOpportunity}）`);
+      }
+      entryOptions.forEach(option => lines.push(option));
+      loadTextToInput(lines.join('\n'));
     });
   });
 }
