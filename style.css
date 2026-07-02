@@ -6996,33 +6996,64 @@ button.slx-outline-check-item:active {
   gap: 10px;
 }
 
-.slx-schedule-generate-head {
+.slx-schedule-api-row {
   display: flex;
+  align-items: center;
   gap: 12px;
-  align-items: flex-start;
 }
 
-.slx-schedule-direction-field {
-  flex: 1;
-  min-width: 0;
-}
-
-.slx-schedule-api-field {
+.slx-schedule-api-label {
+  color: var(--slx-label);
+  font-size: 12px;
+  font-weight: 600;
   flex-shrink: 0;
 }
 
-@media (max-width: 580px) {
-  .slx-schedule-generate-head {
-    flex-direction: column;
-  }
-  .slx-schedule-api-field {
-    width: 100%;
-  }
+.slx-schedule-api-toggle {
+  flex-shrink: 0;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
 }
 
-.slx-schedule-api-segment {
-  width: fit-content;
-  max-width: 100%;
+.slx-schedule-api-toggle button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--slx-muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 7px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.slx-schedule-api-toggle button:hover {
+  color: var(--slx-text);
+}
+
+.slx-schedule-api-toggle button.is-active {
+  background: var(--slx-accent);
+  color: var(--slx-accent-ink);
+}
+
+.slx-schedule-api-toggle button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 580px) {
+  .slx-schedule-api-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 .slx-schedule-api-segment .slx-segment-btn {

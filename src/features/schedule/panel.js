@@ -199,17 +199,15 @@ export function renderSchedulePanel(settings, chatState) {
   return `
     <div class="slx-schedule-root">
       <div class="slx-detail-card slx-schedule-generate-card">
-        <div class="slx-schedule-generate-head">
-          <label class="slx-field slx-schedule-direction-field">
-            <span>短期方向</span>
-            <textarea rows="3" data-slx-schedule-direction placeholder="可写想看的短期推进、角色动向、冲突方向；也可以留空。" ${disabled}>${escapeHtml(schedulePanelState.userDirection)}</textarea>
-          </label>
-          <div class="slx-field slx-schedule-api-field">
-            <span>API 模式</span>
-            <div class="slx-segment-row slx-schedule-api-segment" role="group" aria-label="日程表 API 模式">
-              <button class="slx-segment-btn ${scheduleSettings.apiMode === 'secondary_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-schedule-api-mode="secondary_api" ${disabled}>副 API</button>
-              <button class="slx-segment-btn ${scheduleSettings.apiMode === 'main_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-schedule-api-mode="main_api" ${disabled}>主 API</button>
-            </div>
+        <label class="slx-field">
+          <span>短期方向</span>
+          <textarea rows="3" data-slx-schedule-direction placeholder="可写想看的短期推进、角色动向、冲突方向；也可以留空。" ${disabled}>${escapeHtml(schedulePanelState.userDirection)}</textarea>
+        </label>
+        <div class="slx-schedule-api-row">
+          <span class="slx-schedule-api-label">API 模式</span>
+          <div class="slx-schedule-api-toggle" role="group" aria-label="日程表 API 模式">
+            <button class="${scheduleSettings.apiMode === 'main_api' ? 'is-active' : ''}" type="button" data-slx-schedule-api-mode="main_api" ${disabled}>主 API</button>
+            <button class="${scheduleSettings.apiMode === 'secondary_api' ? 'is-active' : ''}" type="button" data-slx-schedule-api-mode="secondary_api" ${disabled}>副 API</button>
           </div>
         </div>
         <div class="slx-schedule-btn-row">
