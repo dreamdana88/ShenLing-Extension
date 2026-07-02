@@ -203,33 +203,17 @@ export function renderSchedulePanel(settings, chatState) {
         ${schedulePanelState.generationError ? `<div class="slx-schedule-error">${escapeHtml(schedulePanelState.generationError)}</div>` : ''}
       </div>
 
-      <div class="slx-detail-card slx-schedule-hero">
-        <div>
-          <div class="slx-detail-title">日程表</div>
-          <p>当前聊天的临时剧情菜单。Roll 出来的七日内容只保留当前这一份，可随时重 Roll 覆盖。</p>
-        </div>
-        <div class="slx-schedule-stats">
-          <span><b>${hasCurrent ? 1 : 0}</b> 当前</span>
-          <span><b>${escapeHtml(days.length)}</b> 天数</span>
-        </div>
-      </div>
-
-      <div class="slx-detail-card slx-schedule-empty-card">
+      <div class="slx-detail-card slx-schedule-current-card">
         <div class="slx-schedule-card-head">
           <div>
             <div class="slx-detail-title">${hasCurrent ? escapeHtml(current.title || '当前日程表') : '还没有日程表'}</div>
-            <p>${hasCurrent ? `上次生成：${escapeHtml(schedule.lastGeneratedAt || '未记录')}` : '下一阶段接入 API 后，生成结果会直接覆盖当前日程表。'}</p>
+            <p>${hasCurrent ? `上次生成：${escapeHtml(schedule.lastGeneratedAt || '未记录')}。当前聊天的临时剧情菜单，可随时重 Roll 覆盖。` : '当前聊天的临时剧情菜单。生成后会显示七日剧情机会、介入入口与角色动向。'}</p>
           </div>
           ${hasCurrent ? '<button class="slx-soft-btn" type="button" data-slx-schedule-clear>清空</button>' : ''}
         </div>
         <div class="slx-schedule-grid">
           ${days.map((day, index) => renderScheduleDay(day || {}, index, hasCurrent)).join('')}
         </div>
-      </div>
-
-      <div class="slx-detail-card slx-schedule-note-card">
-        <div class="slx-detail-title">施工边界</div>
-        <p>日程表独立于剧情大纲；生成时可以参考大纲，但不会并入大纲模块。平行事件后续再消费这里的角色动向。</p>
       </div>
     </div>
   `;
