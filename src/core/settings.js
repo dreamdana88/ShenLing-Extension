@@ -176,11 +176,8 @@ export const defaultChatState = Object.freeze({
     lastInjectedAt: '',
   },
   schedule: {
-    activeScheduleId: '',
-    drafts: [],
-    entries: [],
+    current: null,
     lastGeneratedAt: '',
-    lastSavedAt: '',
   },
   diary: {
     activeBookId: '',
@@ -434,5 +431,49 @@ export function getPlotOutlineState(chatState = getChatState()) {
     chatState.outline.storyCore = cloneData(defaultChatState.outline.storyCore);
   }
   return chatState.outline;
+}
+
+export function getScheduleState(chatState = getChatState()) {
+  if (!isPlainObject(chatState.schedule)) {
+    chatState.schedule = cloneData(defaultChatState.schedule);
+  }
+  chatState.schedule = mergeDefaults(chatState.schedule, cloneData(defaultChatState.schedule));
+
+  if (!isPlainObject(chatState.schedule.current)) {
+    const legacyEntries = Array.isArray(chatState.schedule.entries) ? chatState.schedule.entries : [];
+    const activeId = String(chatState.schedule.activeScheduleId || '');
+    const legacyCurrent = legacyEntries.find(item => isPlainObject(item) && String(item.id || '') === activeId)
+      || legacyEntries.find(item => isPlainObject(item));
+    chatState.schedule.current = isPlainObject(legacyCurrent) ? legacyCurrent : null;
+  }
+
+  if (isPlainObject(chatState.schedule.current)) {
+    const current = chatState.schedule.current;
+    current.title = String(current.title || '当前日程表');
+    current.days = Array.isArray(current.days) ? current.days : [];
+    current.days = current.days
+      .filter(day => isPlainObject(day))
+      .slice(0, 7)
+      .map((day, index) => ({
+        ...day,
+        day: Number.isFinite(Number(day.day)) ? Number(day.day) : index + 1,
+        label: String(day.label || `第${index + 1}天`),
+        theme: String(day.theme || ''),
+        mainOpportunity: String(day.mainOpportunity || ''),
+        entryOptions: Array.isArray(day.entryOptions) ? day.entryOptions : [],
+        characterMovements: Array.isArray(day.characterMovements) ? day.characterMovements : [],
+        note: String(day.note || ''),
+      }));
+  } else {
+    chatState.schedule.current = null;
+  }
+
+  delete chatState.schedule.activeScheduleId;
+  delete chatState.schedule.drafts;
+  delete chatState.schedule.entries;
+  delete chatState.schedule.lastSavedAt;
+
+  chatState.schedule.lastGeneratedAt = String(chatState.schedule.lastGeneratedAt || '');
+  return chatState.schedule;
 }
 

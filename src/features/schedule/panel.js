@@ -1,4 +1,9 @@
 import { escapeHtml } from '../../utils/text.js';
+import {
+  getChatState,
+  getScheduleState,
+  saveChatState,
+} from '../../core/settings.js';
 
 let schedulePanelOptions = {
   refreshPanel: () => {},
@@ -11,55 +16,74 @@ export function configureSchedulePanel(options = {}) {
   };
 }
 
-function getScheduleStore(chatState = {}) {
-  const schedule = chatState.schedule && typeof chatState.schedule === 'object'
-    ? chatState.schedule
-    : {};
-  return {
-    activeScheduleId: String(schedule.activeScheduleId || ''),
-    drafts: Array.isArray(schedule.drafts) ? schedule.drafts : [],
-    entries: Array.isArray(schedule.entries) ? schedule.entries : [],
-    lastGeneratedAt: String(schedule.lastGeneratedAt || ''),
-    lastSavedAt: String(schedule.lastSavedAt || ''),
-  };
+function normalizeOptionText(option) {
+  if (typeof option === 'string') return option;
+  if (option && typeof option === 'object') return option.text || option.summary || '';
+  return '';
 }
 
-function renderScheduleDayPlaceholder(day) {
+function renderScheduleDay(day, index, hasCurrent) {
+  if (!hasCurrent) {
+    return `
+      <div class="slx-schedule-day-card">
+        <div class="slx-schedule-day-index">D${index + 1}</div>
+        <div class="slx-schedule-day-body">
+          <b>剧情机会待生成</b>
+          <span>主机会、介入入口与角色动向会在这里展开。</span>
+        </div>
+      </div>
+    `;
+  }
+  const entryOptions = (Array.isArray(day.entryOptions) ? day.entryOptions : [])
+    .map(normalizeOptionText)
+    .filter(Boolean);
+  const movements = Array.isArray(day.characterMovements) ? day.characterMovements : [];
   return `
     <div class="slx-schedule-day-card">
-      <div class="slx-schedule-day-index">D${day}</div>
+      <div class="slx-schedule-day-index">D${escapeHtml(day.day || index + 1)}</div>
       <div class="slx-schedule-day-body">
-        <b>剧情机会待生成</b>
-        <span>主机会、介入入口与角色动向会在这里展开。</span>
+        <b>${escapeHtml(day.theme || day.label || `第${index + 1}天`)}</b>
+        <span>${escapeHtml(day.mainOpportunity || '暂无主剧情机会')}</span>
+        ${entryOptions.length ? `
+          <div class="slx-schedule-chip-list">
+            ${entryOptions.map(option => `<button class="slx-schedule-chip" type="button" disabled>${escapeHtml(option)}</button>`).join('')}
+          </div>
+        ` : ''}
+        ${movements.length ? `<small>${escapeHtml(movements.length)} 条角色动向</small>` : ''}
       </div>
     </div>
   `;
 }
 
 export function renderSchedulePanel(settings, chatState) {
-  const schedule = getScheduleStore(chatState);
-  const savedCount = schedule.entries.length;
-  const draftCount = schedule.drafts.length;
-  const activeEntry = schedule.entries.find(item => item?.id === schedule.activeScheduleId) || schedule.entries[0];
+  const schedule = getScheduleState(chatState);
+  const current = schedule.current;
+  const hasCurrent = Boolean(current);
+  const days = hasCurrent ? current.days : [null, null, null, null, null, null, null];
 
   return `
     <div class="slx-schedule-root">
       <div class="slx-detail-card slx-schedule-hero">
         <div>
           <div class="slx-detail-title">日程表</div>
-          <p>短期剧情机会表。后续会支持生成七天计划、编辑草稿、重 Roll，并把介入入口填入输入框。</p>
+          <p>当前聊天的临时剧情菜单。Roll 出来的七日内容只保留当前这一份，可随时重 Roll 覆盖。</p>
         </div>
         <div class="slx-schedule-stats">
-          <span><b>${savedCount}</b> 已保存</span>
-          <span><b>${draftCount}</b> 草稿</span>
+          <span><b>${hasCurrent ? 1 : 0}</b> 当前</span>
+          <span><b>${escapeHtml(days.length)}</b> 天数</span>
         </div>
       </div>
 
       <div class="slx-detail-card slx-schedule-empty-card">
-        <div class="slx-detail-title">${activeEntry ? escapeHtml(activeEntry.title || '当前日程') : '还没有日程表'}</div>
-        <p>${activeEntry ? '当前仅接入模块入口与状态读取，生成和编辑会在下一阶段施工。' : '第一刀先建立独立模块入口。生成、编辑、保存和点击介入会逐步接上。'}</p>
+        <div class="slx-schedule-card-head">
+          <div>
+            <div class="slx-detail-title">${hasCurrent ? escapeHtml(current.title || '当前日程表') : '还没有日程表'}</div>
+            <p>${hasCurrent ? `上次生成：${escapeHtml(schedule.lastGeneratedAt || '未记录')}` : '下一阶段接入 API 后，生成结果会直接覆盖当前日程表。'}</p>
+          </div>
+          ${hasCurrent ? '<button class="slx-soft-btn" type="button" data-slx-schedule-clear>清空</button>' : ''}
+        </div>
         <div class="slx-schedule-grid">
-          ${[1, 2, 3, 4, 5, 6, 7].map(renderScheduleDayPlaceholder).join('')}
+          ${days.map((day, index) => renderScheduleDay(day || {}, index, hasCurrent)).join('')}
         </div>
       </div>
 
@@ -73,4 +97,13 @@ export function renderSchedulePanel(settings, chatState) {
 
 export function bindSchedulePanelEvents(panelRoot) {
   if (!panelRoot) return;
+  panelRoot.querySelector('[data-slx-schedule-clear]')?.addEventListener('click', () => {
+    if (!confirm('清空当前日程表？')) return;
+    const chatState = getChatState();
+    const schedule = getScheduleState(chatState);
+    schedule.current = null;
+    schedule.lastGeneratedAt = '';
+    saveChatState();
+    schedulePanelOptions.refreshPanel();
+  });
 }
