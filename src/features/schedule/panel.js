@@ -98,27 +98,15 @@ function normalizeMovement(movement) {
     summary: String(source.summary || '').trim(),
     startsAt: String(source.startsAt || '').trim(),
     durationMinutes: Number.isFinite(Number(source.durationMinutes)) ? Number(source.durationMinutes) : 0,
-    remainingMinutes: Number.isFinite(Number(source.remainingMinutes)) ? Number(source.remainingMinutes) : 0,
-    status: String(source.status || 'pending').trim(),
     mainlineImpact: String(source.mainlineImpact || '').trim(),
   };
 }
 
-const MOVEMENT_STATUS_SET = new Set(['pending', 'active', 'engaged', 'done']);
-
 function renderScheduleMovement(movement, dayIndex, movementIndex) {
   const item = normalizeMovement(movement);
-  const safeStatus = MOVEMENT_STATUS_SET.has(item.status) ? item.status : 'pending';
-  const statusText = {
-    pending: '待发生',
-    active: '进行中',
-    engaged: '已介入',
-    done: '已结束',
-  }[safeStatus];
   const metaItems = [
     item.startsAt,
     item.durationMinutes > 0 ? `${item.durationMinutes} 分钟` : '',
-    item.remainingMinutes > 0 ? `剩余 ${item.remainingMinutes} 分钟` : '',
   ].filter(Boolean);
 
   return `
@@ -126,7 +114,6 @@ function renderScheduleMovement(movement, dayIndex, movementIndex) {
       <div class="slx-schedule-movement-head">
         <strong>${escapeHtml(item.character)}</strong>
         ${item.location ? `<span>${escapeHtml(item.location)}</span>` : ''}
-        <span class="slx-schedule-status slx-schedule-status-${safeStatus}">${statusText}</span>
       </div>
       ${item.summary ? `<p>${escapeHtml(item.summary)}</p>` : ''}
       ${metaItems.length ? `<div class="slx-schedule-movement-meta">${metaItems.map(meta => `<span>${escapeHtml(meta)}</span>`).join('')}</div>` : ''}
@@ -155,8 +142,7 @@ function renderScheduleDay(day, index) {
       <div class="slx-schedule-day-head">
         <div class="slx-schedule-day-index"><i>DAY</i><b>${escapeHtml(day.day || index + 1)}</b></div>
         <div>
-          <b>${escapeHtml(day.theme || day.label || `第${index + 1}天`)}</b>
-          <span>${escapeHtml(day.label || `第${index + 1}天`)}</span>
+          <b>${escapeHtml(day.theme || `第${index + 1}天`)}</b>
         </div>
         ${day.mainOpportunity || entryOptions.length ? `<button class="slx-schedule-load-btn slx-schedule-load-day-btn" type="button" data-slx-schedule-load-day="${index}" title="把本日主机会与介入入口填入聊天输入框">载入本日</button>` : ''}
       </div>
@@ -179,12 +165,6 @@ function renderScheduleDay(day, index) {
           <div class="slx-schedule-movement-list">
             ${movements.map((movement, movementIndex) => renderScheduleMovement(movement, index, movementIndex)).join('')}
           </div>
-        </div>
-      ` : ''}
-      ${day.note ? `
-        <div class="slx-schedule-section slx-schedule-note">
-          <div class="slx-schedule-section-label">备注</div>
-          <p>${escapeHtml(day.note)}</p>
         </div>
       ` : ''}
     </div>
@@ -219,13 +199,12 @@ export function renderSchedulePanel(settings, chatState) {
   return `
     <div class="slx-schedule-root">
       <div class="slx-detail-card slx-schedule-generate-card">
-        <div class="slx-detail-title">Roll 日程表</div>
-        <label class="slx-field">
-          <span>短期方向</span>
-          <textarea rows="3" data-slx-schedule-direction placeholder="可写想看的短期推进、角色动向、冲突方向；也可以留空。" ${disabled}>${escapeHtml(schedulePanelState.userDirection)}</textarea>
-        </label>
-        <div class="slx-form-grid">
-          <div class="slx-field">
+        <div class="slx-schedule-generate-head">
+          <label class="slx-field slx-schedule-direction-field">
+            <span>短期方向</span>
+            <textarea rows="3" data-slx-schedule-direction placeholder="可写想看的短期推进、角色动向、冲突方向；也可以留空。" ${disabled}>${escapeHtml(schedulePanelState.userDirection)}</textarea>
+          </label>
+          <div class="slx-field slx-schedule-api-field">
             <span>API 模式</span>
             <div class="slx-segment-row slx-schedule-api-segment" role="group" aria-label="日程表 API 模式">
               <button class="slx-segment-btn ${scheduleSettings.apiMode === 'secondary_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-schedule-api-mode="secondary_api" ${disabled}>副 API</button>
@@ -234,9 +213,8 @@ export function renderSchedulePanel(settings, chatState) {
           </div>
         </div>
         <div class="slx-schedule-btn-row">
-          <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-schedule-generate ${isRunning ? 'disabled' : ''}>${isRunning ? '生成中...' : hasCurrent ? '重 Roll 日程表' : '生成日程表'}</button>
+          <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-schedule-generate ${isRunning ? 'disabled' : ''}>${isRunning ? '生成中...' : '生成日程表'}</button>
         </div>
-        ${schedulePanelState.generationStatus === 'success' ? '<div class="slx-field-hint">日程表已生成，并覆盖当前 Roll 结果。</div>' : ''}
         ${schedulePanelState.generationError ? `<div class="slx-schedule-error">${escapeHtml(schedulePanelState.generationError)}</div>` : ''}
       </div>
 

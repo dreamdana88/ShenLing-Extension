@@ -277,7 +277,6 @@ ${outlineSection}${directionSection}
   "days": [
     {
       "day": 1,
-      "label": "第一天",
       "theme": "当天剧情主题",
       "mainOpportunity": "当天最值得推进的主剧情机会",
       "entryOptions": [
@@ -290,11 +289,9 @@ ${outlineSection}${directionSection}
           "summary": "场外角色动向",
           "startsAt": "开始时间",
           "durationMinutes": 120,
-          "remainingMinutes": 120,
           "mainlineImpact": "如果用户不介入，可能产生的影响"
         }
-      ],
-      "note": "当天补充提醒，可为空"
+      ]
     }
   ]
 }
@@ -303,7 +300,7 @@ ${outlineSection}${directionSection}
 - days 必须正好 7 天，day 从 1 到 7。
 - 每天 entryOptions 输出 2 到 3 条。
 - 每天 characterMovements 输出 0 到 3 条。
-- durationMinutes 与 remainingMinutes 必须是数字；不确定时写 0。
+- durationMinutes 必须是数字；不确定时写 0。
 - 不要输出空 day，不要输出多余字段。
 
 【文本形态要求】（这些内容会被用户一键填入聊天输入框，请写成可直接使用的形态）

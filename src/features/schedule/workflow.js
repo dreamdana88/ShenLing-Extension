@@ -87,7 +87,6 @@ function normalizeMovement(movement, index) {
   const character = cleanText(source.character);
   if (!summary && !character) return null;
   const durationMinutes = Number(source.durationMinutes);
-  const remainingMinutes = Number(source.remainingMinutes);
   return {
     id: `M${index + 1}`,
     character,
@@ -95,7 +94,6 @@ function normalizeMovement(movement, index) {
     summary,
     startsAt: cleanText(source.startsAt),
     durationMinutes: Number.isFinite(durationMinutes) ? Math.max(0, Math.round(durationMinutes)) : 0,
-    remainingMinutes: Number.isFinite(remainingMinutes) ? Math.max(0, Math.round(remainingMinutes)) : 0,
     status: 'pending',
     mainlineImpact: cleanText(source.mainlineImpact),
   };
@@ -125,12 +123,10 @@ export function normalizeScheduleResult(raw) {
 
     return {
       day: index + 1,
-      label: cleanText(source.label) || `第${index + 1}天`,
       theme: cleanText(source.theme) || `第${index + 1}天`,
       mainOpportunity: cleanText(source.mainOpportunity),
       entryOptions,
       characterMovements,
-      note: cleanText(source.note),
     };
   });
 
@@ -183,10 +179,8 @@ function applyWordReplacementToSchedule(schedule) {
 
   schedule.title = replaceField(schedule.title);
   schedule.days.forEach(day => {
-    day.label = replaceField(day.label);
     day.theme = replaceField(day.theme);
     day.mainOpportunity = replaceField(day.mainOpportunity);
-    day.note = replaceField(day.note);
     day.entryOptions.forEach(option => {
       option.text = replaceField(option.text);
     });

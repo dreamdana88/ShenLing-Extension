@@ -6996,6 +6996,30 @@ button.slx-outline-check-item:active {
   gap: 10px;
 }
 
+.slx-schedule-generate-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.slx-schedule-direction-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.slx-schedule-api-field {
+  flex-shrink: 0;
+}
+
+@media (max-width: 580px) {
+  .slx-schedule-generate-head {
+    flex-direction: column;
+  }
+  .slx-schedule-api-field {
+    width: 100%;
+  }
+}
+
 .slx-schedule-api-segment {
   width: fit-content;
   max-width: 100%;
