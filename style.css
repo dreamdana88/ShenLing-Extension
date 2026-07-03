@@ -7126,11 +7126,33 @@ button.slx-outline-check-item:active {
   padding: 12px;
 }
 
+.slx-schedule-day-card-collapsed {
+  gap: 0;
+}
+
 .slx-schedule-day-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.slx-schedule-day-toggle {
+  min-width: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.slx-schedule-day-toggle:hover .slx-schedule-day-title b {
+  color: var(--slx-accent-text);
 }
 
 /* 日历签：DAY + 数字 */
@@ -7163,20 +7185,32 @@ button.slx-outline-check-item:active {
   line-height: 1.1;
 }
 
-.slx-schedule-day-head > div > b {
+.slx-schedule-day-title {
+  min-width: 0;
+}
+
+.slx-schedule-day-title b {
   display: block;
   color: var(--slx-text);
   font-size: 13px;
   font-weight: 700;
   line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.16s ease;
 }
 
-.slx-schedule-day-head > div > span {
-  display: block;
+.slx-schedule-day-chevron {
   color: var(--slx-muted);
-  font-size: 11px;
-  line-height: 1.35;
-  margin-top: 1px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.slx-schedule-day-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .slx-schedule-section {

@@ -21,6 +21,7 @@ let schedulePanelOptions = {
 let schedulePanelState = {
   activeChatKey: '',
   confirmClearOpen: false,
+  expandedDayIndex: null,
   generationStatus: 'idle',
   generationError: '',
   userDirection: '',
@@ -49,6 +50,7 @@ function resetSchedulePanelTransientState(chatKey = getSchedulePanelChatKey()) {
   schedulePanelState = {
     activeChatKey: chatKey,
     confirmClearOpen: false,
+    expandedDayIndex: null,
     generationStatus: 'idle',
     generationError: '',
     userDirection: '',
@@ -123,39 +125,44 @@ function renderScheduleEmpty() {
   `;
 }
 
-function renderScheduleDay(day, index) {
+function renderScheduleDay(day, index, expanded) {
   const entryOptions = (Array.isArray(day.entryOptions) ? day.entryOptions : [])
     .map(getScheduleOptionText)
     .filter(Boolean);
   const movements = Array.isArray(day.characterMovements) ? day.characterMovements : [];
   return `
-    <div class="slx-schedule-day-card">
+    <div class="slx-schedule-day-card ${expanded ? 'slx-schedule-day-card-expanded' : 'slx-schedule-day-card-collapsed'}">
       <div class="slx-schedule-day-head">
-        <div class="slx-schedule-day-index"><i>DAY</i><b>${escapeHtml(day.day || index + 1)}</b></div>
-        <div>
-          <b>${escapeHtml(day.theme || `第${index + 1}天`)}</b>
-        </div>
+        <button class="slx-schedule-day-toggle" type="button" data-slx-schedule-toggle-day="${index}" aria-expanded="${expanded ? 'true' : 'false'}" title="${expanded ? '收起本日' : '展开本日'}">
+          <span class="slx-schedule-day-index"><i>DAY</i><b>${escapeHtml(day.day || index + 1)}</b></span>
+          <span class="slx-schedule-day-title"><b>${escapeHtml(day.theme || `第${index + 1}天`)}</b></span>
+          <span class="slx-schedule-day-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
+        </button>
         ${day.mainOpportunity || entryOptions.length ? `<button class="slx-schedule-load-btn slx-schedule-load-day-btn" type="button" data-slx-schedule-load-day="${index}" title="把本日主机会与介入入口填入聊天输入框">载入本日</button>` : ''}
       </div>
-      <div class="slx-schedule-section slx-schedule-main">
-        <div class="slx-schedule-section-label">主机会</div>
-        <p>${escapeHtml(day.mainOpportunity || '暂无主剧情机会')}</p>
-        ${day.mainOpportunity ? `<button class="slx-schedule-load-btn" type="button" data-slx-schedule-load-main="${index}" title="以旁白形态填入聊天输入框">推进此机会</button>` : ''}
-      </div>
-      ${entryOptions.length ? `
-        <div class="slx-schedule-section">
-          <div class="slx-schedule-section-label">可介入</div>
-          <div class="slx-schedule-chip-list">
-            ${entryOptions.map(option => `<button class="slx-schedule-chip" type="button" data-slx-schedule-send="${escapeHtml(option)}" title="填入聊天输入框">${escapeHtml(option)}</button>`).join('')}
+      ${expanded ? `
+        <div class="slx-schedule-day-content">
+          <div class="slx-schedule-section slx-schedule-main">
+            <div class="slx-schedule-section-label">主机会</div>
+            <p>${escapeHtml(day.mainOpportunity || '暂无主剧情机会')}</p>
+            ${day.mainOpportunity ? `<button class="slx-schedule-load-btn" type="button" data-slx-schedule-load-main="${index}" title="以旁白形态填入聊天输入框">推进此机会</button>` : ''}
           </div>
-        </div>
-      ` : ''}
-      ${movements.length ? `
-        <div class="slx-schedule-section">
-          <div class="slx-schedule-section-label">角色动向</div>
-          <div class="slx-schedule-movement-list">
-            ${movements.map((movement, movementIndex) => renderScheduleMovement(movement, index, movementIndex)).join('')}
-          </div>
+          ${entryOptions.length ? `
+            <div class="slx-schedule-section">
+              <div class="slx-schedule-section-label">可介入</div>
+              <div class="slx-schedule-chip-list">
+                ${entryOptions.map(option => `<button class="slx-schedule-chip" type="button" data-slx-schedule-send="${escapeHtml(option)}" title="填入聊天输入框">${escapeHtml(option)}</button>`).join('')}
+              </div>
+            </div>
+          ` : ''}
+          ${movements.length ? `
+            <div class="slx-schedule-section">
+              <div class="slx-schedule-section-label">角色动向</div>
+              <div class="slx-schedule-movement-list">
+                ${movements.map((movement, movementIndex) => renderScheduleMovement(movement, index, movementIndex)).join('')}
+              </div>
+            </div>
+          ` : ''}
         </div>
       ` : ''}
     </div>
@@ -216,7 +223,7 @@ export function renderSchedulePanel(settings, chatState) {
         </div>
         ${hasCurrent ? `
           <div class="slx-schedule-grid">
-            ${current.days.map((day, index) => renderScheduleDay(day, index)).join('')}
+            ${current.days.map((day, index) => renderScheduleDay(day, index, schedulePanelState.expandedDayIndex === index)).join('')}
           </div>
         ` : renderScheduleEmpty()}
       </div>
@@ -248,6 +255,7 @@ export function bindSchedulePanelEvents(panelRoot) {
     schedulePanelState.generationStatus = 'running';
     schedulePanelState.generationError = '';
     schedulePanelState.confirmClearOpen = false;
+    schedulePanelState.expandedDayIndex = null;
     refreshPanel();
     try {
       const result = await runScheduleGeneration({ userDirection: schedulePanelState.userDirection });
@@ -296,7 +304,17 @@ export function bindSchedulePanelEvents(panelRoot) {
     schedulePanelState.generationStatus = 'idle';
     schedulePanelState.generationError = '';
     schedulePanelState.confirmClearOpen = false;
+    schedulePanelState.expandedDayIndex = null;
     refreshPanel();
+  });
+
+  panelRoot.querySelectorAll('[data-slx-schedule-toggle-day]').forEach(button => {
+    button.addEventListener('click', () => {
+      const index = Number(button.dataset.slxScheduleToggleDay);
+      if (!Number.isInteger(index)) return;
+      schedulePanelState.expandedDayIndex = schedulePanelState.expandedDayIndex === index ? null : index;
+      refreshPanel();
+    });
   });
 
   panelRoot.querySelectorAll('[data-slx-schedule-send]').forEach(button => {
