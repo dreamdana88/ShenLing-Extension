@@ -105,7 +105,9 @@ function createMultiRow(key, config, values) {
   const list = createElement('ul', `slx-mc-list slx-mc-list--${key}`);
   values.forEach((value, valueIndex) => {
     const item = createElement('li', `slx-mc-list-item slx-mc-list-item--${key} slx-mc-list-item-${valueIndex + 1}`);
-    const parts = parsePipeFields(value, config.pipe || 0).filter(part => part !== '');
+    const parts = parsePipeFields(value, config.pipe || 0)
+      .map((part, index) => (key === 'progress' && index === 1 && !part ? '本轮新增:无' : part))
+      .filter(part => part !== '');
     if (key === 'quote') {
       const speaker = String(parts[0] || '').trim();
       if (speaker === '{{user}}') {

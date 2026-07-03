@@ -5,6 +5,7 @@ import {
 import {
   extractSummarySourceContent,
   formatTimestamp,
+  isPlainObject,
 } from '../../utils/text.js';
 import { buildApiUrl } from '../../core/api.js';
 import { buildCharacterFoundationBlock } from '../../core/character.js';
@@ -27,6 +28,7 @@ import {
 import {
   getChatState,
   getGlobalSettings,
+  getPlotOutlineState,
   getSummarySettings,
   getWordReplaceSettings,
   saveChatState,
@@ -41,6 +43,8 @@ import {
 import {
   applyPlotOutlineProgressUpdate,
   buildPlotOutlineProgressPromptSection,
+  parsePlotOutlineProgressLine,
+  rebuildPlotOutlineProgressFromSources,
   syncPlotOutlineInjection,
 } from '../plot-outline/workflow.js';
 import {
@@ -119,9 +123,47 @@ function joinSummaryExtraInstructions(...sections) {
     .join('\n\n');
 }
 
+function hydratePlotOutlineProgressSourcesFromExistingMemories(chatState = getChatState()) {
+  const outline = getPlotOutlineState(chatState);
+  const sources = isPlainObject(outline.progressSources) ? outline.progressSources : {};
+  const hasStructuredSources = Object.values(sources)
+    .some(source => isPlainObject(source) && ['memory', 'manual'].includes(source.source));
+  if (hasStructuredSources) return false;
+
+  const nextSources = {};
+  const messages = getChatMessagesSafe(undefined, { hide_state: 'all' })
+    .filter(message => message.role === 'assistant' && !GRAND_MEMORY_BLOCK_RE.test(message.message));
+
+  messages.forEach(message => {
+    const messageId = Number(message.message_id);
+    if (!Number.isInteger(messageId) || messageId < 0) return;
+    extractMemoryBlocks(message.message).forEach(memory => {
+      const parsed = parsePlotOutlineProgressLine(memory);
+      if (!parsed || parsed.conditionIds.length === 0) return;
+      nextSources[String(messageId)] = {
+        source: 'memory',
+        messageId,
+        fingerprint: createSimpleFingerprint(memory),
+        chapterId: parsed.chapterId,
+        conditionIds: parsed.conditionIds,
+        exitChapterId: parsed.exitChapterId,
+        updatedAt: outline.updatedAt || '',
+      };
+    });
+  });
+
+  if (Object.keys(nextSources).length === 0) return false;
+  outline.progressSources = nextSources;
+  rebuildPlotOutlineProgressFromSources(outline, { advanceCurrentChapter: false });
+  outline.updatedAt = formatTimestamp();
+  saveChatState();
+  return true;
+}
+
 async function processPlotOutlineProgressFromMemory(memoryText, { messageId = null } = {}) {
   let result = { changed: false };
   try {
+    hydratePlotOutlineProgressSourcesFromExistingMemories(getChatState());
     result = applyPlotOutlineProgressUpdate(memoryText, getChatState(), {
       messageId: Number(messageId),
       fingerprint: createSimpleFingerprint(memoryText),
