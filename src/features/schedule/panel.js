@@ -132,9 +132,15 @@ function renderScheduleEmpty() {
   return `
     <div class="slx-schedule-empty">
       <div class="slx-schedule-empty-mark">七日剧情菜单</div>
-      <p>还没有日程表。写下短期方向（也可以留空），点击「生成日程表」，未来七天的剧情机会、介入入口与角色动向会在这里展开。</p>
+      <p>还没有日程表。写下期望方向（也可以留空），点击「生成日程表」，未来七天的剧情机会、介入入口与角色动向会在这里展开。</p>
     </div>
   `;
+}
+
+function getScheduleDisplayTitle(current) {
+  const title = String(current?.title || '').trim();
+  if (!title || title === '七日剧情机会表') return '七日剧情';
+  return title;
 }
 
 function renderScheduleDay(day, index, expanded) {
@@ -150,12 +156,12 @@ function renderScheduleDay(day, index, expanded) {
           <span class="slx-schedule-day-title"><b>${escapeHtml(day.theme || `第${index + 1}天`)}</b></span>
           <span class="slx-schedule-day-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
         </button>
-        ${day.mainOpportunity || entryOptions.length || movements.length ? `<button class="slx-schedule-load-btn slx-schedule-load-day-btn" type="button" data-slx-schedule-load-day="${index}" title="把本日主机会、介入入口与角色动向填入聊天输入框">载入本日</button>` : ''}
+        ${day.mainOpportunity || entryOptions.length || movements.length ? `<button class="slx-schedule-load-btn slx-schedule-load-day-btn" type="button" data-slx-schedule-load-day="${index}" title="把本日机会、介入入口与角色动向填入聊天输入框">载入本日</button>` : ''}
       </div>
       ${expanded ? `
         <div class="slx-schedule-day-content">
           <div class="slx-schedule-section slx-schedule-main">
-            <div class="slx-schedule-section-label">主机会</div>
+            <div class="slx-schedule-section-label">机会</div>
             <p>${escapeHtml(day.mainOpportunity || '暂无主剧情机会')}</p>
             ${day.mainOpportunity ? `<button class="slx-schedule-load-btn" type="button" data-slx-schedule-load-main="${index}" title="以旁白形态填入聊天输入框">推进此机会</button>` : ''}
           </div>
@@ -211,7 +217,7 @@ export function renderSchedulePanel(settings, chatState) {
       <div class="slx-detail-card slx-schedule-generate-card">
         <label class="slx-field">
           <div class="slx-schedule-label-row">
-            <span>短期方向</span>
+            <span>期望方向</span>
             <div class="slx-schedule-api-toggle" role="group" aria-label="日程表 API 模式">
               <button class="${scheduleSettings.apiMode === 'main_api' ? 'is-active' : ''}" type="button" data-slx-schedule-api-mode="main_api" ${disabled}>主 API</button>
               <button class="${scheduleSettings.apiMode === 'secondary_api' ? 'is-active' : ''}" type="button" data-slx-schedule-api-mode="secondary_api" ${disabled}>副 API</button>
@@ -228,8 +234,7 @@ export function renderSchedulePanel(settings, chatState) {
       <div class="slx-detail-card slx-schedule-current-card">
         <div class="slx-schedule-card-head">
           <div>
-            <div class="slx-detail-title">${hasCurrent ? escapeHtml(current.title || '当前日程表') : '还没有日程表'}</div>
-            <p>${hasCurrent ? `上次生成：${escapeHtml(schedule.lastGeneratedAt || '未记录')}。当前聊天的临时剧情菜单，可随时重 Roll 覆盖。` : '当前聊天的临时剧情菜单。生成后会显示七日剧情机会、介入入口与角色动向。'}</p>
+            <div class="slx-detail-title">${hasCurrent ? escapeHtml(getScheduleDisplayTitle(current)) : '还没有日程表'}</div>
           </div>
           ${hasCurrent ? '<button class="slx-soft-btn" type="button" data-slx-schedule-clear>清空</button>' : ''}
         </div>

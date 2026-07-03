@@ -249,7 +249,7 @@ export function buildSchedulePrompt({
     : "";
   return `当前蜃灵已进入日程表编织状态。
 
-请根据下方梦境上下文素材，为当前故事生成一份「七日剧情机会表」。作为未来七天的剧情清单。
+请根据下方梦境上下文素材，为当前故事生成一份「七日剧情」。作为未来七天的剧情清单。
 
 以下是本次可参考的梦境上下文素材：
 
@@ -263,7 +263,7 @@ ${outlineSection}${directionSection}
 - 介入入口是给{{user}}的行动方向。
 
 【叙事约束】
-- 禁止描述 {{user}}的选择、成长或情绪反应。
+- 除 entryOptions 外，禁止描述 {{user}}的选择、成长或情绪反应。
 - 角色动向优先使用不在场角色，不要让所有事件都以 {{user}} 为中心。
 - 不让角色无视距离、时间、作息或当前处境凭空出现。
 - 私密场景或性爱事件中，角色动向不得打断、偷窥、敲门、打电话或制造潜在干扰。
@@ -272,7 +272,7 @@ ${outlineSection}${directionSection}
 【输出格式】
 必须只输出合法 JSON，不要输出 Markdown 代码块，不要输出解释文字：
 {
-  "title": "七日剧情机会表",
+  "title": "七日剧情",
   "days": [
     {
       "day": 1,
@@ -304,7 +304,7 @@ ${outlineSection}${directionSection}
 
 【文本形态要求】
 - mainOpportunity： {{user}} 面前的情境、局势、压力或可推进方向。
-- entryOptions：{{user}}视角第一人称的行动、对话。
+- entryOptions：{{user}}视角第一人称的行动与对话。
 - characterMovements.summary：保持第三人称场外客观视角，描述该角色此刻在做什么。`;
 }
 export const DEFAULT_MEMORY_PROMPT_TEMPLATE = [

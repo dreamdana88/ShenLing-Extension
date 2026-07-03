@@ -75,7 +75,7 @@ export function normalizeScheduleResult(raw) {
   }
   const timestamp = formatTimestamp();
   return {
-    title: cleanText(raw.title) || '七日剧情机会表',
+    title: cleanText(raw.title) || '七日剧情',
     days: Array.from({ length: 7 }, (_, index) => normalizeScheduleDay(rawDays[index], index, { forcePending: true })),
     createdAt: timestamp,
     updatedAt: timestamp,

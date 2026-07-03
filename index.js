@@ -82,6 +82,11 @@ import {
   renderContextDiagnostics,
 } from './src/features/context-diagnostics/panel.js';
 import {
+  bindMemoirWorldbookDiagnosticsEvents,
+  configureMemoirDiagnosticsPanel,
+  renderMemoirWorldbookDiagnostics,
+} from './src/features/memoir/diagnostics.js';
+import {
   bindMiniTheaterPanelEvents,
   closeMiniTheaterPreview,
   configureMiniTheaterPanel,
@@ -696,6 +701,7 @@ function renderModuleDetail(module, settings) {
         ${renderDiagnosticLine('全局最近保存', diagnostics.globalLastSavedAt)}
         ${renderDiagnosticLine('聊天最近保存', diagnostics.chatLastSavedAt)}
       </div>
+      ${renderMemoirWorldbookDiagnostics()}
     `;
   }
 
@@ -908,6 +914,7 @@ function renderFloatingPanel(options = {}) {
   bindEmotionProfilePanelEvents(panelRoot, settings);
   bindDiaryPanelEvents(panelRoot);
   bindContextDiagnosticsPanelEvents(panelRoot);
+  bindMemoirWorldbookDiagnosticsEvents(panelRoot);
   bindMiniTheaterPanelEvents(panelRoot);
   bindPlotOutlinePanelEvents(panelRoot);
   bindSchedulePanelEvents(panelRoot);
@@ -1172,6 +1179,11 @@ function init() {
   });
   configureContextDiagnosticsPanel({
     refreshPanel: renderFloatingPanel,
+  });
+  configureMemoirDiagnosticsPanel({
+    refreshPanel: () => renderFloatingPanel({
+      detailScrollTop: panelRoot?.querySelector('.slx-detail')?.scrollTop,
+    }),
   });
   configureMiniTheaterPanel({
     addCommunicationLog,
