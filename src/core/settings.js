@@ -170,9 +170,10 @@ export const defaultChatState = Object.freeze({
     worldbookId: '',        // 绑定的回忆录世界书名（TavernHelper 世界书名即 id）
     worldbookName: '',       // 展示名，通常同 worldbookId
     prevBoundName: '',       // 替换前的原绑定世界书名，仅作诊断/还原参考
-    overviewId: '',          // 蓝灯总览的 memoirId，用于覆盖更新
+    overviewUid: null,       // 蓝灯总览条目在世界书中的 uid，用于覆盖更新
     sourceProcessed: [],     // 已处理的大总结标识列表，避免同源重复提炼
-    entries: [],             // 已写入条目索引：{ memoirId, name, title, type:'blue'|'green', uid, updatedAt }
+    entries: [],             // 已写入绿灯条目索引：{ memoirId, title, digest, storyTime, importance, participants, mainKeywords, filterKeywords, uid, createdAt, updatedAt }
+    pending: null,           // 待用户确认的提炼结果：{ sourceKey, overview:[], memories:[], generatedAt }
     updatedAt: '',
   },
   parallel: {
@@ -464,6 +465,9 @@ export function getMemoirState(chatState = getChatState()) {
   }
   if (!Array.isArray(chatState.memoir.entries)) {
     chatState.memoir.entries = [];
+  }
+  if (chatState.memoir.pending !== null && !isPlainObject(chatState.memoir.pending)) {
+    chatState.memoir.pending = null;
   }
   return chatState.memoir;
 }

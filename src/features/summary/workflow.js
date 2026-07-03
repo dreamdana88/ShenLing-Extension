@@ -47,7 +47,7 @@ import {
   rebuildPlotOutlineProgressFromSources,
   syncPlotOutlineInjection,
 } from '../plot-outline/workflow.js';
-import { tryExtractMemoirFromGrandSummary } from '../memoir/workflow.js';
+import { stageMemoirCandidates, tryExtractMemoirFromGrandSummary } from '../memoir/workflow.js';
 import {
   buildGrandMemoryMaterialPrompt,
   buildLegacyArchiveBatchMaterial,
@@ -832,7 +832,7 @@ export async function processAutoGrandMemory() {
   }
 }
 
-// 大总结后提炼回忆候选。3b 阶段只解析+打日志，不写世界书、不改 sourceProcessed。
+// 大总结后提炼回忆候选，暂存到 pending，交用户在回忆录面板确认（不直接写世界书）。
 // 用独立 try/catch 包裹：回忆录提炼失败绝不能影响已完成的大总结主流程。
 // 复用 generateSummaryMemory 作为生成函数，使提炼跟随设置里选的主/副 API（与大总结一致）。
 async function tryExtractMemoirAfterGrandSummary(archiveRecord, grandMemoryText) {
@@ -845,10 +845,12 @@ async function tryExtractMemoirAfterGrandSummary(archiveRecord, grandMemoryText)
       console.log(`[蜃灵回忆录] 提炼跳过：${result.skipped}`);
       return;
     }
-    console.log(
-      `[蜃灵回忆录] 提炼完成（未写入）：绿灯候选 ${result.memories.length} 条，蓝灯总览 ${result.overview ? '有' : '无'}。`,
-      result,
-    );
+    if (!result.memories.length) {
+      console.log('[蜃灵回忆录] 提炼完成，但无已完成事件可写入。');
+      return;
+    }
+    stageMemoirCandidates(result);
+    notifySummary('info', `回忆录提炼出 ${result.memories.length} 条候选，请到回忆录面板确认。`, '回忆录');
   } catch (error) {
     console.warn('[蜃灵回忆录] 提炼失败（不影响大总结）：', error);
   }

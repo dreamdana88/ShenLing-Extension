@@ -389,14 +389,11 @@ async function actionExtract() {
     logLine(`⑦ 跳过：${result.skipped}`);
     if (!result.raw) return;
   }
-  logLine(`⑦ 绿灯候选 ${result.memories.length} 条，蓝灯总览：${result.overview ? '有' : '无'}`);
-  if (result.overview) {
-    const recall = Array.isArray(result.overview.recallList) ? result.overview.recallList.join('、') : '';
-    logLine(`⑦ 可唤起回忆：${recall || '（空）'}`);
-    (result.overview.characterImprints || []).forEach(ci => {
-      logLine(`⑦ 印记 · ${ci.character}：${ci.imprint}`);
-    });
-  }
+  const overviewList = Array.isArray(result.overview) ? result.overview : [];
+  logLine(`⑦ 绿灯候选 ${result.memories.length} 条，蓝灯总览 ${overviewList.length} 条`);
+  overviewList.forEach(o => {
+    logLine(`⑦ 目录 · ${o.title}：${o.digest}`);
+  });
   result.memories.forEach((m, i) => {
     logLine(`⑦ [${i + 1}] 「${m.title}」importance=${m.importance} time=${m.storyTime}`);
     logLine(`⑦     人=[${(m.mainKeywords || []).join(', ')}] 事=[${(m.filterKeywords || []).join(', ')}]`);

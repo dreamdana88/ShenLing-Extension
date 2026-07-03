@@ -87,6 +87,11 @@ import {
   renderMemoirWorldbookDiagnostics,
 } from './src/features/memoir/diagnostics.js';
 import {
+  bindMemoirPanelEvents,
+  configureMemoirPanel,
+  renderMemoirPanel,
+} from './src/features/memoir/panel.js';
+import {
   bindMiniTheaterPanelEvents,
   closeMiniTheaterPreview,
   configureMiniTheaterPanel,
@@ -662,6 +667,10 @@ function renderModuleDetail(module, settings) {
     return renderSchedulePanel(settings, chatState);
   }
 
+  if (module.id === 'memoir') {
+    return renderMemoirPanel(settings, chatState);
+  }
+
   if (module.id === 'theater') {
     return renderMiniTheaterPanel();
   }
@@ -714,7 +723,7 @@ function renderModuleDetail(module, settings) {
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">当前聊天快照</div>
       ${renderDiagnosticLine('小总结计数', chatState.summary.smallSummaryCount)}
-      ${renderDiagnosticLine('回忆录条目数', chatState.memoir.entryCount)}
+      ${renderDiagnosticLine('回忆录条目数', (chatState.memoir.entries || []).length)}
       ${renderDiagnosticLine('平行事件时间', chatState.parallel.lastParallelEventTime || '尚未记录')}
     </div>
   `;
@@ -915,6 +924,7 @@ function renderFloatingPanel(options = {}) {
   bindDiaryPanelEvents(panelRoot);
   bindContextDiagnosticsPanelEvents(panelRoot);
   bindMemoirWorldbookDiagnosticsEvents(panelRoot);
+  bindMemoirPanelEvents(panelRoot, settings);
   bindMiniTheaterPanelEvents(panelRoot);
   bindPlotOutlinePanelEvents(panelRoot);
   bindSchedulePanelEvents(panelRoot);
@@ -1182,6 +1192,12 @@ function init() {
   });
   configureMemoirDiagnosticsPanel({
     refreshPanel: () => renderFloatingPanel({
+      detailScrollTop: panelRoot?.querySelector('.slx-detail')?.scrollTop,
+    }),
+  });
+  configureMemoirPanel({
+    refreshPanel: () => renderFloatingPanel({
+      moduleScrollTop: panelRoot?.querySelector('.slx-module-grid')?.scrollTop,
       detailScrollTop: panelRoot?.querySelector('.slx-detail')?.scrollTop,
     }),
   });

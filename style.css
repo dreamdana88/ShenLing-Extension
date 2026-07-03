@@ -707,6 +707,75 @@ body.slx-panel-open-lock {
   font-size: 11px;
 }
 
+/* 回忆录世界书面板 */
+.slx-memoir-cand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 8px 0;
+}
+.slx-memoir-cand {
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.slx-memoir-cand-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.slx-memoir-cand-head input[data-field="title"] {
+  flex: 1;
+  font-weight: 600;
+}
+.slx-memoir-cand-head select {
+  flex: 0 0 auto;
+  width: auto;
+}
+.slx-memoir-label {
+  font-size: 11px;
+  color: var(--slx-muted);
+  margin-top: 2px;
+}
+.slx-memoir-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.18);
+  color: inherit;
+  font-size: 12px;
+}
+.slx-memoir-textarea {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
+.slx-memoir-entry-list {
+  margin: 6px 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.slx-memoir-entry-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.slx-memoir-entry-list small {
+  color: var(--slx-muted);
+  flex: 0 0 auto;
+}
+
 /* 临时：回忆录世界书诊断日志/字段核对区（功能落地后可随诊断入口一并删除） */
 .slx-diag-pre {
   margin: 6px 0 0;

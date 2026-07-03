@@ -104,9 +104,8 @@ function buildEmotionMaterial() {
 /** 把已记录条目压成「事件 / 人 / 关键锚点」简表，供 AI 去重参考。 */
 function buildRecordedList(memoir) {
   const entries = Array.isArray(memoir.entries) ? memoir.entries : [];
-  const greens = entries.filter(e => e && e.type === 'green');
-  if (!greens.length) return '';
-  return greens
+  if (!entries.length) return '';
+  return entries
     .map(e => {
       const people = Array.isArray(e.mainKeywords) ? e.mainKeywords.slice(0, 2).join('/') : '';
       const anchor = Array.isArray(e.filterKeywords) ? e.filterKeywords.slice(0, 2).join('/') : '';
@@ -135,7 +134,7 @@ function parseMemoirJson(raw) {
     throw new Error(`回忆录 JSON 解析失败：${error.message}`);
   }
   const memories = Array.isArray(parsed?.memories) ? parsed.memories : [];
-  const overview = parsed?.overview && typeof parsed.overview === 'object' ? parsed.overview : null;
+  const overview = Array.isArray(parsed?.overview) ? parsed.overview : [];
   return { overview, memories };
 }
 
@@ -150,12 +149,12 @@ function parseMemoirJson(raw) {
  *   - grandMemoryText: string 本次大总结正文
  *   - force: boolean 诊断试跑用；跳过 enabled 门控与 sourceProcessed 幂等，强制走一次生成
  * @returns {Promise<{ skipped?: string, sourceKey?: string, prompt?: string, raw?: string,
- *   overview: object|null, memories: any[] }>}
+ *   overview: any[], memories: any[] }>}
  */
 export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate, grandMemoryText, force = false } = {}) {
   const memoirSettings = getMemoirSettings();
   if (!force && !memoirSettings.enabled) {
-    return { skipped: 'disabled', overview: null, memories: [] };
+    return { skipped: 'disabled', overview: [], memories: [] };
   }
   if (typeof generate !== 'function') {
     throw new Error('未提供生成函数，无法提炼回忆候选。');
@@ -164,12 +163,12 @@ export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate
   const memoir = getMemoirState();
   const sourceKey = buildSourceKey(archiveRecord);
   if (!force && memoir.sourceProcessed.includes(sourceKey)) {
-    return { skipped: 'already_processed', sourceKey, overview: null, memories: [] };
+    return { skipped: 'already_processed', sourceKey, overview: [], memories: [] };
   }
 
   const grandMemoryMaterial = String(grandMemoryText || '').trim();
   if (!grandMemoryMaterial) {
-    return { skipped: 'no_material', sourceKey, overview: null, memories: [] };
+    return { skipped: 'no_material', sourceKey, overview: [], memories: [] };
   }
 
   const prompt = buildMemoirExtractPrompt({
@@ -182,4 +181,216 @@ export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate
   const { overview, memories } = parseMemoirJson(raw);
 
   return { sourceKey, prompt, raw, overview, memories };
+}
+
+// ── 阶段四：候选暂存到 pending，交用户确认 ────────────────────────────
+
+/** 规范化单条绿灯候选，容错缺字段。给每条分配临时 candidateId 供面板增删。 */
+function normalizeCandidate(mem, index) {
+  const asArray = v => (Array.isArray(v) ? v.map(s => String(s).trim()).filter(Boolean) : []);
+  const importance = ['high', 'medium', 'low'].includes(mem?.importance) ? mem.importance : 'medium';
+  return {
+    candidateId: `cand-${Date.now()}-${index}`,
+    title: String(mem?.title || '').trim() || '未命名回忆',
+    storyTime: String(mem?.storyTime || '').trim() || '未明',
+    importance,
+    participants: asArray(mem?.participants),
+    mainKeywords: asArray(mem?.mainKeywords),
+    filterKeywords: asArray(mem?.filterKeywords),
+    content: String(mem?.content || '').trim(),
+  };
+}
+
+/** 把提炼结果规范化后暂存到 chatState.memoir.pending，等待用户确认。 */
+export function stageMemoirCandidates({ sourceKey, overview, memories } = {}) {
+  const memoir = getMemoirState();
+  const candidates = (Array.isArray(memories) ? memories : [])
+    .map((m, i) => normalizeCandidate(m, i))
+    .filter(c => c.content); // 无正文的丢弃
+
+  // digest 从 overview 里按 title 对齐补进候选，供面板/蓝灯使用
+  const overviewList = Array.isArray(overview) ? overview : [];
+  const digestByTitle = new Map(
+    overviewList
+      .filter(o => o && o.title)
+      .map(o => [String(o.title).trim(), String(o.digest || '').trim()]),
+  );
+  candidates.forEach(c => {
+    c.digest = digestByTitle.get(c.title) || '';
+  });
+
+  memoir.pending = {
+    sourceKey: sourceKey || '',
+    candidates,
+    generatedAt: formatTimestamp(),
+  };
+  saveChatState();
+  return memoir.pending;
+}
+
+/** 丢弃当前 pending 候选（用户点“全部忽略”）。 */
+export function discardMemoirPending() {
+  const memoir = getMemoirState();
+  memoir.pending = null;
+  saveChatState();
+}
+
+// ── 阶段五：把确认后的候选写入世界书 ─────────────────────────────────
+
+const MEMOIR_GREEN_NAME_PREFIX = 'SLX-Memoir-Green-';
+const MEMOIR_BLUE_NAME = 'SLX-Memoir-Blue-回忆录总览';
+
+/** 绿灯条目正文：时间前置，AI 可读，不含来源信息。 */
+function buildGreenContent(entry) {
+  const time = entry.storyTime && entry.storyTime !== '未明' ? `【${entry.storyTime}】` : '';
+  return `${time}${entry.content}`.trim();
+}
+
+/** 用全量 entries 重建蓝灯总览正文（覆盖但不丢旧目录）。 */
+function buildBlueContent(entries) {
+  const lines = ['【回忆录总览】', '以下是这段旅程中值得铭记的往事：', ''];
+  entries.forEach(e => {
+    const digest = e.digest || `${e.storyTime && e.storyTime !== '未明' ? e.storyTime + '，' : ''}${e.title}`;
+    lines.push(`· ${e.title}：${digest}`);
+  });
+  return lines.join('\n');
+}
+
+/** 绿灯条目结构（新 schema），供 createWorldbookEntries。 */
+function buildGreenEntryPayload(entry) {
+  return {
+    name: `${MEMOIR_GREEN_NAME_PREFIX}${entry.title}`,
+    enabled: true,
+    strategy: {
+      type: 'selective',
+      keys: entry.mainKeywords.length ? entry.mainKeywords : [entry.title],
+      keys_secondary: { logic: 'and_any', keys: entry.filterKeywords },
+      scan_depth: 'same_as_global',
+    },
+    position: { type: 'after_character_definition', role: 'system', depth: 0, order: 100 },
+    content: buildGreenContent(entry),
+    probability: 100,
+    recursion: { prevent_incoming: true, prevent_outgoing: true, delay_until: null },
+    extra: {
+      memoirId: entry.memoirId,
+      memoirType: 'green',
+      storyTime: entry.storyTime,
+      importance: entry.importance,
+      participants: entry.participants,
+    },
+  };
+}
+
+/**
+ * 把用户确认后的候选写入世界书。
+ * - 绿灯：逐条新增（增量，不动旧条目）。
+ * - 蓝灯：用全量 entries 重建后覆盖（不丢旧目录）。
+ * - 成功后更新 entries 索引 + sourceProcessed，清空 pending。
+ *
+ * @param {Array} confirmedCandidates 用户确认保留（可能已编辑）的候选数组
+ * @param {object} opts - sourceKey: 幂等键（写入后记入 sourceProcessed）
+ * @returns {Promise<{ worldbookName, greenAdded, blueMode, totalEntries }>}
+ */
+export async function commitMemoirCandidates(confirmedCandidates, { sourceKey } = {}) {
+  const list = Array.isArray(confirmedCandidates) ? confirmedCandidates.filter(c => c && c.content) : [];
+  if (!list.length) {
+    throw new Error('没有可写入的回忆候选。');
+  }
+
+  const api = getWorldbookApi();
+  const { worldbookName } = await ensureMemoirWorldbook();
+  const memoir = getMemoirState();
+
+  // 1) 绿灯逐条新增
+  const now = formatTimestamp();
+  const newEntries = list.map((c, i) => ({
+    memoirId: c.memoirId || `mem-${Date.now()}-${i}`,
+    title: c.title,
+    digest: c.digest || '',
+    storyTime: c.storyTime || '未明',
+    importance: ['high', 'medium', 'low'].includes(c.importance) ? c.importance : 'medium',
+    participants: Array.isArray(c.participants) ? c.participants : [],
+    mainKeywords: Array.isArray(c.mainKeywords) ? c.mainKeywords : [],
+    filterKeywords: Array.isArray(c.filterKeywords) ? c.filterKeywords : [],
+    content: c.content,
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const greenPayloads = newEntries.map(buildGreenEntryPayload);
+  const created = await api.createWorldbookEntries(worldbookName, greenPayloads);
+  // 回填 uid（按 name 对齐）
+  const createdList = Array.isArray(created?.new_entries) ? created.new_entries : [];
+  newEntries.forEach(e => {
+    const match = createdList.find(x => x.name === `${MEMOIR_GREEN_NAME_PREFIX}${e.title}`);
+    if (match) e.uid = match.uid;
+  });
+
+  // 2) entries 索引累加（本轮并入后即为全量）
+  memoir.entries = [...memoir.entries, ...newEntries];
+
+  // 3) 蓝灯用全量 entries 重建后覆盖
+  const blueContent = buildBlueContent(memoir.entries);
+  let blueMode = 'updated';
+  if (typeof api.updateWorldbookWith === 'function') {
+    let found = false;
+    await api.updateWorldbookWith(worldbookName, (book) => {
+      const list2 = Array.isArray(book) ? book : [];
+      const blue = list2.find(e => e?.name === MEMOIR_BLUE_NAME || e?.extra?.memoirType === 'blue');
+      if (blue) {
+        found = true;
+        blue.content = blueContent;
+        blue.strategy = { ...(blue.strategy || {}), type: 'constant' };
+        blue.recursion = { prevent_incoming: true, prevent_outgoing: true, delay_until: null };
+        return list2;
+      }
+      return list2;
+    });
+    if (!found) {
+      // 蓝灯不存在 → 新建
+      await api.createWorldbookEntries(worldbookName, [{
+        name: MEMOIR_BLUE_NAME,
+        enabled: true,
+        strategy: { type: 'constant', keys: [], keys_secondary: { logic: 'and_any', keys: [] }, scan_depth: 'same_as_global' },
+        position: { type: 'after_character_definition', role: 'system', depth: 0, order: 50 },
+        content: blueContent,
+        probability: 100,
+        recursion: { prevent_incoming: true, prevent_outgoing: true, delay_until: null },
+        extra: { memoirType: 'blue' },
+      }]);
+      blueMode = 'created';
+    }
+  }
+
+  // 4) 幂等标记 + 清 pending
+  if (sourceKey && !memoir.sourceProcessed.includes(sourceKey)) {
+    memoir.sourceProcessed.push(sourceKey);
+  }
+  memoir.pending = null;
+  memoir.updatedAt = now;
+  saveChatState();
+
+  return { worldbookName, greenAdded: newEntries.length, blueMode, totalEntries: memoir.entries.length };
+}
+
+// ── 手动提炼：从最新大总结提炼并暂存（供面板“手动提炼”按钮）──────────
+
+/**
+ * 手动触发：读最新大总结正文提炼候选并暂存到 pending。
+ * @param {object} deps - generate: 生成函数（由 UI 注入 generateSummaryMemory）
+ *   - grandMemoryText: 可选，指定素材；不传则由调用方读取最新大总结
+ * @returns {Promise<{ staged: boolean, count: number, reason?: string }>}
+ */
+export async function runManualMemoirExtraction({ generate, grandMemoryText, sourceKey } = {}) {
+  const archiveRecord = { summaryMessageId: sourceKey || 'manual', memoryFrom: '?', memoryTo: '?' };
+  const result = await tryExtractMemoirFromGrandSummary(archiveRecord, {
+    generate,
+    grandMemoryText,
+    force: true, // 手动提炼绕过 enabled/幂等，由用户主动发起
+  });
+  if (!result.memories.length) {
+    return { staged: false, count: 0, reason: 'no_memory' };
+  }
+  stageMemoirCandidates(result);
+  return { staged: true, count: result.memories.length };
 }
