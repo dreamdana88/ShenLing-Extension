@@ -149,6 +149,123 @@ function getOutlineChapterById(outline, chapterId) {
   return (Array.isArray(outline.chapters) ? outline.chapters : [])
     .find(chapter => normalizeOutlineId(chapter.id) === normalizedId) || null;
 }
+
+function getValidConditionIdsForChapter(chapter, conditionIds) {
+  const conditionIdsByNormalized = new Map(
+    (Array.isArray(chapter?.conditions) ? chapter.conditions : [])
+      .map(condition => [normalizeOutlineId(condition.id), condition.id]),
+  );
+  return [...new Set((Array.isArray(conditionIds) ? conditionIds : [])
+    .map(id => conditionIdsByNormalized.get(normalizeOutlineId(id)))
+    .filter(Boolean))];
+}
+
+function getProgressSignature(progress) {
+  return JSON.stringify(progress || {});
+}
+
+function ensureProgressSources(outline) {
+  if (!isPlainObject(outline.progressSources)) {
+    outline.progressSources = {};
+  }
+  return outline.progressSources;
+}
+
+export function rebuildPlotOutlineProgressFromSources(outline, { advanceCurrentChapter = true } = {}) {
+  const sources = ensureProgressSources(outline);
+  const nextProgress = {};
+  let sourcesChanged = false;
+
+  Object.entries(sources).forEach(([sourceKey, source]) => {
+    if (!isPlainObject(source)) {
+      delete sources[sourceKey];
+      sourcesChanged = true;
+      return;
+    }
+
+    const chapter = getOutlineChapterById(outline, source.chapterId);
+    if (!chapter) {
+      delete sources[sourceKey];
+      sourcesChanged = true;
+      return;
+    }
+
+    const conditionIds = getValidConditionIdsForChapter(chapter, source.conditionIds);
+    if (conditionIds.length === 0) {
+      if (Array.isArray(source.conditionIds) && source.conditionIds.length === 0) return;
+      delete sources[sourceKey];
+      sourcesChanged = true;
+      return;
+    }
+
+    if (!isPlainObject(nextProgress[chapter.id])) {
+      nextProgress[chapter.id] = {};
+    }
+    conditionIds.forEach(conditionId => {
+      nextProgress[chapter.id][conditionId] = true;
+    });
+
+    if (
+      source.chapterId !== chapter.id ||
+      getProgressSignature(source.conditionIds) !== getProgressSignature(conditionIds)
+    ) {
+      sources[sourceKey] = {
+        ...source,
+        chapterId: chapter.id,
+        conditionIds,
+      };
+      sourcesChanged = true;
+    }
+  });
+
+  outline.progress = nextProgress;
+
+  let switchedToChapterId = '';
+  if (advanceCurrentChapter) {
+    const chapter = getActiveOutlineChapter(outline);
+    const conditions = Array.isArray(chapter?.conditions) ? chapter.conditions : [];
+    const chapterProgress = isPlainObject(outline.progress?.[chapter?.id]) ? outline.progress[chapter.id] : {};
+    const exitChapter = getOutlineChapterById(outline, chapter?.exitChapterId);
+    if (conditions.length > 0 && conditions.every(condition => chapterProgress[condition.id]) && exitChapter) {
+      outline.currentChapterId = exitChapter.id;
+      switchedToChapterId = exitChapter.id;
+    }
+  }
+
+  return { sourcesChanged, switchedToChapterId };
+}
+
+export function setManualPlotOutlineProgressSource(outline, chapterId, conditionId, done) {
+  const chapter = getOutlineChapterById(outline, chapterId);
+  if (!chapter) return { changed: false };
+  const validConditionIds = getValidConditionIdsForChapter(chapter, [conditionId]);
+  if (validConditionIds.length === 0) return { changed: false };
+
+  const beforeProgress = getProgressSignature(outline.progress);
+  const beforeChapterId = outline.currentChapterId;
+  const sources = ensureProgressSources(outline);
+  const sourceKey = `manual:${chapter.id}:${validConditionIds[0]}`;
+
+  if (done) {
+    sources[sourceKey] = {
+      source: 'manual',
+      chapterId: chapter.id,
+      conditionIds: [validConditionIds[0]],
+      updatedAt: formatTimestamp(),
+    };
+  } else {
+    delete sources[sourceKey];
+  }
+
+  const rebuildResult = rebuildPlotOutlineProgressFromSources(outline);
+  const changed = beforeProgress !== getProgressSignature(outline.progress)
+    || beforeChapterId !== outline.currentChapterId
+    || rebuildResult.sourcesChanged;
+  return {
+    changed,
+    switchedToChapterId: rebuildResult.switchedToChapterId,
+  };
+}
 export function buildPlotOutlineInjection(chatState = getChatState()) {
   const outline = getPlotOutlineState(chatState);
   if (!outline.enabled) return '';
@@ -219,8 +336,9 @@ export function buildPlotOutlineProgressPromptSection(chatState = getChatState()
     ? `${exitChapter.id} ${exitChapter.title}`
     : (chapter.exitChapterId ? `${chapter.exitChapterId}（未找到）` : '无');
   const conditionLines = conditions.map(condition => `${condition.id}. ${condition.text}`);
-  const outputLine = `[progress:${chapter.id}|本轮新增完成条件|${chapter.exitChapterId || ''}]`;
-  const emptyLine = `[progress:${chapter.id}||${chapter.exitChapterId || ''}]`;
+  const completedDisplay = completedConditionIds.length ? completedConditionIds.join(',') : '无';
+  const outputLine = `[progress:${chapter.id}|本轮新增完成条件|${chapter.exitChapterId || ''}|当前已完成:本轮后全部完成条件]`;
+  const emptyLine = `[progress:${chapter.id}||${chapter.exitChapterId || ''}|当前已完成:${completedDisplay}]`;
 
   return `【剧情章节进度检查】
 当前章节：${chapter.id} ${chapter.title}
@@ -237,6 +355,7 @@ ${completedConditionIds.length ? completedConditionIds.join(',') : '无'}
 ${outputLine}
 
 本轮新增完成条件只写本轮新增的条件编号，用英文逗号分隔，例如 C2 或 C2,C3；不要输出累计已完成项。
+最后一段“当前已完成”用于展示，必须写本轮判定后的累计完成条件；如果已有 C1,C2 且本轮新增 C3，则写 当前已完成:C1,C2,C3。
 如果本轮没有新增完成条件，请输出：
 ${emptyLine}`;
 }
@@ -255,24 +374,10 @@ export function parsePlotOutlineProgressLine(memoryText) {
   };
 }
 
-export function applyPlotOutlineProgressUpdate(memoryText, chatState = getChatState()) {
-  const parsed = parsePlotOutlineProgressLine(memoryText);
-  if (!parsed) return { changed: false };
-
+function applyLegacyPlotOutlineProgressUpdate(parsed, chapter, chatState) {
   const outline = getPlotOutlineState(chatState);
-  if (!outline.enabled) return { changed: false };
-  const chapter = getActiveOutlineChapter(outline);
-  if (!chapter || normalizeOutlineId(chapter.id) !== parsed.chapterId) return { changed: false };
-
   const conditions = Array.isArray(chapter.conditions) ? chapter.conditions : [];
-  if (conditions.length === 0) return { changed: false };
-
-  const conditionIdsByNormalized = new Map(
-    conditions.map(condition => [normalizeOutlineId(condition.id), condition.id]),
-  );
-  const validConditionIds = [...new Set(parsed.conditionIds
-    .map(id => conditionIdsByNormalized.get(id))
-    .filter(Boolean))];
+  const validConditionIds = getValidConditionIdsForChapter(chapter, parsed.conditionIds);
 
   if (!isPlainObject(outline.progress)) {
     outline.progress = {};
@@ -308,6 +413,66 @@ export function applyPlotOutlineProgressUpdate(memoryText, chatState = getChatSt
     chapterId: chapter.id,
     completedConditionIds,
     switchedToChapterId,
+  };
+}
+
+export function applyPlotOutlineProgressUpdate(memoryText, chatState = getChatState(), options = {}) {
+  const parsed = parsePlotOutlineProgressLine(memoryText);
+  if (!parsed) return { changed: false };
+
+  const outline = getPlotOutlineState(chatState);
+  if (!outline.enabled) return { changed: false };
+  const chapter = getActiveOutlineChapter(outline);
+  if (!chapter || normalizeOutlineId(chapter.id) !== parsed.chapterId) return { changed: false };
+
+  const conditions = Array.isArray(chapter.conditions) ? chapter.conditions : [];
+  if (conditions.length === 0) return { changed: false };
+
+  const messageId = Number(options.messageId);
+  if (!Number.isInteger(messageId) || messageId < 0) {
+    return applyLegacyPlotOutlineProgressUpdate(parsed, chapter, chatState);
+  }
+
+  const validConditionIds = getValidConditionIdsForChapter(chapter, parsed.conditionIds);
+  const beforeProgress = getProgressSignature(outline.progress);
+  const beforeChapterId = outline.currentChapterId;
+  const beforeChapterProgress = isPlainObject(outline.progress?.[chapter.id]) ? outline.progress[chapter.id] : {};
+  const completedConditionIds = validConditionIds.filter(conditionId => !beforeChapterProgress[conditionId]);
+  const sources = ensureProgressSources(outline);
+  const sourceKey = String(messageId);
+  const previousSource = isPlainObject(sources[sourceKey]) ? sources[sourceKey] : null;
+  const nextSource = validConditionIds.length
+    ? {
+      source: 'memory',
+      messageId,
+      fingerprint: String(options.fingerprint || ''),
+      chapterId: chapter.id,
+      conditionIds: validConditionIds,
+      exitChapterId: parsed.exitChapterId || chapter.exitChapterId || '',
+      updatedAt: formatTimestamp(),
+    }
+    : null;
+  const sourceChanged = getProgressSignature(previousSource) !== getProgressSignature(nextSource);
+
+  if (nextSource) {
+    sources[sourceKey] = nextSource;
+  } else {
+    delete sources[sourceKey];
+  }
+
+  const rebuildResult = rebuildPlotOutlineProgressFromSources(outline);
+  const progressChanged = beforeProgress !== getProgressSignature(outline.progress)
+    || beforeChapterId !== outline.currentChapterId;
+  const shouldSave = sourceChanged || progressChanged || rebuildResult.sourcesChanged;
+  if (!shouldSave) return { changed: false };
+
+  outline.updatedAt = formatTimestamp();
+  saveChatState();
+  return {
+    changed: progressChanged,
+    chapterId: chapter.id,
+    completedConditionIds,
+    switchedToChapterId: rebuildResult.switchedToChapterId,
   };
 }
 export async function syncPlotOutlineInjection() {

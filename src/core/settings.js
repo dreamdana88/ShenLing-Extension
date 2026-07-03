@@ -162,6 +162,7 @@ export const defaultChatState = Object.freeze({
     chapters: [],
     currentChapterId: '',
     progress: {},
+    progressSources: {},
     updatedAt: '',
   },
   memoir: {
@@ -445,6 +446,23 @@ export function getPlotOutlineState(chatState = getChatState()) {
   }
   if (!isPlainObject(chatState.outline.progress)) {
     chatState.outline.progress = {};
+  }
+  if (!isPlainObject(chatState.outline.progressSources)) {
+    chatState.outline.progressSources = {};
+  }
+  if (Object.keys(chatState.outline.progressSources).length === 0) {
+    Object.entries(chatState.outline.progress).forEach(([chapterId, chapterProgress]) => {
+      if (!isPlainObject(chapterProgress)) return;
+      Object.entries(chapterProgress).forEach(([conditionId, done]) => {
+        if (!done) return;
+        chatState.outline.progressSources[`legacy:${chapterId}:${conditionId}`] = {
+          source: 'legacy',
+          chapterId,
+          conditionIds: [conditionId],
+          updatedAt: chatState.outline.updatedAt || '',
+        };
+      });
+    });
   }
   if (!isPlainObject(chatState.outline.storyCore)) {
     chatState.outline.storyCore = cloneData(defaultChatState.outline.storyCore);

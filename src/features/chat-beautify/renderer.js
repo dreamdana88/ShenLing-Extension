@@ -16,7 +16,7 @@ import { renderGrandMemoryCard } from './render-grand-memory.js?v=0.16.34';
 import { renderMemoryCard } from './render-memory.js';
 
 const MEMORY_RENDER_DELAY_MS = 220;
-const MEMORY_RENDER_FORMAT_VERSION = 7;
+const MEMORY_RENDER_FORMAT_VERSION = 8;
 const MEMORY_FIELD_KEYS = new Set([
   'number',
   'time',

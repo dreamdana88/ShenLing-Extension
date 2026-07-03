@@ -13,7 +13,9 @@ import {
   isPlainObject,
 } from '../../utils/text.js';
 import {
+  rebuildPlotOutlineProgressFromSources,
   runPlotOutlineGeneration,
+  setManualPlotOutlineProgressSource,
   syncPlotOutlineInjection,
 } from './workflow.js';
 
@@ -128,12 +130,16 @@ function renderStoryCoreBlock(storyCore = {}) {
 function reconcilePlotOutlineProgress(outline, oldConditionTextsById) {
   if (!isPlainObject(outline.progress)) {
     outline.progress = {};
-    return;
   }
+  if (!isPlainObject(outline.progressSources)) {
+    outline.progressSources = {};
+  }
+  const changedChapterIds = new Set();
   const validChapterIds = new Set(outline.chapters.map(chapter => chapter.id));
   Object.keys(outline.progress).forEach(chapterId => {
     if (!validChapterIds.has(chapterId)) {
       delete outline.progress[chapterId];
+      changedChapterIds.add(chapterId);
     }
   });
   outline.chapters.forEach(chapter => {
@@ -143,8 +149,16 @@ function reconcilePlotOutlineProgress(outline, oldConditionTextsById) {
       && oldTexts.every((text, index) => text === newTexts[index]);
     if (!unchanged) {
       delete outline.progress[chapter.id];
+      changedChapterIds.add(chapter.id);
     }
   });
+  Object.entries(outline.progressSources).forEach(([sourceKey, source]) => {
+    const chapterId = String(source?.chapterId || '');
+    if (!validChapterIds.has(chapterId) || changedChapterIds.has(chapterId)) {
+      delete outline.progressSources[sourceKey];
+    }
+  });
+  rebuildPlotOutlineProgressFromSources(outline, { advanceCurrentChapter: false });
 }
 
 function renderChapterBlock(chapter, { scope = 'saved', progress = {}, readonly = false, isCurrent = false } = {}) {
@@ -557,6 +571,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     outline.chapters = panelState.draft.chapters;
     outline.currentChapterId = panelState.draft.chapters[0]?.id || '';
     outline.progress = {};
+    outline.progressSources = {};
     outline.updatedAt = formatTimestamp();
     saveChatState();
     scheduleInjectionSync();
@@ -593,10 +608,8 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
       if (!chapterId || !conditionId) return;
       const chatState = getChatState();
       const outline = getPlotOutlineState(chatState);
-      if (!isPlainObject(outline.progress[chapterId])) {
-        outline.progress[chapterId] = {};
-      }
-      outline.progress[chapterId][conditionId] = !outline.progress[chapterId][conditionId];
+      const currentlyDone = Boolean(outline.progress?.[chapterId]?.[conditionId]);
+      setManualPlotOutlineProgressSource(outline, chapterId, conditionId, !currentlyDone);
       outline.updatedAt = formatTimestamp();
       saveChatState();
       scheduleInjectionSync();
@@ -609,6 +622,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     const chatState = getChatState();
     const outline = getPlotOutlineState(chatState);
     outline.progress = {};
+    outline.progressSources = {};
     outline.currentChapterId = outline.chapters[0]?.id || '';
     outline.updatedAt = formatTimestamp();
     saveChatState();
@@ -624,6 +638,7 @@ export function bindPlotOutlinePanelEvents(panelRoot) {
     outline.chapters = [];
     outline.currentChapterId = '';
     outline.progress = {};
+    outline.progressSources = {};
     outline.updatedAt = formatTimestamp();
     saveChatState();
     scheduleInjectionSync();

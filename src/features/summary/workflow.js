@@ -122,7 +122,10 @@ function joinSummaryExtraInstructions(...sections) {
 async function processPlotOutlineProgressFromMemory(memoryText, { messageId = null } = {}) {
   let result = { changed: false };
   try {
-    result = applyPlotOutlineProgressUpdate(memoryText);
+    result = applyPlotOutlineProgressUpdate(memoryText, getChatState(), {
+      messageId: Number(messageId),
+      fingerprint: createSimpleFingerprint(memoryText),
+    });
   } catch (error) {
     console.warn('[蜃灵助手] 剧情大纲进度解析失败。', error);
     return result;
