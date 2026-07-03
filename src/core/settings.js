@@ -58,7 +58,8 @@ export const defaultGlobalSettings = Object.freeze({
       promptTemplate: DEFAULT_MEMORY_PROMPT_TEMPLATE,
     },
     memoir: {
-      mode: 'ask_after_archive',
+      enabled: false,
+      apiMode: 'secondary_api',
     },
     parallel: {
       enabled: false,
@@ -166,9 +167,13 @@ export const defaultChatState = Object.freeze({
     updatedAt: '',
   },
   memoir: {
-    worldBookId: '',
-    worldBookName: '',
-    entryCount: 0,
+    worldbookId: '',        // 绑定的回忆录世界书名（TavernHelper 世界书名即 id）
+    worldbookName: '',       // 展示名，通常同 worldbookId
+    prevBoundName: '',       // 替换前的原绑定世界书名，仅作诊断/还原参考
+    overviewId: '',          // 蓝灯总览的 memoirId，用于覆盖更新
+    sourceProcessed: [],     // 已处理的大总结标识列表，避免同源重复提炼
+    entries: [],             // 已写入条目索引：{ memoirId, name, title, type:'blue'|'green', uid, updatedAt }
+    updatedAt: '',
   },
   parallel: {
     lastParallelEventTime: '',
@@ -434,6 +439,36 @@ export function getScheduleSettings(settings = getGlobalSettings()) {
     schedule.apiMode = 'secondary_api';
   }
   return schedule;
+}
+
+export function getMemoirSettings(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.modules)) {
+    settings.modules = {};
+  }
+  settings.modules.memoir = mergeDefaults(
+    settings.modules.memoir,
+    cloneData(defaultGlobalSettings.modules.memoir),
+  );
+  const memoir = settings.modules.memoir;
+  if (!['secondary_api', 'main_api'].includes(memoir.apiMode)) {
+    memoir.apiMode = 'secondary_api';
+  }
+  memoir.enabled = memoir.enabled === true;
+  return memoir;
+}
+
+export function getMemoirState(chatState = getChatState()) {
+  if (!isPlainObject(chatState.memoir)) {
+    chatState.memoir = cloneData(defaultChatState.memoir);
+  }
+  chatState.memoir = mergeDefaults(chatState.memoir, cloneData(defaultChatState.memoir));
+  if (!Array.isArray(chatState.memoir.sourceProcessed)) {
+    chatState.memoir.sourceProcessed = [];
+  }
+  if (!Array.isArray(chatState.memoir.entries)) {
+    chatState.memoir.entries = [];
+  }
+  return chatState.memoir;
 }
 
 export function getPlotOutlineState(chatState = getChatState()) {
