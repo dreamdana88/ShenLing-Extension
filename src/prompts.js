@@ -307,6 +307,83 @@ ${outlineSection}${directionSection}
 - entryOptions：{{user}}视角第一人称的行动与对话。
 - characterMovements.summary：保持第三人称场外客观视角，描述该角色此刻在做什么。`;
 }
+
+export function buildMemoirExtractPrompt({
+  grandMemoryMaterial,
+  emotionMaterial,
+  recordedList,
+}) {
+  const emotionSection = String(emotionMaterial || "").trim() || "（无）";
+  const recordedSection = String(recordedList || "").trim() || "（暂无）";
+  return `当前蜃灵已进入回忆沉淀状态，对既往梦境进行梳理归档。
+
+蜃灵不记录正在发生的事，只把已经发生完、已经有意义的旧事，沉成未来剧情能自然唤起的回忆。
+请从下方素材中，提炼出【已经完成】的关键回忆，写入这段梦境的回忆录。
+
+以下是本次可参考的梦境素材：
+
+【本次大总结】
+${grandMemoryMaterial || "（未读取到大总结素材）"}
+
+【情感档案】
+${emotionSection}
+
+【已记录回忆简表】（除非出现明确新进展，否则不要重复生成同一件事）
+${recordedSection}
+
+在剧情中 {{user}} 为用户扮演的角色，无需记录 {{user}}视角信息。
+
+【只提炼已完成事件（最高规则）】
+- 只收：转折已完成、结果明确、已成为关系或剧情锚点的旧事。
+  例如：承诺已说出口、关系阶段已完成转变、秘密/物品已揭示或转移、冲突已爆发并有阶段后果、亲密节点已完成、创伤/误会/和解/背叛已形成明确旧事。
+- 不收：正在进行的任务、尚未揭晓的谜团、还在铺垫的暧昧/伏笔、意义未稳定的新人物或新物品，以及素材中写着「准备、正在、即将、尚未、等待」的内容。
+- 如果不确定一件事是否已经完成，则不输出。
+- 避免提炼吃饭、赶路、日常寒暄等无长期影响的流水事件。
+
+【回忆分工】
+- 蓝灯总览（blue，只输出一条）：本段梦境的可唤起回忆目录 + 角色印记。
+  · 可唤起回忆：只写事件名，逗号分隔，必须覆盖下面所有绿灯的唤起词。
+  · 角色印记：每个重要角色一句，该事件在角色心里留下的内化结果，不写具体过程。只写角色已知或亲历的事。
+- 绿灯详情（green，可多条）：已完成的具体旧事。
+  · content 是事件完整的自然语言回忆，第三人称客观，不含楼层号、不含"第几次大总结"等来源信息。
+
+【关键词分工】
+- mainKeywords 写人：参与该事件的角色名及其常见称呼。
+- filterKeywords 写事：该事件独有的具体锚点，如具体事件、地点、物品、承诺、行为。
+- filterKeywords 不能太泛，禁止"喜欢/难过/亲密/生气/重要"这类通用情绪词；要用"初吻/摘下面罩/雨夜约定/银色怀表/第一次叫真名"这类有代表性的关键词。
+
+【输出格式】
+必须只输出合法 JSON，不要输出 Markdown 代码块，不要输出解释文字：
+{
+  "overview": {
+    "recallList": ["初识", "雨夜约定", "初吻"],
+    "characterImprints": [
+      { "character": "角色名", "imprint": "这些旧事在该角色心里留下的印痕，一句话" }
+    ]
+  },
+  "memories": [
+    {
+      "title": "雨夜约定",
+      "storyTime": "剧情内发生的时间，如 天宝十五年九月十三日 雨夜；不明写 未明",
+      "importance": "high",
+      "participants": ["卡卡西"],
+      "mainKeywords": ["卡卡西", "旗木卡卡西"],
+      "filterKeywords": ["雨夜约定", "别丢下我"],
+      "content": "自然语言回忆正文，第三人称，不含楼层/来源信息。"
+    }
+  ]
+}
+
+字段规则：
+- overview 只输出一条；recallList 必须包含 memories 里每条的 title。
+- importance 只能是 high / medium / low 之一：
+  · high：改变关系走向、剧情主线锚点、重大秘密或承诺。
+  · medium：有后续影响但非主线的关系或事件节点。
+  · low：轻量旧事，日后回忆过多时可优先清理。
+- storyTime 写剧情世界内的时间，不是现实时间，也不是楼层号。
+- 没有任何已完成事件可提炼时，输出 {"overview": null, "memories": []}。`;
+}
+
 export const DEFAULT_MEMORY_PROMPT_TEMPLATE = [
   "##浓缩梦境",
   "",

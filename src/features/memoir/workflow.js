@@ -6,7 +6,9 @@
 
 import { formatTimestamp } from '../../utils/text.js';
 import { getContextSafe } from '../../core/chat.js';
-import { getContextInfo, getMemoirState, saveChatState } from '../../core/settings.js';
+import { getContextInfo, getMemoirState, getMemoirSettings, saveChatState } from '../../core/settings.js';
+import { collectEmotionProfiles } from '../../core/context-resolver.js';
+import { buildMemoirExtractPrompt } from '../../prompts.js';
 import { getWorldbookApi } from './worldbook-api.js';
 
 const MEMOIR_BOOK_PREFIX = '蜃灵回忆录｜';
@@ -72,4 +74,111 @@ export async function ensureMemoirWorldbook() {
   saveChatState();
 
   return { worldbookName, mode, dedicated: isDedicatedMemoirBook(worldbookName) };
+}
+
+// ── 阶段 3b：大总结后提炼回忆候选（只解析，不写入世界书）──────────────
+
+/** 用大总结的 messageId + 区间作为幂等键，避免同一次归档重复提炼。 */
+function buildSourceKey(archiveRecord = {}) {
+  const id = archiveRecord.summaryMessageId ?? archiveRecord.id ?? '';
+  const from = archiveRecord.memoryFrom ?? archiveRecord.archiveFrom ?? '';
+  const to = archiveRecord.memoryTo ?? archiveRecord.archiveTo ?? '';
+  return `grand:${id}:${from}-${to}`;
+}
+
+/** 把情感档案压成提炼素材可读的短文本。 */
+function buildEmotionMaterial() {
+  const profiles = collectEmotionProfiles({ includeAll: true });
+  if (!profiles.length) return '';
+  return profiles
+    .map(p => {
+      const parts = [
+        p.currentStatus ? `状态：${p.currentStatus}` : '',
+        p.relationshipToUser ? `与{{user}}关系：${p.relationshipToUser}` : '',
+      ].filter(Boolean).join('；');
+      return `- ${p.roleName}｜${parts}`;
+    })
+    .join('\n');
+}
+
+/** 把已记录条目压成「事件 / 人 / 关键锚点」简表，供 AI 去重参考。 */
+function buildRecordedList(memoir) {
+  const entries = Array.isArray(memoir.entries) ? memoir.entries : [];
+  const greens = entries.filter(e => e && e.type === 'green');
+  if (!greens.length) return '';
+  return greens
+    .map(e => {
+      const people = Array.isArray(e.mainKeywords) ? e.mainKeywords.slice(0, 2).join('/') : '';
+      const anchor = Array.isArray(e.filterKeywords) ? e.filterKeywords.slice(0, 2).join('/') : '';
+      return `- ${e.title || '未命名'}${people ? ` / ${people}` : ''}${anchor ? ` / ${anchor}` : ''}`;
+    })
+    .join('\n');
+}
+
+/** 宽松解析模型输出：容忍 ```json 代码块包裹或前后杂讯。 */
+function parseMemoirJson(raw) {
+  const text = String(raw || '').trim();
+  if (!text) throw new Error('模型无输出。');
+  let jsonText = text;
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) {
+    jsonText = fence[1].trim();
+  } else {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) jsonText = text.slice(start, end + 1);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch (error) {
+    throw new Error(`回忆录 JSON 解析失败：${error.message}`);
+  }
+  const memories = Array.isArray(parsed?.memories) ? parsed.memories : [];
+  const overview = parsed?.overview && typeof parsed.overview === 'object' ? parsed.overview : null;
+  return { overview, memories };
+}
+
+/**
+ * 大总结完成后尝试提炼回忆候选。
+ * 只负责「门控 → 幂等 → 收集素材 → 调 API → 解析」，不写世界书、不改 sourceProcessed。
+ * 写入与幂等标记留待阶段四/五。
+ *
+ * @param {object} archiveRecord 来自 processAutoGrandMemory 的归档记录
+ * @param {object} deps
+ *   - generate: (prompt, opts) => Promise<string>  复用大总结链路（跟随设置里选的主/副 API）
+ *   - grandMemoryText: string 本次大总结正文
+ * @returns {Promise<{ skipped?: string, sourceKey?: string, prompt?: string, raw?: string,
+ *   overview: object|null, memories: any[] }>}
+ */
+export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate, grandMemoryText } = {}) {
+  const memoirSettings = getMemoirSettings();
+  if (!memoirSettings.enabled) {
+    return { skipped: 'disabled', overview: null, memories: [] };
+  }
+  if (typeof generate !== 'function') {
+    throw new Error('未提供生成函数，无法提炼回忆候选。');
+  }
+
+  const memoir = getMemoirState();
+  const sourceKey = buildSourceKey(archiveRecord);
+  if (memoir.sourceProcessed.includes(sourceKey)) {
+    return { skipped: 'already_processed', sourceKey, overview: null, memories: [] };
+  }
+
+  const grandMemoryMaterial = String(grandMemoryText || '').trim();
+  if (!grandMemoryMaterial) {
+    return { skipped: 'no_material', sourceKey, overview: null, memories: [] };
+  }
+
+  const prompt = buildMemoirExtractPrompt({
+    grandMemoryMaterial,
+    emotionMaterial: buildEmotionMaterial(),
+    recordedList: buildRecordedList(memoir),
+  });
+
+  const raw = await generate(prompt, { type: '回忆录提炼' });
+  const { overview, memories } = parseMemoirJson(raw);
+
+  return { sourceKey, prompt, raw, overview, memories };
 }

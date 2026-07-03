@@ -59,7 +59,7 @@ export const defaultGlobalSettings = Object.freeze({
     },
     memoir: {
       enabled: false,
-      apiMode: 'secondary_api',
+      // 无 apiMode：回忆录提炼复用大总结链路（generateSummaryMemory），跟随设置里选的主/副 API。
     },
     parallel: {
       enabled: false,
@@ -450,9 +450,6 @@ export function getMemoirSettings(settings = getGlobalSettings()) {
     cloneData(defaultGlobalSettings.modules.memoir),
   );
   const memoir = settings.modules.memoir;
-  if (!['secondary_api', 'main_api'].includes(memoir.apiMode)) {
-    memoir.apiMode = 'secondary_api';
-  }
   memoir.enabled = memoir.enabled === true;
   return memoir;
 }

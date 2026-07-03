@@ -47,6 +47,7 @@ import {
   rebuildPlotOutlineProgressFromSources,
   syncPlotOutlineInjection,
 } from '../plot-outline/workflow.js';
+import { tryExtractMemoirFromGrandSummary } from '../memoir/workflow.js';
 import {
   buildGrandMemoryMaterialPrompt,
   buildLegacyArchiveBatchMaterial,
@@ -820,6 +821,7 @@ export async function processAutoGrandMemory() {
     scanExistingSummaryState();
     notifySummary('success', `已生成第 ${summaryMessageId} 楼大总结，并隐藏 ${archiveFrom}-${archiveTo}。`);
     await processAutoTotalGrandMemory();
+    await tryExtractMemoirAfterGrandSummary(archiveRecord, grandMemory);
     refreshSummaryPanelAfterAction();
   } catch (error) {
     chatState.summary.runningTask = 'none';
@@ -827,6 +829,28 @@ export async function processAutoGrandMemory() {
     saveChatState();
     notifySummary('error', error.message || String(error), '自动大总结失败');
     refreshSummaryPanelAfterAction();
+  }
+}
+
+// 大总结后提炼回忆候选。3b 阶段只解析+打日志，不写世界书、不改 sourceProcessed。
+// 用独立 try/catch 包裹：回忆录提炼失败绝不能影响已完成的大总结主流程。
+// 复用 generateSummaryMemory 作为生成函数，使提炼跟随设置里选的主/副 API（与大总结一致）。
+async function tryExtractMemoirAfterGrandSummary(archiveRecord, grandMemoryText) {
+  try {
+    const result = await tryExtractMemoirFromGrandSummary(archiveRecord, {
+      generate: generateSummaryMemory,
+      grandMemoryText,
+    });
+    if (result.skipped) {
+      console.log(`[蜃灵回忆录] 提炼跳过：${result.skipped}`);
+      return;
+    }
+    console.log(
+      `[蜃灵回忆录] 提炼完成（未写入）：绿灯候选 ${result.memories.length} 条，蓝灯总览 ${result.overview ? '有' : '无'}。`,
+      result,
+    );
+  } catch (error) {
+    console.warn('[蜃灵回忆录] 提炼失败（不影响大总结）：', error);
   }
 }
 

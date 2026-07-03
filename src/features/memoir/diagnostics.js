@@ -5,8 +5,10 @@
 
 import { getContextSafe } from '../../core/chat.js';
 import { getMemoirState } from '../../core/settings.js';
+import { collectRecentGrandMemories } from '../../core/context-resolver.js';
+import { generateSummaryMemory } from '../summary/workflow.js';
 import { escapeHtml } from '../../utils/text.js';
-import { ensureMemoirWorldbook } from './workflow.js';
+import { ensureMemoirWorldbook, tryExtractMemoirFromGrandSummary } from './workflow.js';
 
 // TavernHelper 世界书 API 需要探测的函数名（见 @types/function/worldbook.d.ts）
 const TH_WORLDBOOK_FNS = [
@@ -206,6 +208,7 @@ export function renderMemoirWorldbookDiagnostics() {
       </div>
       <div class="slx-action-row">
         <button class="slx-soft-btn" type="button" data-slx-memoir-ensure ${disabled}>⑥ ensureMemoirWorldbook（策略A·写真实状态）</button>
+        <button class="slx-soft-btn" type="button" data-slx-memoir-extract ${disabled}>⑦ 试跑提炼（读最新大总结·不写入）</button>
         <button class="slx-soft-btn" type="button" data-slx-memoir-clear-log ${disabled}>清空日志</button>
       </div>
       <p class="slx-muted">切卡不串档验收：先「② 创建并绑定」，切换到另一个聊天后点「① 读绑定」，应显示 null 或不同世界书。</p>
@@ -367,6 +370,39 @@ async function actionEnsure() {
   logLine(`⑥ chatState.memoir → worldbookId=${memoir.worldbookId} prevBoundName=${memoir.prevBoundName || '（空）'} updatedAt=${memoir.updatedAt}`);
 }
 
+async function actionExtract() {
+  // 读最新一条大总结正文当素材，试跑提炼；不走 enabled 门控、不写世界书、不改 sourceProcessed。
+  const grandList = collectRecentGrandMemories({ limit: 1, includeHidden: true });
+  const latest = grandList.at(-1);
+  if (!latest?.content) {
+    logLine('⑦ 未找到可用的大总结楼，无法试跑（请先跑一次大总结）。');
+    return;
+  }
+  logLine(`⑦ 读到最新大总结（第 ${latest.messageId} 楼），提炼中……`);
+  const archiveRecord = { summaryMessageId: latest.messageId, memoryFrom: '?', memoryTo: '?' };
+  const result = await tryExtractMemoirFromGrandSummary(archiveRecord, {
+    generate: generateSummaryMemory,
+    grandMemoryText: latest.content,
+  });
+  if (result.skipped) {
+    logLine(`⑦ 跳过：${result.skipped}（试跑仍会解析，除非无素材）`);
+    if (!result.raw) return;
+  }
+  logLine(`⑦ 绿灯候选 ${result.memories.length} 条，蓝灯总览：${result.overview ? '有' : '无'}`);
+  if (result.overview) {
+    const recall = Array.isArray(result.overview.recallList) ? result.overview.recallList.join('、') : '';
+    logLine(`⑦ 可唤起回忆：${recall || '（空）'}`);
+    (result.overview.characterImprints || []).forEach(ci => {
+      logLine(`⑦ 印记 · ${ci.character}：${ci.imprint}`);
+    });
+  }
+  result.memories.forEach((m, i) => {
+    logLine(`⑦ [${i + 1}] 「${m.title}」importance=${m.importance} time=${m.storyTime}`);
+    logLine(`⑦     人=[${(m.mainKeywords || []).join(', ')}] 事=[${(m.filterKeywords || []).join(', ')}]`);
+    logLine(`⑦     ${m.content}`);
+  });
+}
+
 export function bindMemoirWorldbookDiagnosticsEvents(panelRoot) {
   panelRoot.querySelector('[data-slx-memoir-probe]')?.addEventListener('click', () => withRunning(actionProbe));
   panelRoot.querySelector('[data-slx-memoir-read-bind]')?.addEventListener('click', () => withRunning(actionReadBind));
@@ -375,6 +411,7 @@ export function bindMemoirWorldbookDiagnosticsEvents(panelRoot) {
   panelRoot.querySelector('[data-slx-memoir-readback]')?.addEventListener('click', () => withRunning(actionReadBack));
   panelRoot.querySelector('[data-slx-memoir-restore]')?.addEventListener('click', () => withRunning(actionRestore));
   panelRoot.querySelector('[data-slx-memoir-ensure]')?.addEventListener('click', () => withRunning(actionEnsure));
+  panelRoot.querySelector('[data-slx-memoir-extract]')?.addEventListener('click', () => withRunning(actionExtract));
   panelRoot.querySelector('[data-slx-memoir-clear-log]')?.addEventListener('click', () => {
     state.log = [];
     state.readBack = null;
