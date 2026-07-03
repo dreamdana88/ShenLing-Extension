@@ -94,6 +94,18 @@ function getScheduleOptionText(option) {
   return normalizeScheduleEntryOption(option)?.text || '';
 }
 
+function formatScheduleMovementLoadText(movement) {
+  if (!movement?.summary) return '';
+  const where = movement.location ? `在${movement.location}` : '';
+  const timeParts = [
+    movement.startsAt ? `开始：${movement.startsAt}` : '',
+    movement.durationMinutes > 0 ? `耗时：${movement.durationMinutes}分钟` : '',
+  ].filter(Boolean);
+  const timeText = timeParts.length ? `；${timeParts.join('；')}` : '';
+  const impactText = movement.mainlineImpact ? `；主线影响：${movement.mainlineImpact}` : '';
+  return `（场外动向：${movement.character || '未命名角色'}${where}${timeText}，${movement.summary}${impactText}）`;
+}
+
 function renderScheduleMovement(movement, dayIndex, movementIndex) {
   const item = normalizeScheduleMovement(movement, movementIndex);
   if (!item) return '';
@@ -138,7 +150,7 @@ function renderScheduleDay(day, index, expanded) {
           <span class="slx-schedule-day-title"><b>${escapeHtml(day.theme || `第${index + 1}天`)}</b></span>
           <span class="slx-schedule-day-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
         </button>
-        ${day.mainOpportunity || entryOptions.length ? `<button class="slx-schedule-load-btn slx-schedule-load-day-btn" type="button" data-slx-schedule-load-day="${index}" title="把本日主机会与介入入口填入聊天输入框">载入本日</button>` : ''}
+        ${day.mainOpportunity || entryOptions.length || movements.length ? `<button class="slx-schedule-load-btn slx-schedule-load-day-btn" type="button" data-slx-schedule-load-day="${index}" title="把本日主机会、介入入口与角色动向填入聊天输入框">载入本日</button>` : ''}
       </div>
       ${expanded ? `
         <div class="slx-schedule-day-content">
@@ -354,13 +366,7 @@ export function bindSchedulePanelEvents(panelRoot) {
       const [dayIndex, movementIndex] = String(button.dataset.slxScheduleLoadMv || '').split(':').map(Number);
       const movement = normalizeScheduleMovement(getCurrentDays()[dayIndex]?.characterMovements?.[movementIndex], movementIndex);
       if (!movement?.summary) return;
-      const where = movement.location ? `在${movement.location}` : '';
-      const timeParts = [
-        movement.startsAt ? `开始：${movement.startsAt}` : '',
-        movement.durationMinutes > 0 ? `耗时：${movement.durationMinutes}分钟` : '',
-      ].filter(Boolean);
-      const timeText = timeParts.length ? `；${timeParts.join('；')}` : '';
-      loadTextToInput(`（场外动向：${movement.character || '未命名角色'}${where}${timeText}，${movement.summary}）`);
+      loadTextToInput(formatScheduleMovementLoadText(movement));
     });
   });
 
@@ -377,6 +383,11 @@ export function bindSchedulePanelEvents(panelRoot) {
         lines.push(theme ? `（推进剧情：${theme} —— ${day.mainOpportunity}）` : `（推进剧情：${day.mainOpportunity}）`);
       }
       entryOptions.forEach(option => lines.push(option));
+      (Array.isArray(day.characterMovements) ? day.characterMovements : [])
+        .map((movement, movementIndex) => normalizeScheduleMovement(movement, movementIndex))
+        .map(formatScheduleMovementLoadText)
+        .filter(Boolean)
+        .forEach(text => lines.push(text));
       loadTextToInput(lines.join('\n'));
     });
   });
