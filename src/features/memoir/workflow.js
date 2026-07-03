@@ -256,8 +256,14 @@ function buildBlueContent(entries) {
   return lines.join('\n');
 }
 
-/** 绿灯条目结构（新 schema），供 createWorldbookEntries。 */
-function buildGreenEntryPayload(entry) {
+// 插入顺序（order）：蓝灯总览固定 900，绿灯从 901 起按记录（≈剧情）顺序逐条 +1。
+// 说明：memoir.entries 的数组顺序就是记录顺序，因大总结按剧情推进依次处理，天然即时间序；
+// storyTime 是自由文本（不同世界的纪年/时段各异），不做字符串排序，避免误排。
+const MEMOIR_BLUE_ORDER = 900;
+const MEMOIR_GREEN_ORDER_BASE = 901;
+
+/** 绿灯条目结构（新 schema），供 createWorldbookEntries。order 会在写入后统一重排。 */
+function buildGreenEntryPayload(entry, order) {
   return {
     name: `${MEMOIR_GREEN_NAME_PREFIX}${entry.title}`,
     enabled: true,
@@ -267,7 +273,7 @@ function buildGreenEntryPayload(entry) {
       keys_secondary: { logic: 'and_any', keys: entry.filterKeywords },
       scan_depth: 'same_as_global',
     },
-    position: { type: 'after_character_definition', role: 'system', depth: 0, order: 100 },
+    position: { type: 'after_character_definition', role: 'system', depth: 0, order },
     content: buildGreenContent(entry),
     probability: 100,
     recursion: { prevent_incoming: true, prevent_outgoing: true, delay_until: null },
@@ -317,7 +323,7 @@ export async function commitMemoirCandidates(confirmedCandidates, { sourceKey } 
     updatedAt: now,
   }));
 
-  const greenPayloads = newEntries.map(buildGreenEntryPayload);
+  const greenPayloads = newEntries.map((e, i) => buildGreenEntryPayload(e, MEMOIR_GREEN_ORDER_BASE + i));
   const created = await api.createWorldbookEntries(worldbookName, greenPayloads);
   // 回填 uid（按 name 对齐）
   const createdList = Array.isArray(created?.new_entries) ? created.new_entries : [];
@@ -326,33 +332,44 @@ export async function commitMemoirCandidates(confirmedCandidates, { sourceKey } 
     if (match) e.uid = match.uid;
   });
 
-  // 2) entries 索引累加（本轮并入后即为全量）
+  // 2) entries 索引累加（本轮并入后即为全量，数组顺序=剧情记录顺序）
   memoir.entries = [...memoir.entries, ...newEntries];
 
-  // 3) 蓝灯用全量 entries 重建后覆盖
+  // 3) 一次性重排：蓝灯 order=900 并用全量重建正文；绿灯按 entries 顺序 901+ 逐条 +1。
   const blueContent = buildBlueContent(memoir.entries);
+  // memoirId → 目标 order（901 起递增）
+  const greenOrderById = new Map(
+    memoir.entries.map((e, i) => [e.memoirId, MEMOIR_GREEN_ORDER_BASE + i]),
+  );
   let blueMode = 'updated';
   if (typeof api.updateWorldbookWith === 'function') {
-    let found = false;
+    let blueFound = false;
     await api.updateWorldbookWith(worldbookName, (book) => {
       const list2 = Array.isArray(book) ? book : [];
-      const blue = list2.find(e => e?.name === MEMOIR_BLUE_NAME || e?.extra?.memoirType === 'blue');
-      if (blue) {
-        found = true;
-        blue.content = blueContent;
-        blue.strategy = { ...(blue.strategy || {}), type: 'constant' };
-        blue.recursion = { prevent_incoming: true, prevent_outgoing: true, delay_until: null };
-        return list2;
-      }
+      list2.forEach(e => {
+        if (!e) return;
+        // 绿灯：按 memoirId 重排 order（含旧条目，保持整体时间序）
+        if (e.extra?.memoirType === 'green' && greenOrderById.has(e.extra.memoirId)) {
+          e.position = { ...(e.position || {}), order: greenOrderById.get(e.extra.memoirId) };
+        }
+        // 蓝灯：重写正文 + order 900
+        if (e.name === MEMOIR_BLUE_NAME || e.extra?.memoirType === 'blue') {
+          blueFound = true;
+          e.content = blueContent;
+          e.strategy = { ...(e.strategy || {}), type: 'constant' };
+          e.position = { ...(e.position || {}), order: MEMOIR_BLUE_ORDER };
+          e.recursion = { prevent_incoming: true, prevent_outgoing: true, delay_until: null };
+        }
+      });
       return list2;
     });
-    if (!found) {
+    if (!blueFound) {
       // 蓝灯不存在 → 新建
       await api.createWorldbookEntries(worldbookName, [{
         name: MEMOIR_BLUE_NAME,
         enabled: true,
         strategy: { type: 'constant', keys: [], keys_secondary: { logic: 'and_any', keys: [] }, scan_depth: 'same_as_global' },
-        position: { type: 'after_character_definition', role: 'system', depth: 0, order: 50 },
+        position: { type: 'after_character_definition', role: 'system', depth: 0, order: MEMOIR_BLUE_ORDER },
         content: blueContent,
         probability: 100,
         recursion: { prevent_incoming: true, prevent_outgoing: true, delay_until: null },

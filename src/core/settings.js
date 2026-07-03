@@ -278,6 +278,10 @@ export function saveChatState() {
   state.diagnostics.lastSavedAt = formatTimestamp();
 
   const context = getContextSafe();
+  // 无 chatMetadata（尚无激活聊天）时不要触发 saveMetadata，否则 ST 会弹“聊天无法保存”。
+  if (!context?.chatMetadata) {
+    return;
+  }
   if (typeof context?.saveMetadataDebounced === 'function') {
     context.saveMetadataDebounced();
   } else {

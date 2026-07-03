@@ -123,11 +123,12 @@ export function renderMemoirPanel(settings = null, chatState = getChatState()) {
 
   return `
     <div class="slx-detail-card">
-      <div class="slx-detail-title">回忆录世界书</div>
-      <p>大总结完成后自动提炼「已完成的关键回忆」，确认后写入当前聊天专属世界书。蓝灯目录 + 绿灯精准触发。</p>
-      <label class="slx-switch-row">
-        <span>启用回忆录自动提炼</span>
-        <input type="checkbox" data-slx-memoir-enabled ${memoirSettings.enabled ? 'checked' : ''} />
+      <label class="slx-setting-toggle-row" for="slx-memoir-enabled">
+        <span>
+          <b>回忆录自动提炼</b>
+          <small>大总结完成后自动提炼「已完成的关键回忆」，确认后写入当前聊天专属世界书。</small>
+        </span>
+        <input id="slx-memoir-enabled" type="checkbox" data-slx-memoir-enabled ${memoirSettings.enabled ? 'checked' : ''} />
       </label>
       <div class="slx-info-line"><span>绑定世界书</span><b>${escapeHtml(memoir.worldbookName || '（尚未创建）')}</b></div>
       <div class="slx-action-row">
