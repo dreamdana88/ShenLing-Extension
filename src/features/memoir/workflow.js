@@ -148,12 +148,13 @@ function parseMemoirJson(raw) {
  * @param {object} deps
  *   - generate: (prompt, opts) => Promise<string>  复用大总结链路（跟随设置里选的主/副 API）
  *   - grandMemoryText: string 本次大总结正文
+ *   - force: boolean 诊断试跑用；跳过 enabled 门控与 sourceProcessed 幂等，强制走一次生成
  * @returns {Promise<{ skipped?: string, sourceKey?: string, prompt?: string, raw?: string,
  *   overview: object|null, memories: any[] }>}
  */
-export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate, grandMemoryText } = {}) {
+export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate, grandMemoryText, force = false } = {}) {
   const memoirSettings = getMemoirSettings();
-  if (!memoirSettings.enabled) {
+  if (!force && !memoirSettings.enabled) {
     return { skipped: 'disabled', overview: null, memories: [] };
   }
   if (typeof generate !== 'function') {
@@ -162,7 +163,7 @@ export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate
 
   const memoir = getMemoirState();
   const sourceKey = buildSourceKey(archiveRecord);
-  if (memoir.sourceProcessed.includes(sourceKey)) {
+  if (!force && memoir.sourceProcessed.includes(sourceKey)) {
     return { skipped: 'already_processed', sourceKey, overview: null, memories: [] };
   }
 

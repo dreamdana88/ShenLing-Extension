@@ -383,9 +383,10 @@ async function actionExtract() {
   const result = await tryExtractMemoirFromGrandSummary(archiveRecord, {
     generate: generateSummaryMemory,
     grandMemoryText: latest.content,
+    force: true, // 诊断试跑：绕过 enabled 门控与幂等，强制走一次真实 API
   });
   if (result.skipped) {
-    logLine(`⑦ 跳过：${result.skipped}（试跑仍会解析，除非无素材）`);
+    logLine(`⑦ 跳过：${result.skipped}`);
     if (!result.raw) return;
   }
   logLine(`⑦ 绿灯候选 ${result.memories.length} 条，蓝灯总览：${result.overview ? '有' : '无'}`);
