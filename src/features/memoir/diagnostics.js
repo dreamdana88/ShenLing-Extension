@@ -289,8 +289,37 @@ async function actionReadBack() {
   const bookName = state.testBookName || buildTestBookName();
   const book = await getBook(bookName);
   state.readBack = Array.isArray(book) ? book : [];
-  const diagCount = state.readBack.filter(e => e?.extra?.diagnostic || String(e?.name || '').includes('诊断')).length;
-  logLine(`④ 读回「${bookName}」共 ${state.readBack.length} 条，其中诊断条目 ${diagCount} 条（字段见上方核对区）`);
+  logLine(`④ 读回「${bookName}」共 ${state.readBack.length} 条，开始字段往返断言：`);
+
+  const blue = state.readBack.find(e => e?.extra?.memoirId === 'diag-blue-1');
+  const green = state.readBack.find(e => e?.extra?.memoirId === 'diag-green-1');
+
+  const checks = [];
+  const check = (label, ok) => checks.push(`${ok ? '  ✅' : '  ❌'} ${label}`);
+
+  if (!green) {
+    check('绿灯条目按 extra.memoirId 找回', false);
+  } else {
+    check('绿灯 strategy.type=selective', green.strategy?.type === 'selective');
+    check('绿灯 keys 含「卡卡西」', (green.strategy?.keys || []).includes('卡卡西'));
+    check('绿灯 keys_secondary.logic=and_any', green.strategy?.keys_secondary?.logic === 'and_any');
+    check('绿灯 过滤器含「雨夜约定」', (green.strategy?.keys_secondary?.keys || []).includes('雨夜约定'));
+    check('绿灯 禁递归 incoming+outgoing', green.recursion?.prevent_incoming === true && green.recursion?.prevent_outgoing === true);
+    check('绿灯 position=after_character_definition', green.position?.type === 'after_character_definition');
+    check('绿灯 extra.sourceRange 保留', !!green.extra?.sourceRange);
+  }
+
+  if (!blue) {
+    check('蓝灯条目按 extra.memoirId 找回', false);
+  } else {
+    check('蓝灯 strategy.type=constant', blue.strategy?.type === 'constant');
+    check('蓝灯 禁出向递归（防批量点亮绿灯）', blue.recursion?.prevent_outgoing === true);
+    check('蓝灯 extra.memoirRole=overview', blue.extra?.memoirRole === 'overview');
+  }
+
+  checks.forEach(logLine);
+  const failed = checks.filter(c => c.includes('❌')).length;
+  logLine(failed === 0 ? '④ 字段往返全部通过 🎉' : `④ ${failed} 项未通过（见上，可能被 ST 规范化/丢弃）`);
 }
 
 async function actionRestore() {
@@ -301,8 +330,14 @@ async function actionRestore() {
   // 还原原绑定（测试 rebindChatWorldbook = 替换绑定）
   const restoreTo = state.prevBoundName;
   if (restoreTo === undefined || restoreTo === null) {
-    // 原本无绑定：ST 无法直接解绑到 null，这里绑回后交由用户手动清；仅日志说明
-    logLine('⑤ 原本无绑定；rebindChatWorldbook 不支持绑到 null，测试书绑定保留，请手动在酒馆界面解绑。');
+    // 原本无绑定：新 API rebindChatWorldbook 只收 string，用旧 API setChatLorebook(null) 解绑
+    const unbind = resolveThFn('setChatLorebook');
+    if (unbind) {
+      await unbind(null);
+      logLine('⑤ 原本无绑定；已用 setChatLorebook(null) 解绑测试书 ✅');
+    } else {
+      logLine('⑤ 原本无绑定，且未找到可解绑到 null 的 API，删书后会残留悬空绑定，请手动解绑。');
+    }
   } else {
     await rebind('current', restoreTo);
     logLine(`⑤ 已还原原绑定：${restoreTo} ✅`);
