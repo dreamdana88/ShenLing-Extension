@@ -4,7 +4,9 @@
 // 注意：这是临时开发诊断，回忆录功能正式落地后应删除本文件与其在设置页的入口。
 
 import { getContextSafe } from '../../core/chat.js';
+import { getMemoirState } from '../../core/settings.js';
 import { escapeHtml } from '../../utils/text.js';
+import { ensureMemoirWorldbook } from './workflow.js';
 
 // TavernHelper 世界书 API 需要探测的函数名（见 @types/function/worldbook.d.ts）
 const TH_WORLDBOOK_FNS = [
@@ -203,9 +205,11 @@ export function renderMemoirWorldbookDiagnostics() {
         <button class="slx-soft-btn" type="button" data-slx-memoir-restore ${disabled}>⑤ 还原并删测试书</button>
       </div>
       <div class="slx-action-row">
+        <button class="slx-soft-btn" type="button" data-slx-memoir-ensure ${disabled}>⑥ ensureMemoirWorldbook（策略A·写真实状态）</button>
         <button class="slx-soft-btn" type="button" data-slx-memoir-clear-log ${disabled}>清空日志</button>
       </div>
       <p class="slx-muted">切卡不串档验收：先「② 创建并绑定」，切换到另一个聊天后点「① 读绑定」，应显示 null 或不同世界书。</p>
+      <p class="slx-muted">⑥ 会写真实 chatState.memoir：无绑定→新建「蜃灵回忆录｜聊天」并绑定；已有绑定→复用那本（策略A）。</p>
       ${renderReadBack()}
       <div class="slx-detail-kicker">运行日志</div>
       <pre class="slx-diag-pre">${escapeHtml(state.log.join('\n') || '（暂无）')}</pre>
@@ -355,6 +359,14 @@ async function actionRestore() {
   state.readBack = null;
 }
 
+async function actionEnsure() {
+  const result = await ensureMemoirWorldbook();
+  logLine(`⑥ ensureMemoirWorldbook：mode=${result.mode} dedicated=${result.dedicated}`);
+  logLine(`⑥ 目标世界书：${result.worldbookName}`);
+  const memoir = getMemoirState();
+  logLine(`⑥ chatState.memoir → worldbookId=${memoir.worldbookId} prevBoundName=${memoir.prevBoundName || '（空）'} updatedAt=${memoir.updatedAt}`);
+}
+
 export function bindMemoirWorldbookDiagnosticsEvents(panelRoot) {
   panelRoot.querySelector('[data-slx-memoir-probe]')?.addEventListener('click', () => withRunning(actionProbe));
   panelRoot.querySelector('[data-slx-memoir-read-bind]')?.addEventListener('click', () => withRunning(actionReadBind));
@@ -362,6 +374,7 @@ export function bindMemoirWorldbookDiagnosticsEvents(panelRoot) {
   panelRoot.querySelector('[data-slx-memoir-write]')?.addEventListener('click', () => withRunning(actionWriteEntries));
   panelRoot.querySelector('[data-slx-memoir-readback]')?.addEventListener('click', () => withRunning(actionReadBack));
   panelRoot.querySelector('[data-slx-memoir-restore]')?.addEventListener('click', () => withRunning(actionRestore));
+  panelRoot.querySelector('[data-slx-memoir-ensure]')?.addEventListener('click', () => withRunning(actionEnsure));
   panelRoot.querySelector('[data-slx-memoir-clear-log]')?.addEventListener('click', () => {
     state.log = [];
     state.readBack = null;
