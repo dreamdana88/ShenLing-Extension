@@ -107,7 +107,9 @@ export async function ensureMemoirWorldbook({ confirmUseCurrent } = {}) {
     const expectedDedicatedPrefix = buildMemoirBookName(chatId);
     const isCurrentChatDedicated = currentBound === expectedDedicatedPrefix
       || currentBound.startsWith(`${expectedDedicatedPrefix}｜`);
-    if (isCurrentChatDedicated) {
+    const isKnownCurrentChatDedicated = isCurrentChatDedicated
+      && memoir.worldbookName === currentBound;
+    if (isKnownCurrentChatDedicated) {
       worldbookName = currentBound;
       mode = 'existing';
       recordBindingDecision(memoir, chatId, worldbookName, 'dedicated');
