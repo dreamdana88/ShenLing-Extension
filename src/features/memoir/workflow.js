@@ -58,7 +58,7 @@ export async function ensureMemoirWorldbook() {
     worldbookName = currentBound;
     mode = 'existing';
     if (!memoir.prevBoundName) {
-      memoir.prevBoundName = currentBound; // 记录首次接管前就存在的绑定，仅诊断
+      memoir.prevBoundName = currentBound; // 兼容旧状态：记录首次发现的已有绑定，不代表发生替换
     }
   } else {
     // 无绑定：新建蜃灵专属书并绑定当前聊天
@@ -165,6 +165,12 @@ export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate
   if (!force && memoir.sourceProcessed.includes(sourceKey)) {
     return { skipped: 'already_processed', sourceKey, overview: [], memories: [] };
   }
+  const pendingSourceKeys = Array.isArray(memoir.pending?.sourceKeys)
+    ? memoir.pending.sourceKeys
+    : [memoir.pending?.sourceKey].filter(Boolean);
+  if (!force && pendingSourceKeys.includes(sourceKey)) {
+    return { skipped: 'already_pending', sourceKey, overview: [], memories: [] };
+  }
 
   const grandMemoryMaterial = String(grandMemoryText || '').trim();
   if (!grandMemoryMaterial) {
@@ -219,9 +225,18 @@ export function stageMemoirCandidates({ sourceKey, overview, memories } = {}) {
     c.digest = digestByTitle.get(c.title) || '';
   });
 
+  const previous = memoir.pending && Array.isArray(memoir.pending.candidates)
+    ? memoir.pending
+    : null;
+  const previousSourceKeys = Array.isArray(previous?.sourceKeys)
+    ? previous.sourceKeys
+    : [previous?.sourceKey].filter(Boolean);
+  const sourceKeys = [...new Set([...previousSourceKeys, sourceKey].filter(Boolean))];
+
   memoir.pending = {
-    sourceKey: sourceKey || '',
-    candidates,
+    sourceKey: sourceKeys[0] || '', // 兼容旧状态读取；新代码以 sourceKeys 为准
+    sourceKeys,
+    candidates: [...(previous?.candidates || []), ...candidates],
     generatedAt: formatTimestamp(),
   };
   saveChatState();
@@ -252,6 +267,10 @@ function buildBlueContent(entries) {
   entries.forEach(e => {
     const digest = e.digest || `${e.storyTime && e.storyTime !== '未明' ? e.storyTime + '，' : ''}${e.title}`;
     lines.push(`· ${e.title}：${digest}`);
+    const anchors = Array.isArray(e.filterKeywords)
+      ? [...new Set(e.filterKeywords.map(word => String(word || '').trim()).filter(Boolean))].slice(0, 4)
+      : [];
+    if (anchors.length) lines.push(`  唤起词：${anchors.join('、')}`);
   });
   return lines.join('\n');
 }
@@ -297,7 +316,10 @@ function buildGreenEntryPayload(entry, order) {
  * @param {object} opts - sourceKey: 幂等键（写入后记入 sourceProcessed）
  * @returns {Promise<{ worldbookName, greenAdded, blueMode, totalEntries }>}
  */
-export async function commitMemoirCandidates(confirmedCandidates, { sourceKey } = {}) {
+export async function commitMemoirCandidates(
+  confirmedCandidates,
+  { sourceKey, sourceKeys: pendingSourceKeys = [] } = {},
+) {
   const list = Array.isArray(confirmedCandidates) ? confirmedCandidates.filter(c => c && c.content) : [];
   if (!list.length) {
     throw new Error('没有可写入的回忆候选。');
@@ -306,11 +328,17 @@ export async function commitMemoirCandidates(confirmedCandidates, { sourceKey } 
   const api = getWorldbookApi();
   const { worldbookName } = await ensureMemoirWorldbook();
   const memoir = getMemoirState();
+  const sourceKeys = [...new Set([
+    ...(Array.isArray(pendingSourceKeys) ? pendingSourceKeys : []),
+    sourceKey,
+  ].filter(Boolean))];
 
-  // 1) 绿灯逐条新增
+  // 1) 准备本轮绿灯。candidateId 来自已持久化 pending，可让失败重试保持同一 memoirId。
   const now = formatTimestamp();
   const newEntries = list.map((c, i) => ({
-    memoirId: c.memoirId || `mem-${Date.now()}-${i}`,
+    memoirId: c.memoirId || (c.candidateId
+      ? String(c.candidateId).replace(/^cand-/, 'mem-')
+      : `mem-${Date.now()}-${i}`),
     title: c.title,
     digest: c.digest || '',
     storyTime: c.storyTime || '未明',
@@ -323,49 +351,45 @@ export async function commitMemoirCandidates(confirmedCandidates, { sourceKey } 
     updatedAt: now,
   }));
 
-  const greenPayloads = newEntries.map((e, i) => buildGreenEntryPayload(e, MEMOIR_GREEN_ORDER_BASE + i));
-  const created = await api.createWorldbookEntries(worldbookName, greenPayloads);
-  // 回填 uid（按 name 对齐）
-  const createdList = Array.isArray(created?.new_entries) ? created.new_entries : [];
-  newEntries.forEach(e => {
-    const match = createdList.find(x => x.name === `${MEMOIR_GREEN_NAME_PREFIX}${e.title}`);
-    if (match) e.uid = match.uid;
-  });
+  const indexedIds = new Set(memoir.entries.map(entry => entry?.memoirId).filter(Boolean));
+  const indexAdditions = newEntries.filter(entry => !indexedIds.has(entry.memoirId));
+  const allEntries = [...memoir.entries, ...indexAdditions];
 
-  // 2) entries 索引累加（本轮并入后即为全量，数组顺序=剧情记录顺序）
-  memoir.entries = [...memoir.entries, ...newEntries];
-
-  // 3) 一次性重排：蓝灯 order=900 并用全量重建正文；绿灯按 entries 顺序 901+ 逐条 +1。
-  const blueContent = buildBlueContent(memoir.entries);
-  // memoirId → 目标 order（901 起递增）
+  // 2) 单次更新完成绿灯新增、蓝灯创建/覆盖和全量排序，避免中途失败留下半批条目。
+  const blueContent = buildBlueContent(allEntries);
   const greenOrderById = new Map(
-    memoir.entries.map((e, i) => [e.memoirId, MEMOIR_GREEN_ORDER_BASE + i]),
+    allEntries.map((e, i) => [e.memoirId, MEMOIR_GREEN_ORDER_BASE + i]),
   );
   let blueMode = 'updated';
-  if (typeof api.updateWorldbookWith === 'function') {
+  let greenAdded = 0;
+  const updatedBook = await api.updateWorldbookWith(worldbookName, (book) => {
+    const list2 = Array.isArray(book) ? book : [];
+    const existingMemoirIds = new Set(
+      list2.map(entry => entry?.extra?.memoirId).filter(Boolean),
+    );
+    indexAdditions.forEach((entry) => {
+      if (existingMemoirIds.has(entry.memoirId)) return;
+      list2.push(buildGreenEntryPayload(entry, greenOrderById.get(entry.memoirId)));
+      existingMemoirIds.add(entry.memoirId);
+      greenAdded += 1;
+    });
+
     let blueFound = false;
-    await api.updateWorldbookWith(worldbookName, (book) => {
-      const list2 = Array.isArray(book) ? book : [];
-      list2.forEach(e => {
-        if (!e) return;
-        // 绿灯：按 memoirId 重排 order（含旧条目，保持整体时间序）
-        if (e.extra?.memoirType === 'green' && greenOrderById.has(e.extra.memoirId)) {
-          e.position = { ...(e.position || {}), order: greenOrderById.get(e.extra.memoirId) };
-        }
-        // 蓝灯：重写正文 + order 900
-        if (e.name === MEMOIR_BLUE_NAME || e.extra?.memoirType === 'blue') {
-          blueFound = true;
-          e.content = blueContent;
-          e.strategy = { ...(e.strategy || {}), type: 'constant' };
-          e.position = { ...(e.position || {}), order: MEMOIR_BLUE_ORDER };
-          e.recursion = { prevent_incoming: true, prevent_outgoing: true, delay_until: null };
-        }
-      });
-      return list2;
+    list2.forEach(e => {
+      if (!e) return;
+      if (e.extra?.memoirType === 'green' && greenOrderById.has(e.extra.memoirId)) {
+        e.position = { ...(e.position || {}), order: greenOrderById.get(e.extra.memoirId) };
+      }
+      if (e.name === MEMOIR_BLUE_NAME || e.extra?.memoirType === 'blue') {
+        blueFound = true;
+        e.content = blueContent;
+        e.strategy = { ...(e.strategy || {}), type: 'constant' };
+        e.position = { ...(e.position || {}), order: MEMOIR_BLUE_ORDER };
+        e.recursion = { prevent_incoming: true, prevent_outgoing: true, delay_until: null };
+      }
     });
     if (!blueFound) {
-      // 蓝灯不存在 → 新建
-      await api.createWorldbookEntries(worldbookName, [{
+      list2.push({
         name: MEMOIR_BLUE_NAME,
         enabled: true,
         strategy: { type: 'constant', keys: [], keys_secondary: { logic: 'and_any', keys: [] }, scan_depth: 'same_as_global' },
@@ -374,20 +398,28 @@ export async function commitMemoirCandidates(confirmedCandidates, { sourceKey } 
         probability: 100,
         recursion: { prevent_incoming: true, prevent_outgoing: true, delay_until: null },
         extra: { memoirType: 'blue' },
-      }]);
+      });
       blueMode = 'created';
     }
-  }
+    return list2;
+  });
+
+  // 3) 世界书完整更新成功后再写本地索引。按现行标题规则匹配 uid，保持既有行为。
+  indexAdditions.forEach(e => {
+    const match = updatedBook.find(x => x.name === `${MEMOIR_GREEN_NAME_PREFIX}${e.title}`);
+    if (match) e.uid = match.uid;
+  });
+  memoir.entries = allEntries;
 
   // 4) 幂等标记 + 清 pending
-  if (sourceKey && !memoir.sourceProcessed.includes(sourceKey)) {
-    memoir.sourceProcessed.push(sourceKey);
-  }
+  sourceKeys.forEach((key) => {
+    if (!memoir.sourceProcessed.includes(key)) memoir.sourceProcessed.push(key);
+  });
   memoir.pending = null;
   memoir.updatedAt = now;
   saveChatState();
 
-  return { worldbookName, greenAdded: newEntries.length, blueMode, totalEntries: memoir.entries.length };
+  return { worldbookName, greenAdded, blueMode, totalEntries: memoir.entries.length };
 }
 
 // ── 手动提炼：从最新大总结提炼并暂存（供面板“手动提炼”按钮）──────────
@@ -398,9 +430,31 @@ export async function commitMemoirCandidates(confirmedCandidates, { sourceKey } 
  *   - grandMemoryText: 可选，指定素材；不传则由调用方读取最新大总结
  * @returns {Promise<{ staged: boolean, count: number, reason?: string }>}
  */
-export async function runManualMemoirExtraction({ generate, grandMemoryText, sourceKey } = {}) {
-  const archiveRecord = { summaryMessageId: sourceKey || 'manual', memoryFrom: '?', memoryTo: '?' };
-  const result = await tryExtractMemoirFromGrandSummary(archiveRecord, {
+export async function runManualMemoirExtraction({
+  generate,
+  grandMemoryText,
+  sourceKey,
+  archiveRecord = null,
+  allowProcessed = false,
+} = {}) {
+  const resolvedRecord = archiveRecord || {
+    summaryMessageId: sourceKey || 'manual',
+    memoryFrom: '?',
+    memoryTo: '?',
+  };
+  const resolvedSourceKey = buildSourceKey(resolvedRecord);
+  const memoir = getMemoirState();
+  const pendingSourceKeys = Array.isArray(memoir.pending?.sourceKeys)
+    ? memoir.pending.sourceKeys
+    : [memoir.pending?.sourceKey].filter(Boolean);
+  if (!allowProcessed && pendingSourceKeys.includes(resolvedSourceKey)) {
+    return { staged: false, count: 0, reason: 'already_pending', sourceKey: resolvedSourceKey };
+  }
+  if (!allowProcessed && memoir.sourceProcessed.includes(resolvedSourceKey)) {
+    return { staged: false, count: 0, reason: 'already_processed', sourceKey: resolvedSourceKey };
+  }
+
+  const result = await tryExtractMemoirFromGrandSummary(resolvedRecord, {
     generate,
     grandMemoryText,
     force: true, // 手动提炼绕过 enabled/幂等，由用户主动发起

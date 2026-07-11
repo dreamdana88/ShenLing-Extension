@@ -776,21 +776,6 @@ body.slx-panel-open-lock {
   flex: 0 0 auto;
 }
 
-/* 临时：回忆录世界书诊断日志/字段核对区（功能落地后可随诊断入口一并删除） */
-.slx-diag-pre {
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  max-height: 220px;
-  overflow: auto;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 .slx-detail-icon {
   color: var(--slx-accent);
 }

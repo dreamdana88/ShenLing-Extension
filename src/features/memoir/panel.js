@@ -73,9 +73,12 @@ function renderPendingCard(cand) {
 function renderPendingSection(memoir) {
   const pending = memoir.pending;
   if (!pending || !Array.isArray(pending.candidates) || !pending.candidates.length) return '';
+  const batchCount = Array.isArray(pending.sourceKeys) && pending.sourceKeys.length
+    ? pending.sourceKeys.length
+    : 1;
   return `
     <div class="slx-detail-card">
-      <div class="slx-detail-title">待确认回忆（${pending.candidates.length}）</div>
+      <div class="slx-detail-title">待确认回忆（${pending.candidates.length} 条 · ${batchCount} 批）</div>
       <p>确认前可编辑标题、关键词、正文，或删除不想写入的条目。</p>
       <div class="slx-memoir-cand-list">
         ${pending.candidates.map(renderPendingCard).join('')}
@@ -126,7 +129,7 @@ export function renderMemoirPanel(settings = null, chatState = getChatState()) {
       <label class="slx-setting-toggle-row" for="slx-memoir-enabled">
         <span>
           <b>回忆录自动提炼</b>
-          <small>大总结完成后自动提炼「已完成的关键回忆」，确认后写入当前聊天专属世界书。</small>
+          <small>大总结完成后自动提炼「已完成的关键回忆」，确认后写入当前聊天已绑定世界书。</small>
         </span>
         <input id="slx-memoir-enabled" type="checkbox" data-slx-memoir-enabled ${memoirSettings.enabled ? 'checked' : ''} />
       </label>
@@ -154,14 +157,17 @@ function collectEditedCandidates(panelRoot) {
   const byId = new Map();
   cards.forEach(card => {
     const id = card.getAttribute('data-slx-memoir-cand');
+    const original = pending.candidates.find(candidate => candidate.candidateId === id);
     const get = field => card.querySelector(`[data-field="${field}"]`)?.value ?? '';
     byId.set(id, {
       candidateId: id,
+      memoirId: original?.memoirId,
       title: String(get('title')).trim() || '未命名回忆',
       storyTime: String(get('storyTime')).trim() || '未明',
       importance: get('importance') || 'medium',
       mainKeywords: inputToKeywords(get('mainKeywords')),
       filterKeywords: inputToKeywords(get('filterKeywords')),
+      participants: Array.isArray(original?.participants) ? original.participants : [],
       digest: String(get('digest')).trim(),
       content: String(get('content')).trim(),
     });
@@ -195,11 +201,29 @@ export function bindMemoirPanelEvents(panelRoot, settings) {
         refreshPanel();
         return;
       }
-      const result = await runManualMemoirExtraction({
+      const archiveRecord = (getChatState().summary?.archiveRecords || [])
+        .find(record => Number(record?.summaryMessageId) === Number(latest.messageId)) || null;
+      const extractionOptions = {
         generate: generateSummaryMemory,
         grandMemoryText: latest.content,
         sourceKey: `manual:${latest.messageId}`,
-      });
+        archiveRecord,
+      };
+      let result = await runManualMemoirExtraction(extractionOptions);
+      if (result.reason === 'already_pending') {
+        setStatus('idle', { message: '最新大总结已经在待确认列表中，无需重复提炼。' });
+        refreshPanel();
+        return;
+      }
+      if (result.reason === 'already_processed') {
+        const confirmed = window.confirm('最新大总结已经处理并写入过回忆录。仍要重新提炼吗？');
+        if (!confirmed) {
+          setStatus('idle', { message: '已取消重复提炼。' });
+          refreshPanel();
+          return;
+        }
+        result = await runManualMemoirExtraction({ ...extractionOptions, allowProcessed: true });
+      }
       if (!result.staged) {
         setStatus('idle', { message: '本次未提炼到可写入的已完成事件。' });
       } else {
@@ -233,6 +257,9 @@ export function bindMemoirPanelEvents(panelRoot, settings) {
   panelRoot.querySelector('[data-slx-memoir-commit]')?.addEventListener('click', async () => {
     const memoir = getMemoirState();
     const sourceKey = memoir.pending?.sourceKey || '';
+    const sourceKeys = Array.isArray(memoir.pending?.sourceKeys)
+      ? memoir.pending.sourceKeys
+      : [sourceKey].filter(Boolean);
     // 先把 DOM 里的编辑写回 pending，避免刷新丢失
     const edited = collectEditedCandidates(panelRoot);
     if (!edited.length) {
@@ -243,7 +270,7 @@ export function bindMemoirPanelEvents(panelRoot, settings) {
     setStatus('committing');
     refreshPanel();
     try {
-      const result = await commitMemoirCandidates(edited, { sourceKey });
+      const result = await commitMemoirCandidates(edited, { sourceKey, sourceKeys });
       setStatus('idle', {
         message: `已写入 ${result.greenAdded} 条绿灯，蓝灯${result.blueMode === 'created' ? '已创建' : '已更新'}，当前共 ${result.totalEntries} 条。`,
       });

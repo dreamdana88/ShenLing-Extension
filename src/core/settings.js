@@ -169,11 +169,11 @@ export const defaultChatState = Object.freeze({
   memoir: {
     worldbookId: '',        // 绑定的回忆录世界书名（TavernHelper 世界书名即 id）
     worldbookName: '',       // 展示名，通常同 worldbookId
-    prevBoundName: '',       // 替换前的原绑定世界书名，仅作诊断/还原参考
-    overviewUid: null,       // 蓝灯总览条目在世界书中的 uid，用于覆盖更新
+    prevBoundName: '',       // 兼容旧状态：首次发现的已有绑定名；策略 A 不替换绑定
+    overviewUid: null,       // 兼容预留字段；当前蓝灯按 name/extra 定位
     sourceProcessed: [],     // 已处理的大总结标识列表，避免同源重复提炼
     entries: [],             // 已写入绿灯条目索引：{ memoirId, title, digest, storyTime, importance, participants, mainKeywords, filterKeywords, uid, createdAt, updatedAt }
-    pending: null,           // 待用户确认的提炼结果：{ sourceKey, overview:[], memories:[], generatedAt }
+    pending: null,           // 待确认批次：{ sourceKey, sourceKeys:[], candidates:[], generatedAt }；新批次追加而非覆盖
     updatedAt: '',
   },
   parallel: {
@@ -540,4 +540,3 @@ export function getScheduleState(chatState = getChatState()) {
   chatState.schedule.lastGeneratedAt = String(chatState.schedule.lastGeneratedAt || '');
   return chatState.schedule;
 }
-
