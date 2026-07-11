@@ -1,8 +1,8 @@
 // 回忆录世界书业务流程。
-// 阶段 3a：确保当前聊天有可写入的回忆录世界书（策略 A）。
-//   - 当前聊天已绑定世界书 -> 直接复用那本（回忆条目以前缀 + extra.memoirId 隔离写入，不替换、不停用用户书）。
+// 阶段 3a：确保当前聊天有经过用户确认的可写入世界书。
 //   - 当前聊天无绑定 -> 新建「蜃灵回忆录｜<聊天标识>」并绑定。
-// SillyTavern 聊天世界书绑定是 1:1，故不采用「新建独立书 + 替换绑定」以免停用用户自己的书。
+//   - 已绑定且本聊天确认过 -> 直接复用。
+//   - 已绑定但未确认/绑定已变化 -> 由 UI 询问：复用当前书，或创建蜃灵专属书并切换绑定。
 
 import { formatTimestamp } from '../../utils/text.js';
 import { getContextSafe } from '../../core/chat.js';
@@ -29,6 +29,50 @@ function buildMemoirBookName(chatId) {
   return `${MEMOIR_BOOK_PREFIX}${chatId}`;
 }
 
+function isBindingDecisionCurrent(memoir, chatId, worldbookName) {
+  const decision = memoir?.bindingDecision;
+  return decision
+    && decision.chatId === chatId
+    && decision.worldbookName === worldbookName
+    && ['reuse', 'dedicated'].includes(decision.mode);
+}
+
+function recordBindingDecision(memoir, chatId, worldbookName, mode) {
+  memoir.bindingDecision = {
+    chatId,
+    worldbookName,
+    mode,
+    confirmedAt: formatTimestamp(),
+  };
+}
+
+async function createAndBindDedicatedMemoirBook(api, chatId) {
+  const baseName = buildMemoirBookName(chatId);
+  const rawNames = await Promise.resolve(api.getWorldbookNames());
+  const names = new Set(Array.isArray(rawNames) ? rawNames : []);
+  let worldbookName = baseName;
+  let suffix = 2;
+  while (names.has(worldbookName)) {
+    worldbookName = `${baseName}｜${suffix}`;
+    suffix += 1;
+  }
+
+  const created = await api.createWorldbook(worldbookName, []);
+  if (created !== true) {
+    throw new Error(`创建回忆录世界书「${worldbookName}」失败：同名世界书可能已存在。`);
+  }
+
+  try {
+    await api.rebindChatWorldbook('current', worldbookName);
+  } catch (error) {
+    try {
+      if (typeof api.deleteWorldbook === 'function') await api.deleteWorldbook(worldbookName);
+    } catch {}
+    throw new Error(`新世界书已创建但绑定失败：${error.message || String(error)}`);
+  }
+  return worldbookName;
+}
+
 /** 该书名是否为蜃灵自建的专属回忆录书（用于区分「专属书」与「共享用户书」）。 */
 export function isDedicatedMemoirBook(bookName) {
   return typeof bookName === 'string' && bookName.startsWith(MEMOIR_BOOK_PREFIX);
@@ -36,11 +80,14 @@ export function isDedicatedMemoirBook(bookName) {
 
 /**
  * 确保当前聊天存在可写入的回忆录世界书，并把绑定信息写回 chatState.memoir。
- * 幂等：已建立则直接复用；不会重复创建或改变已有绑定。
+ * 幂等：同一聊天确认过同一本书后直接复用；外部绑定变化时重新询问。
  *
+ * @param {object} options
+ *   - confirmUseCurrent: (worldbookName: string) => Promise<boolean>|boolean
+ *     true=使用当前绑定；false=创建并切换到新的蜃灵回忆录书。
  * @returns {Promise<{ worldbookName: string, mode: 'existing'|'new', dedicated: boolean }>}
  */
-export async function ensureMemoirWorldbook() {
+export async function ensureMemoirWorldbook({ confirmUseCurrent } = {}) {
   const api = getWorldbookApi();
   const chatId = resolveChatId();
   if (!chatId) {
@@ -53,19 +100,39 @@ export async function ensureMemoirWorldbook() {
   let worldbookName;
   let mode;
 
-  if (currentBound) {
-    // 策略 A：复用现有绑定书，回忆条目以前缀隔离写入
+  if (currentBound && isBindingDecisionCurrent(memoir, chatId, currentBound)) {
     worldbookName = currentBound;
     mode = 'existing';
-    if (!memoir.prevBoundName) {
-      memoir.prevBoundName = currentBound; // 兼容旧状态：记录首次发现的已有绑定，不代表发生替换
+  } else if (currentBound) {
+    const expectedDedicatedPrefix = buildMemoirBookName(chatId);
+    const isCurrentChatDedicated = currentBound === expectedDedicatedPrefix
+      || currentBound.startsWith(`${expectedDedicatedPrefix}｜`);
+    if (isCurrentChatDedicated) {
+      worldbookName = currentBound;
+      mode = 'existing';
+      recordBindingDecision(memoir, chatId, worldbookName, 'dedicated');
+    } else {
+      if (typeof confirmUseCurrent !== 'function') {
+        throw new Error(`当前聊天已绑定世界书「${currentBound}」，写入前需要用户确认。`);
+      }
+      const useCurrent = await confirmUseCurrent(currentBound);
+      memoir.prevBoundName = currentBound;
+      if (useCurrent) {
+        worldbookName = currentBound;
+        mode = 'existing';
+        recordBindingDecision(memoir, chatId, worldbookName, 'reuse');
+      } else {
+        worldbookName = await createAndBindDedicatedMemoirBook(api, chatId);
+        mode = 'new';
+        recordBindingDecision(memoir, chatId, worldbookName, 'dedicated');
+      }
     }
   } else {
     // 无绑定：新建蜃灵专属书并绑定当前聊天
-    const desiredName = buildMemoirBookName(chatId);
-    worldbookName = await api.getOrCreateChatWorldbook('current', desiredName);
+    worldbookName = await createAndBindDedicatedMemoirBook(api, chatId);
     mode = 'new';
     memoir.prevBoundName = '';
+    recordBindingDecision(memoir, chatId, worldbookName, 'dedicated');
   }
 
   memoir.worldbookId = worldbookName;
@@ -318,7 +385,7 @@ function buildGreenEntryPayload(entry, order) {
  */
 export async function commitMemoirCandidates(
   confirmedCandidates,
-  { sourceKey, sourceKeys: pendingSourceKeys = [] } = {},
+  { sourceKey, sourceKeys: pendingSourceKeys = [], confirmUseCurrent } = {},
 ) {
   const list = Array.isArray(confirmedCandidates) ? confirmedCandidates.filter(c => c && c.content) : [];
   if (!list.length) {
@@ -326,7 +393,7 @@ export async function commitMemoirCandidates(
   }
 
   const api = getWorldbookApi();
-  const { worldbookName } = await ensureMemoirWorldbook();
+  const { worldbookName } = await ensureMemoirWorldbook({ confirmUseCurrent });
   const memoir = getMemoirState();
   const sourceKeys = [...new Set([
     ...(Array.isArray(pendingSourceKeys) ? pendingSourceKeys : []),

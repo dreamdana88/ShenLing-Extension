@@ -182,6 +182,14 @@ function setStatus(status, { message = '', error = '' } = {}) {
   panelState = { status, message, error };
 }
 
+function confirmUseCurrentWorldbook(worldbookName) {
+  return window.confirm(
+    `当前聊天已经绑定世界书：\n「${worldbookName}」\n\n`
+    + '确定：继续使用当前世界书写入回忆录。\n'
+    + '取消：保留当前世界书，并创建、切换到新的蜃灵回忆录世界书。',
+  );
+}
+
 export function bindMemoirPanelEvents(panelRoot, settings) {
   panelRoot.querySelector('[data-slx-memoir-enabled]')?.addEventListener('change', event => {
     const memoirSettings = getMemoirSettings(settings);
@@ -270,7 +278,11 @@ export function bindMemoirPanelEvents(panelRoot, settings) {
     setStatus('committing');
     refreshPanel();
     try {
-      const result = await commitMemoirCandidates(edited, { sourceKey, sourceKeys });
+      const result = await commitMemoirCandidates(edited, {
+        sourceKey,
+        sourceKeys,
+        confirmUseCurrent: confirmUseCurrentWorldbook,
+      });
       setStatus('idle', {
         message: `已写入 ${result.greenAdded} 条绿灯，蓝灯${result.blueMode === 'created' ? '已创建' : '已更新'}，当前共 ${result.totalEntries} 条。`,
       });

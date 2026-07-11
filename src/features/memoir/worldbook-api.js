@@ -33,10 +33,12 @@ function resolveThFn(name) {
   return null;
 }
 
-/** 回忆录写入所需的最小函数是否可用 */
+/** 回忆录写入与“新建并切换”所需的最小函数是否可用 */
 export function isWorldbookApiAvailable() {
-  return !!resolveThFn('getChatWorldbookName')
-    && !!resolveThFn('getOrCreateChatWorldbook')
+  return !!resolveThFn('getWorldbookNames')
+    && !!resolveThFn('getChatWorldbookName')
+    && !!resolveThFn('rebindChatWorldbook')
+    && !!resolveThFn('createWorldbook')
     && !!resolveThFn('updateWorldbookWith');
 }
 
@@ -52,7 +54,13 @@ export function getWorldbookApi() {
     const fn = resolveThFn(name);
     if (fn) api[name] = fn;
   }
-  if (!api.getChatWorldbookName || !api.getOrCreateChatWorldbook || !api.updateWorldbookWith) {
+  if (
+    !api.getWorldbookNames
+    || !api.getChatWorldbookName
+    || !api.rebindChatWorldbook
+    || !api.createWorldbook
+    || !api.updateWorldbookWith
+  ) {
     throw new Error('未找到 TavernHelper 世界书 API（回忆录功能需要酒馆助手环境）。');
   }
   return api;
