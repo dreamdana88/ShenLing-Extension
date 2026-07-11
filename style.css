@@ -711,50 +711,128 @@ body.slx-panel-open-lock {
 .slx-memoir-cand-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   margin: 8px 0;
 }
 .slx-memoir-cand {
-  padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 12px;
+  background:
+    linear-gradient(165deg, rgba(var(--slx-accent-rgb), 0.045), transparent 48%),
+    var(--slx-bg-soft);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 9px;
 }
 .slx-memoir-cand-head {
   display: flex;
-  gap: 6px;
+  gap: 7px;
   align-items: center;
 }
-.slx-memoir-cand-head input[data-field="title"] {
-  flex: 1;
-  font-weight: 600;
+.slx-memoir-title-field {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .slx-memoir-cand-head select {
   flex: 0 0 auto;
-  width: auto;
+  width: 42px;
 }
-.slx-memoir-label {
+.slx-memoir-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.slx-memoir-editor-field > span {
   font-size: 11px;
+  font-weight: 650;
+  line-height: 1.35;
   color: var(--slx-muted);
-  margin-top: 2px;
 }
-.slx-memoir-field {
+
+#shenling-assistant-panel-root .slx-memoir-editor input.slx-memoir-field,
+#shenling-assistant-panel-root .slx-memoir-editor select.slx-memoir-field,
+#shenling-assistant-panel-root .slx-memoir-editor textarea.slx-memoir-field {
+  display: block;
   width: 100%;
   box-sizing: border-box;
-  padding: 5px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.18);
-  color: inherit;
+  min-height: 34px;
+  margin: 0 !important;
+  padding: 7px 9px !important;
+  border: 1px solid var(--slx-border-dim) !important;
+  border-radius: 10px !important;
+  background-color: var(--slx-input-bg) !important;
+  background-image: none !important;
+  color: var(--slx-input-text) !important;
+  caret-color: var(--slx-input-text) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  font: inherit !important;
   font-size: 12px;
+  outline: none !important;
+  opacity: 1 !important;
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
 }
-.slx-memoir-textarea {
-  resize: vertical;
-  min-height: 72px;
-  line-height: 1.5;
+
+#shenling-assistant-panel-root .slx-memoir-editor input.slx-memoir-field:focus,
+#shenling-assistant-panel-root .slx-memoir-editor select.slx-memoir-field:focus,
+#shenling-assistant-panel-root .slx-memoir-editor textarea.slx-memoir-field:focus {
+  border-color: var(--slx-accent) !important;
+  background-color: var(--slx-input-bg-focus) !important;
+  box-shadow: 0 0 0 2px rgba(var(--slx-accent-rgb), 0.1) !important;
+}
+
+#shenling-assistant-panel-root .slx-memoir-editor input.slx-memoir-field::placeholder,
+#shenling-assistant-panel-root .slx-memoir-editor textarea.slx-memoir-field::placeholder {
+  color: var(--slx-input-placeholder) !important;
+  opacity: 1 !important;
+}
+
+#shenling-assistant-panel-root .slx-memoir-editor input[data-field="title"] {
+  font-weight: 700 !important;
+}
+
+#shenling-assistant-panel-root .slx-memoir-editor select.slx-memoir-importance {
+  width: 42px;
+  min-width: 42px;
+  padding-left: 9px !important;
+  padding-right: 5px !important;
+}
+
+#shenling-assistant-panel-root .slx-memoir-editor select.slx-memoir-field option {
+  background: var(--slx-bg-panel);
+  color: var(--slx-input-text);
+}
+
+#shenling-assistant-panel-root .slx-memoir-editor textarea.slx-memoir-textarea {
+  height: auto !important;
+  min-height: 112px !important;
+  max-height: 360px !important;
+  overflow: auto !important;
+  resize: vertical !important;
+  padding: 9px 10px !important;
+  line-height: 1.55 !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--slx-accent-rgb), 0.42) transparent;
+}
+
+#shenling-assistant-panel-root .slx-memoir-editor textarea.slx-memoir-textarea::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+#shenling-assistant-panel-root .slx-memoir-editor textarea.slx-memoir-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#shenling-assistant-panel-root .slx-memoir-editor textarea.slx-memoir-textarea::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(var(--slx-accent-rgb), 0.36);
+}
+
+#shenling-assistant-panel-root .slx-memoir-editor textarea.slx-memoir-textarea::-webkit-resizer {
+  background: transparent;
 }
 .slx-memoir-entry-list {
   margin: 6px 0 0;

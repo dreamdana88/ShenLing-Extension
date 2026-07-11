@@ -14,6 +14,7 @@ import {
   discardMemoirPending,
   runManualMemoirExtraction,
 } from './workflow.js';
+import { reconcileMemoirWorldbookState } from './worldbook-manager.js';
 
 let panelOptions = { refreshPanel: () => {} };
 
@@ -46,26 +47,38 @@ function inputToKeywords(value) {
 
 function renderPendingCard(cand) {
   return `
-    <div class="slx-memoir-cand" data-slx-memoir-cand="${escapeHtml(cand.candidateId)}">
+    <div class="slx-memoir-cand slx-memoir-editor" data-slx-memoir-cand="${escapeHtml(cand.candidateId)}">
       <div class="slx-memoir-cand-head">
-        <input class="slx-memoir-field" data-field="title" value="${escapeHtml(cand.title)}" placeholder="回忆标题" />
-        <select class="slx-memoir-field" data-field="importance">
+        <div class="slx-memoir-editor-field slx-memoir-title-field">
+          <input class="slx-memoir-field" data-field="title" value="${escapeHtml(cand.title)}" placeholder="回忆标题" aria-label="回忆标题" />
+        </div>
+        <select class="slx-memoir-field slx-memoir-importance" data-field="importance" aria-label="重要度">
           ${['high', 'medium', 'low'].map(v =>
             `<option value="${v}" ${cand.importance === v ? 'selected' : ''}>${IMPORTANCE_LABEL[v]}</option>`,
           ).join('')}
         </select>
         <button class="slx-soft-btn slx-danger-mini-btn" type="button" data-slx-memoir-cand-del="${escapeHtml(cand.candidateId)}">删除</button>
       </div>
-      <label class="slx-memoir-label">剧情时间</label>
-      <input class="slx-memoir-field" data-field="storyTime" value="${escapeHtml(cand.storyTime)}" placeholder="剧情内时间" />
-      <label class="slx-memoir-label">主要关键词（人，顿号分隔）</label>
-      <input class="slx-memoir-field" data-field="mainKeywords" value="${escapeHtml(keywordsToInput(cand.mainKeywords))}" />
-      <label class="slx-memoir-label">过滤器关键词（事，顿号分隔）</label>
-      <input class="slx-memoir-field" data-field="filterKeywords" value="${escapeHtml(keywordsToInput(cand.filterKeywords))}" />
-      <label class="slx-memoir-label">目录摘要（蓝灯 digest）</label>
-      <input class="slx-memoir-field" data-field="digest" value="${escapeHtml(cand.digest || '')}" placeholder="一句话：时·地·人·事" />
-      <label class="slx-memoir-label">回忆正文（绿灯 content）</label>
-      <textarea class="slx-memoir-field slx-memoir-textarea" data-field="content" rows="4">${escapeHtml(cand.content)}</textarea>
+      <label class="slx-memoir-editor-field">
+        <span>剧情时间</span>
+        <input class="slx-memoir-field" data-field="storyTime" value="${escapeHtml(cand.storyTime)}" placeholder="剧情内时间" />
+      </label>
+      <label class="slx-memoir-editor-field">
+        <span>主要关键词（人，顿号分隔）</span>
+        <input class="slx-memoir-field" data-field="mainKeywords" value="${escapeHtml(keywordsToInput(cand.mainKeywords))}" />
+      </label>
+      <label class="slx-memoir-editor-field">
+        <span>过滤器关键词（事，顿号分隔）</span>
+        <input class="slx-memoir-field" data-field="filterKeywords" value="${escapeHtml(keywordsToInput(cand.filterKeywords))}" />
+      </label>
+      <label class="slx-memoir-editor-field">
+        <span>目录摘要（蓝灯 digest）</span>
+        <input class="slx-memoir-field" data-field="digest" value="${escapeHtml(cand.digest || '')}" placeholder="一句话：时·地·人·事" />
+      </label>
+      <label class="slx-memoir-editor-field slx-memoir-content-field">
+        <span>回忆正文（绿灯 content）</span>
+        <textarea class="slx-memoir-field slx-memoir-textarea" data-field="content" rows="5">${escapeHtml(cand.content)}</textarea>
+      </label>
     </div>
   `;
 }
@@ -191,6 +204,15 @@ function confirmUseCurrentWorldbook(worldbookName) {
 }
 
 export function bindMemoirPanelEvents(panelRoot, settings) {
+  // 面板打开时异步以真实世界书同步一次展示；仅状态发生变化时重绘，避免无意义刷新。
+  void reconcileMemoirWorldbookState()
+    .then(result => {
+      if (result.changed) refreshPanel();
+    })
+    .catch(error => {
+      console.warn('[蜃灵助手] 回忆录面板同步世界书失败，暂时保留本地展示。', error);
+    });
+
   panelRoot.querySelector('[data-slx-memoir-enabled]')?.addEventListener('change', event => {
     const memoirSettings = getMemoirSettings(settings);
     memoirSettings.enabled = event.currentTarget.checked;
@@ -224,7 +246,11 @@ export function bindMemoirPanelEvents(panelRoot, settings) {
         return;
       }
       if (result.reason === 'already_processed') {
-        const confirmed = window.confirm('最新大总结已经处理并写入过回忆录。仍要重新提炼吗？');
+        const confirmed = window.confirm(
+          '最新大总结已经处理并写入过回忆录。\n\n'
+          + '继续会生成一批全新的候选，可能与现有绿灯内容重复；这不是失败重试去重。\n\n'
+          + '仍要重新提炼吗？',
+        );
         if (!confirmed) {
           setStatus('idle', { message: '已取消重复提炼。' });
           refreshPanel();

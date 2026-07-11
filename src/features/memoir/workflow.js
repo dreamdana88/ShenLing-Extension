@@ -10,8 +10,10 @@ import { collectEmotionProfiles } from '../../core/context-resolver.js';
 import { buildMemoirExtractPrompt } from '../../prompts.js';
 import { getWorldbookApi } from './worldbook-api.js';
 import {
+  buildMemoirBlueContent,
   ensureMemoirWorldbook,
   isDedicatedMemoirBook,
+  reconcileMemoirWorldbookState,
   updateWorldbookWithVerification,
 } from './worldbook-manager.js';
 
@@ -101,6 +103,12 @@ export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate
     throw new Error('未提供生成函数，无法提炼回忆候选。');
   }
 
+  // 提炼前先检查真实世界书；整本书已删除时清掉旧索引/来源，避免旧记录继续影响去重素材。
+  try {
+    await reconcileMemoirWorldbookState();
+  } catch (error) {
+    console.warn('[蜃灵助手] 提炼前同步回忆录世界书失败，将保留现有本地状态。', error);
+  }
   const memoir = getMemoirState();
   const sourceKey = buildSourceKey(archiveRecord);
   if (!force && memoir.sourceProcessed.includes(sourceKey)) {
@@ -211,20 +219,6 @@ function buildGreenContent(entry) {
   return `${time}${entry.content}`.trim();
 }
 
-/** 用全量 entries 重建蓝灯总览正文（覆盖但不丢旧目录）。 */
-function buildBlueContent(entries) {
-  const lines = ['【回忆录总览】', '以下是这段旅程中值得铭记的往事：', ''];
-  entries.forEach(e => {
-    const digest = e.digest || `${e.storyTime && e.storyTime !== '未明' ? e.storyTime + '，' : ''}${e.title}`;
-    lines.push(`· ${e.title}：${digest}`);
-    const anchors = Array.isArray(e.filterKeywords)
-      ? [...new Set(e.filterKeywords.map(word => String(word || '').trim()).filter(Boolean))].slice(0, 4)
-      : [];
-    if (anchors.length) lines.push(`  唤起词：${anchors.join('、')}`);
-  });
-  return lines.join('\n');
-}
-
 function normalizeWorldbookContent(content) {
   return String(content || '').replace(/\r\n/g, '\n').trim();
 }
@@ -324,7 +318,7 @@ export async function commitMemoirCandidates(
   const allEntries = [...unkeyedEntries, ...entriesById.values()];
 
   // 2) 单次更新完成绿灯新增、蓝灯创建/覆盖和全量排序，避免中途失败留下半批条目。
-  const blueContent = buildBlueContent(allEntries);
+  const blueContent = buildMemoirBlueContent(allEntries);
   const greenOrderById = new Map(
     allEntries.map((e, i) => [e.memoirId, MEMOIR_GREEN_ORDER_BASE + i]),
   );
