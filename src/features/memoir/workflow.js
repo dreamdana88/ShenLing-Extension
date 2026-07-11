@@ -5,145 +5,17 @@
 //   - 已绑定但未确认/绑定已变化 -> 由 UI 询问：复用当前书，或创建蜃灵专属书并切换绑定。
 
 import { formatTimestamp } from '../../utils/text.js';
-import { getContextSafe } from '../../core/chat.js';
-import { getContextInfo, getMemoirState, getMemoirSettings, saveChatState } from '../../core/settings.js';
+import { getMemoirState, getMemoirSettings, saveChatState } from '../../core/settings.js';
 import { collectEmotionProfiles } from '../../core/context-resolver.js';
 import { buildMemoirExtractPrompt } from '../../prompts.js';
 import { getWorldbookApi } from './worldbook-api.js';
+import {
+  ensureMemoirWorldbook,
+  isDedicatedMemoirBook,
+  updateWorldbookWithVerification,
+} from './worldbook-manager.js';
 
-const MEMOIR_BOOK_PREFIX = '蜃灵回忆录｜';
-
-function resolveChatId() {
-  const context = getContextSafe();
-  try {
-    if (typeof context?.getCurrentChatId === 'function') {
-      const id = context.getCurrentChatId();
-      if (id) return String(id);
-    }
-  } catch {}
-  const info = getContextInfo();
-  return info.chatId ? String(info.chatId) : '';
-}
-
-function buildMemoirBookName(chatId) {
-  return `${MEMOIR_BOOK_PREFIX}${chatId}`;
-}
-
-function isBindingDecisionCurrent(memoir, chatId, worldbookName) {
-  const decision = memoir?.bindingDecision;
-  return decision
-    && decision.chatId === chatId
-    && decision.worldbookName === worldbookName
-    && ['reuse', 'dedicated'].includes(decision.mode);
-}
-
-function recordBindingDecision(memoir, chatId, worldbookName, mode) {
-  memoir.bindingDecision = {
-    chatId,
-    worldbookName,
-    mode,
-    confirmedAt: formatTimestamp(),
-  };
-}
-
-async function createAndBindDedicatedMemoirBook(api, chatId) {
-  const baseName = buildMemoirBookName(chatId);
-  const rawNames = await Promise.resolve(api.getWorldbookNames());
-  const names = new Set(Array.isArray(rawNames) ? rawNames : []);
-  let worldbookName = baseName;
-  let suffix = 2;
-  while (names.has(worldbookName)) {
-    worldbookName = `${baseName}｜${suffix}`;
-    suffix += 1;
-  }
-
-  const created = await api.createWorldbook(worldbookName, []);
-  if (created !== true) {
-    throw new Error(`创建回忆录世界书「${worldbookName}」失败：同名世界书可能已存在。`);
-  }
-
-  try {
-    await api.rebindChatWorldbook('current', worldbookName);
-  } catch (error) {
-    try {
-      if (typeof api.deleteWorldbook === 'function') await api.deleteWorldbook(worldbookName);
-    } catch {}
-    throw new Error(`新世界书已创建但绑定失败：${error.message || String(error)}`);
-  }
-  return worldbookName;
-}
-
-/** 该书名是否为蜃灵自建的专属回忆录书（用于区分「专属书」与「共享用户书」）。 */
-export function isDedicatedMemoirBook(bookName) {
-  return typeof bookName === 'string' && bookName.startsWith(MEMOIR_BOOK_PREFIX);
-}
-
-/**
- * 确保当前聊天存在可写入的回忆录世界书，并把绑定信息写回 chatState.memoir。
- * 幂等：同一聊天确认过同一本书后直接复用；外部绑定变化时重新询问。
- *
- * @param {object} options
- *   - confirmUseCurrent: (worldbookName: string) => Promise<boolean>|boolean
- *     true=使用当前绑定；false=创建并切换到新的蜃灵回忆录书。
- * @returns {Promise<{ worldbookName: string, mode: 'existing'|'new', dedicated: boolean }>}
- */
-export async function ensureMemoirWorldbook({ confirmUseCurrent } = {}) {
-  const api = getWorldbookApi();
-  const chatId = resolveChatId();
-  if (!chatId) {
-    throw new Error('未读取到当前聊天标识，无法建立回忆录世界书。');
-  }
-
-  const memoir = getMemoirState();
-  const currentBound = await api.getChatWorldbookName('current'); // string | null
-
-  let worldbookName;
-  let mode;
-
-  if (currentBound && isBindingDecisionCurrent(memoir, chatId, currentBound)) {
-    worldbookName = currentBound;
-    mode = 'existing';
-  } else if (currentBound) {
-    const expectedDedicatedPrefix = buildMemoirBookName(chatId);
-    const isCurrentChatDedicated = currentBound === expectedDedicatedPrefix
-      || currentBound.startsWith(`${expectedDedicatedPrefix}｜`);
-    const isKnownCurrentChatDedicated = isCurrentChatDedicated
-      && memoir.worldbookName === currentBound;
-    if (isKnownCurrentChatDedicated) {
-      worldbookName = currentBound;
-      mode = 'existing';
-      recordBindingDecision(memoir, chatId, worldbookName, 'dedicated');
-    } else {
-      if (typeof confirmUseCurrent !== 'function') {
-        throw new Error(`当前聊天已绑定世界书「${currentBound}」，写入前需要用户确认。`);
-      }
-      const useCurrent = await confirmUseCurrent(currentBound);
-      memoir.prevBoundName = currentBound;
-      if (useCurrent) {
-        worldbookName = currentBound;
-        mode = 'existing';
-        recordBindingDecision(memoir, chatId, worldbookName, 'reuse');
-      } else {
-        worldbookName = await createAndBindDedicatedMemoirBook(api, chatId);
-        mode = 'new';
-        recordBindingDecision(memoir, chatId, worldbookName, 'dedicated');
-      }
-    }
-  } else {
-    // 无绑定：新建蜃灵专属书并绑定当前聊天
-    worldbookName = await createAndBindDedicatedMemoirBook(api, chatId);
-    mode = 'new';
-    memoir.prevBoundName = '';
-    recordBindingDecision(memoir, chatId, worldbookName, 'dedicated');
-  }
-
-  memoir.worldbookId = worldbookName;
-  memoir.worldbookName = worldbookName;
-  memoir.updatedAt = formatTimestamp();
-  saveChatState();
-
-  return { worldbookName, mode, dedicated: isDedicatedMemoirBook(worldbookName) };
-}
+export { ensureMemoirWorldbook, isDedicatedMemoirBook } from './worldbook-manager.js';
 
 // ── 阶段 3b：大总结后提炼回忆候选（只解析，不写入世界书）──────────────
 
@@ -260,12 +132,21 @@ export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate
 
 // ── 阶段四：候选暂存到 pending，交用户确认 ────────────────────────────
 
-/** 规范化单条绿灯候选，容错缺字段。给每条分配临时 candidateId 供面板增删。 */
+function createCandidateId(index) {
+  try {
+    if (typeof globalThis.crypto?.randomUUID === 'function') {
+      return `cand-${globalThis.crypto.randomUUID()}`;
+    }
+  } catch {}
+  return `cand-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${index}`;
+}
+
+/** 规范化单条绿灯候选，容错缺字段。创建后即持久化稳定 candidateId，供面板和失败重试复用。 */
 function normalizeCandidate(mem, index) {
   const asArray = v => (Array.isArray(v) ? v.map(s => String(s).trim()).filter(Boolean) : []);
   const importance = ['high', 'medium', 'low'].includes(mem?.importance) ? mem.importance : 'medium';
   return {
-    candidateId: `cand-${Date.now()}-${index}`,
+    candidateId: createCandidateId(index),
     title: String(mem?.title || '').trim() || '未命名回忆',
     storyTime: String(mem?.storyTime || '').trim() || '未明',
     importance,
@@ -344,6 +225,10 @@ function buildBlueContent(entries) {
   return lines.join('\n');
 }
 
+function normalizeWorldbookContent(content) {
+  return String(content || '').replace(/\r\n/g, '\n').trim();
+}
+
 // 插入顺序（order）：蓝灯总览固定 900，绿灯从 901 起按记录（≈剧情）顺序逐条 +1。
 // 说明：memoir.entries 的数组顺序就是记录顺序，因大总结按剧情推进依次处理，天然即时间序；
 // storyTime 是自由文本（不同世界的纪年/时段各异），不做字符串排序，避免误排。
@@ -379,11 +264,11 @@ function buildGreenEntryPayload(entry, order) {
  * 把用户确认后的候选写入世界书。
  * - 绿灯：逐条新增（增量，不动旧条目）。
  * - 蓝灯：用全量 entries 重建后覆盖（不丢旧目录）。
- * - 成功后更新 entries 索引 + sourceProcessed，清空 pending。
+ * - 独立读回确认绿灯与蓝灯后，才更新 entries、sourceProcessed 并清空 pending。
  *
  * @param {Array} confirmedCandidates 用户确认保留（可能已编辑）的候选数组
  * @param {object} opts - sourceKey: 幂等键（写入后记入 sourceProcessed）
- * @returns {Promise<{ worldbookName, greenAdded, blueMode, totalEntries }>}
+ * @returns {Promise<{ worldbookName, greenAdded, blueMode, totalEntries, verified }>}
  */
 export async function commitMemoirCandidates(
   confirmedCandidates,
@@ -394,6 +279,31 @@ export async function commitMemoirCandidates(
     throw new Error('没有可写入的回忆候选。');
   }
 
+  // 1) 准备本轮绿灯。candidateId 来自已持久化 pending，可让失败重试保持同一 memoirId。
+  const now = formatTimestamp();
+  const newEntries = list.map((c) => {
+    const memoirId = c.memoirId || (c.candidateId
+      ? String(c.candidateId).replace(/^cand-/, 'mem-')
+      : '');
+    if (!memoirId) {
+      throw new Error('待写入候选缺少稳定 ID，请重新提炼后再试。');
+    }
+    return {
+      memoirId,
+      title: c.title,
+      digest: c.digest || '',
+      storyTime: c.storyTime || '未明',
+      importance: ['high', 'medium', 'low'].includes(c.importance) ? c.importance : 'medium',
+      participants: Array.isArray(c.participants) ? c.participants : [],
+      mainKeywords: Array.isArray(c.mainKeywords) ? c.mainKeywords : [],
+      filterKeywords: Array.isArray(c.filterKeywords) ? c.filterKeywords : [],
+      content: c.content,
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+
+  // 稳定 ID 校验通过后再解析/创建目标世界书，避免无效候选触发绑定副作用。
   const api = getWorldbookApi();
   const { worldbookName } = await ensureMemoirWorldbook({ confirmUseCurrent });
   const memoir = getMemoirState();
@@ -402,27 +312,16 @@ export async function commitMemoirCandidates(
     sourceKey,
   ].filter(Boolean))];
 
-  // 1) 准备本轮绿灯。candidateId 来自已持久化 pending，可让失败重试保持同一 memoirId。
-  const now = formatTimestamp();
-  const newEntries = list.map((c, i) => ({
-    memoirId: c.memoirId || (c.candidateId
-      ? String(c.candidateId).replace(/^cand-/, 'mem-')
-      : `mem-${Date.now()}-${i}`),
-    title: c.title,
-    digest: c.digest || '',
-    storyTime: c.storyTime || '未明',
-    importance: ['high', 'medium', 'low'].includes(c.importance) ? c.importance : 'medium',
-    participants: Array.isArray(c.participants) ? c.participants : [],
-    mainKeywords: Array.isArray(c.mainKeywords) ? c.mainKeywords : [],
-    filterKeywords: Array.isArray(c.filterKeywords) ? c.filterKeywords : [],
-    content: c.content,
-    createdAt: now,
-    updatedAt: now,
-  }));
-
-  const indexedIds = new Set(memoir.entries.map(entry => entry?.memoirId).filter(Boolean));
-  const indexAdditions = newEntries.filter(entry => !indexedIds.has(entry.memoirId));
-  const allEntries = [...memoir.entries, ...indexAdditions];
+  // pending 失败重试时，同一 candidateId 会得到同一 memoirId。新值覆盖本地同 ID 索引，
+  // 但不会改变原有顺序；真正是否需要补写，以世界书内的稳定 ID 为准。
+  const unkeyedEntries = memoir.entries.filter(entry => !entry?.memoirId);
+  const entriesById = new Map(
+    memoir.entries
+      .filter(entry => entry?.memoirId)
+      .map(entry => [entry.memoirId, entry]),
+  );
+  newEntries.forEach(entry => entriesById.set(entry.memoirId, entry));
+  const allEntries = [...unkeyedEntries, ...entriesById.values()];
 
   // 2) 单次更新完成绿灯新增、蓝灯创建/覆盖和全量排序，避免中途失败留下半批条目。
   const blueContent = buildBlueContent(allEntries);
@@ -430,17 +329,17 @@ export async function commitMemoirCandidates(
     allEntries.map((e, i) => [e.memoirId, MEMOIR_GREEN_ORDER_BASE + i]),
   );
   let blueMode = 'updated';
-  let greenAdded = 0;
-  const updatedBook = await api.updateWorldbookWith(worldbookName, (book) => {
+  const greenAddedIds = new Set();
+  const verification = await updateWorldbookWithVerification(worldbookName, (book) => {
     const list2 = Array.isArray(book) ? book : [];
     const existingMemoirIds = new Set(
       list2.map(entry => entry?.extra?.memoirId).filter(Boolean),
     );
-    indexAdditions.forEach((entry) => {
+    newEntries.forEach((entry) => {
       if (existingMemoirIds.has(entry.memoirId)) return;
       list2.push(buildGreenEntryPayload(entry, greenOrderById.get(entry.memoirId)));
       existingMemoirIds.add(entry.memoirId);
-      greenAdded += 1;
+      greenAddedIds.add(entry.memoirId);
     });
 
     let blueFound = false;
@@ -452,6 +351,7 @@ export async function commitMemoirCandidates(
       if (e.name === MEMOIR_BLUE_NAME || e.extra?.memoirType === 'blue') {
         blueFound = true;
         e.content = blueContent;
+        e.extra = { ...(e.extra || {}), memoirType: 'blue' };
         e.strategy = { ...(e.strategy || {}), type: 'constant' };
         e.position = { ...(e.position || {}), order: MEMOIR_BLUE_ORDER };
         e.recursion = { prevent_incoming: true, prevent_outgoing: true, delay_until: null };
@@ -471,16 +371,44 @@ export async function commitMemoirCandidates(
       blueMode = 'created';
     }
     return list2;
+  }, {
+    api,
+    idField: 'memoirId',
+    expectedIds: newEntries.map(entry => entry.memoirId),
+    typeField: 'memoirType',
+    typeValue: 'green',
   });
 
-  // 3) 世界书完整更新成功后再写本地索引。按现行标题规则匹配 uid，保持既有行为。
-  indexAdditions.forEach(e => {
-    const match = updatedBook.find(x => x.name === `${MEMOIR_GREEN_NAME_PREFIX}${e.title}`);
-    if (match) e.uid = match.uid;
+  // 3) update 返回不等于真实持久化成功；共享管理器已独立读回并按 memoirId 核对本批绿灯。
+  const blueEntry = verification.book.find(entry => entry?.extra?.memoirType === 'blue') || null;
+  const blueContentMatches = blueEntry
+    && normalizeWorldbookContent(blueEntry.content) === normalizeWorldbookContent(blueContent);
+  if (!verification.ok || !blueEntry || !blueContentMatches) {
+    const problems = [];
+    if (verification.missingIds.length) {
+      problems.push(`缺少绿灯：${verification.missingIds.join('、')}`);
+    }
+    if (!blueEntry) problems.push('缺少蓝灯总览');
+    else if (!blueContentMatches) problems.push('蓝灯总览内容与预期不一致');
+    const error = new Error(`世界书写入后的读回核对失败（${problems.join('；')}）。待确认批次已保留，可安全重试。`);
+    error.name = 'WorldbookVerificationError';
+    error.worldbookName = worldbookName;
+    error.missingMemoirIds = verification.missingIds;
+    error.blueVerified = !!blueEntry && !!blueContentMatches;
+    throw error;
+  }
+
+  // 4) 全部读回成功后才写本地索引；UID 按稳定 ID 回填，不再按可能重名的标题匹配。
+  const verifiedById = new Map(
+    verification.verifiedEntries.map(entry => [entry.extra.memoirId, entry]),
+  );
+  allEntries.forEach(entry => {
+    const verified = verifiedById.get(entry.memoirId);
+    if (verified?.uid !== undefined && verified?.uid !== null) entry.uid = verified.uid;
   });
   memoir.entries = allEntries;
 
-  // 4) 幂等标记 + 清 pending
+  // 5) 只有绿灯与蓝灯均核对通过，才做幂等标记并清 pending。
   sourceKeys.forEach((key) => {
     if (!memoir.sourceProcessed.includes(key)) memoir.sourceProcessed.push(key);
   });
@@ -488,7 +416,13 @@ export async function commitMemoirCandidates(
   memoir.updatedAt = now;
   saveChatState();
 
-  return { worldbookName, greenAdded, blueMode, totalEntries: memoir.entries.length };
+  return {
+    worldbookName,
+    greenAdded: greenAddedIds.size,
+    blueMode,
+    totalEntries: memoir.entries.length,
+    verified: true,
+  };
 }
 
 // ── 手动提炼：从最新大总结提炼并暂存（供面板“手动提炼”按钮）──────────

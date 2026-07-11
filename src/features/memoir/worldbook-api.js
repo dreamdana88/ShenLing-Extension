@@ -38,6 +38,7 @@ export function isWorldbookApiAvailable() {
   return !!resolveThFn('getWorldbookNames')
     && !!resolveThFn('getChatWorldbookName')
     && !!resolveThFn('rebindChatWorldbook')
+    && !!resolveThFn('getWorldbook')
     && !!resolveThFn('createWorldbook')
     && !!resolveThFn('updateWorldbookWith');
 }
@@ -58,6 +59,7 @@ export function getWorldbookApi() {
     !api.getWorldbookNames
     || !api.getChatWorldbookName
     || !api.rebindChatWorldbook
+    || !api.getWorldbook
     || !api.createWorldbook
     || !api.updateWorldbookWith
   ) {
