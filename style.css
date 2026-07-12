@@ -912,39 +912,13 @@ body.slx-panel-open-lock {
 }
 
 .slx-capture-test-body {
+  /* 不再自带内层滚动：整块自然铺开，交给外层 .slx-detail 统一滚动，
+     否则内层 max-height 会把阶段 C 的来源 tab 和按钮裁进隐藏溢出里。 */
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 430px;
-  max-height: min(430px, 52dvh);
-  overflow-y: scroll;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  scrollbar-width: auto;
-  scrollbar-color: rgba(var(--slx-accent-rgb), 0.55) rgba(var(--slx-accent-rgb), 0.08);
   border-top: 1px solid var(--slx-border-dim);
-  padding: 10px 6px 10px 10px;
-}
-
-.slx-capture-test-body::-webkit-scrollbar {
-  width: 9px;
-}
-
-.slx-capture-test-body::-webkit-scrollbar-track {
-  border-radius: 999px;
-  background: rgba(var(--slx-accent-rgb), 0.08);
-}
-
-.slx-capture-test-body::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: rgba(var(--slx-accent-rgb), 0.55);
-  background-clip: padding-box;
-}
-
-.slx-capture-test-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--slx-accent-rgb), 0.76);
-  background-clip: padding-box;
+  padding: 10px;
 }
 
 .slx-capture-test-stage {
