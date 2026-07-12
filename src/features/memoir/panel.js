@@ -16,9 +16,13 @@ import {
 } from './workflow.js';
 import { reconcileMemoirWorldbookState } from './worldbook-manager.js';
 import {
-  bindCaptureStageTestEvents,
-  renderCaptureStageTestPanel,
-} from './capture-diagnostics.js';
+  bindCaptureEvents,
+  configureCapturePanel,
+  isCaptureWorldbookModalOpen,
+  renderCapturePanel,
+} from './capture-panel.js';
+
+export { isCaptureWorldbookModalOpen } from './capture-panel.js';
 
 let panelOptions = { refreshPanel: () => {} };
 
@@ -28,10 +32,14 @@ let panelState = {
   error: '',
 };
 
+// Tab 运行态：默认「剧情回忆」。直接切换只改 hidden/active，不触发全局重绘。
+let activeTab = 'memoir'; // memoir | capture
+
 const IMPORTANCE_LABEL = { high: '高', medium: '中', low: '低' };
 
 export function configureMemoirPanel(options = {}) {
   panelOptions = { ...panelOptions, ...options };
+  configureCapturePanel(options);
 }
 
 function refreshPanel() {
@@ -134,7 +142,7 @@ function renderEntriesSection(memoir) {
   `;
 }
 
-export function renderMemoirPanel(settings = null, chatState = getChatState()) {
+function renderMemoirTabContent(settings, chatState) {
   const memoirSettings = getMemoirSettings();
   const memoir = getMemoirState(chatState);
   const statusText = panelState.error
@@ -160,7 +168,56 @@ export function renderMemoirPanel(settings = null, chatState = getChatState()) {
     </div>
     ${renderPendingSection(memoir)}
     ${renderEntriesSection(memoir)}
-    ${renderCaptureStageTestPanel()}
+  `;
+}
+
+function renderMemoirTabBar() {
+  const tabs = [
+    { id: 'memoir', label: '剧情回忆' },
+    { id: 'capture', label: '设定采集 ✦' },
+  ];
+  return `
+    <div class="slx-memoir-tab-bar" role="tablist" aria-label="回忆录与设定采集">
+      ${tabs.map(tab => `
+        <button
+          class="slx-memoir-tab ${activeTab === tab.id ? 'is-active' : ''}"
+          type="button"
+          role="tab"
+          id="slx-memoir-tab-${tab.id}"
+          aria-selected="${activeTab === tab.id}"
+          aria-controls="slx-memoir-tabpanel-${tab.id}"
+          data-slx-memoir-tab="${tab.id}"
+        >${escapeHtml(tab.label)}</button>
+      `).join('')}
+    </div>
+  `;
+}
+
+export function renderMemoirPanel(settings = null, chatState = getChatState()) {
+  return `
+    <div class="slx-memoir-root">
+      ${renderMemoirTabBar()}
+      <div
+        class="slx-memoir-tabpanel"
+        role="tabpanel"
+        id="slx-memoir-tabpanel-memoir"
+        aria-labelledby="slx-memoir-tab-memoir"
+        data-slx-memoir-tabpanel="memoir"
+        ${activeTab === 'memoir' ? '' : 'hidden'}
+      >
+        ${renderMemoirTabContent(settings, chatState)}
+      </div>
+      <div
+        class="slx-memoir-tabpanel"
+        role="tabpanel"
+        id="slx-memoir-tabpanel-capture"
+        aria-labelledby="slx-memoir-tab-capture"
+        data-slx-memoir-tabpanel="capture"
+        ${activeTab === 'capture' ? '' : 'hidden'}
+      >
+        ${renderCapturePanel()}
+      </div>
+    </div>
   `;
 }
 
@@ -208,8 +265,53 @@ function confirmUseCurrentWorldbook(worldbookName) {
   );
 }
 
+/**
+ * Tab 直接切换：只改 hidden 与 active 状态，不调用全局 refreshPanel()，
+ * 避免重建 DOM 丢失两侧未提交的表单编辑。
+ */
+function bindMemoirTabEvents(panelRoot) {
+  const tabs = [...panelRoot.querySelectorAll('[data-slx-memoir-tab]')];
+  const panels = panelRoot.querySelectorAll('[data-slx-memoir-tabpanel]');
+  const activateTab = (tab, { focus = false } = {}) => {
+    const target = tab.getAttribute('data-slx-memoir-tab') || 'memoir';
+    activeTab = target;
+    tabs.forEach(node => {
+      const isActive = node.getAttribute('data-slx-memoir-tab') === target;
+      node.classList.toggle('is-active', isActive);
+      node.setAttribute('aria-selected', String(isActive));
+      node.tabIndex = isActive ? 0 : -1;
+    });
+    panels.forEach(panel => {
+      const isActive = panel.getAttribute('data-slx-memoir-tabpanel') === target;
+      if (isActive) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', '');
+    });
+    if (focus) tab.focus();
+  };
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      activateTab(tab);
+    });
+    tab.addEventListener('keydown', event => {
+      const currentIndex = tabs.indexOf(tab);
+      let nextIndex = currentIndex;
+      if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+      else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+      else if (event.key === 'Home') nextIndex = 0;
+      else if (event.key === 'End') nextIndex = tabs.length - 1;
+      else return;
+      event.preventDefault();
+      activateTab(tabs[nextIndex], { focus: true });
+    });
+  });
+  tabs.forEach(tab => {
+    tab.tabIndex = tab.getAttribute('aria-selected') === 'true' ? 0 : -1;
+  });
+}
+
 export function bindMemoirPanelEvents(panelRoot, settings) {
-  bindCaptureStageTestEvents(panelRoot);
+  bindCaptureEvents(panelRoot);
+  bindMemoirTabEvents(panelRoot);
 
   // 面板打开时异步以真实世界书同步一次展示；仅状态发生变化时重绘，避免无意义刷新。
   void reconcileMemoirWorldbookState()

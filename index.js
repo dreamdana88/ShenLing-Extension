@@ -84,6 +84,7 @@ import {
 import {
   bindMemoirPanelEvents,
   configureMemoirPanel,
+  isCaptureWorldbookModalOpen,
   renderMemoirPanel,
 } from './src/features/memoir/panel.js';
 import {
@@ -742,6 +743,7 @@ function renderFloatingPanel(options = {}) {
     activeModule.id === 'diary' && isDiaryNotebookOpen() ? 'slx-panel-diary-book-only' : '',
     activeModule.id === 'theater' && isMiniTheaterOverlayOpen() ? 'slx-panel-theater-preview-only' : '',
     activeModule.id === 'outline' && isPlotOutlineEditorOpen() ? 'slx-panel-outline-editor-only' : '',
+    activeModule.id === 'memoir' && isCaptureWorldbookModalOpen() ? 'slx-panel-capture-wb-only' : '',
   ].filter(Boolean).join(' ');
 
   panelRoot.innerHTML = `
