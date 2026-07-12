@@ -1192,11 +1192,11 @@ body.slx-panel-open-lock {
 }
 
 .slx-capture-test-wb-list {
+  /* 不设内层 max-height/overflow：条目框随数量自然拉伸，滚动交给外层 .slx-detail，
+     否则条目多时会被裁进内层 420px 滚动区，选择框不随条目数增高。 */
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 420px;
-  overflow: auto;
   padding-right: 2px;
 }
 
