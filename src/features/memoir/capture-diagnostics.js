@@ -582,7 +582,7 @@ function renderStageEPanel() {
       <button class="slx-soft-btn" type="button" data-slx-capture-test-e-preview ${stageE.loading ? 'disabled' : ''}>只预览最终提示词</button>
       <button class="slx-primary-btn" type="button" data-slx-capture-test-e-generate ${stageE.loading ? 'disabled' : ''}>${stageE.loading ? '生成中…' : '调用模型并解析草稿'}</button>
     </div>
-    <p class="slx-capture-test-hint">只有右侧按钮会调用模型；成功草稿追加到当前聊天 `memoir.capture.drafts`，不会写世界书。</p>
+    <p class="slx-capture-test-hint">只有右侧按钮会调用模型；成功草稿追加到当前聊天 memoir.capture.drafts，不会写世界书。</p>
     ${renderStageEPreview()}
     ${renderStageEResult()}
   `;
