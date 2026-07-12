@@ -643,6 +643,15 @@ body.slx-panel-open-lock {
   gap: 10px;
 }
 
+/* detail 是被 grid 行锁死高度的 flex 列容器。子卡片默认 flex-shrink:1，
+   内容超高时会被压扁（子级还带 overflow:hidden 就直接裁掉），
+   detail.scrollHeight 因此永远等于 clientHeight，overflow-y:auto 拿不到可滚动内容。
+   强制子级不收缩，超高内容才会真正溢出并触发 detail 自身的滚动条。
+   "-only" 展示态的子级是 absolute overlay，不受此影响。 */
+.slx-detail > * {
+  flex-shrink: 0;
+}
+
 .slx-detail-head {
   display: flex;
   align-items: center;
