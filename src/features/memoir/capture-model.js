@@ -59,8 +59,9 @@ function normalizeFiniteInteger(value, fallback) {
 }
 
 function normalizeFloor(value) {
-  const number = normalizeFiniteInteger(value, null);
-  return number !== null && number >= 0 ? number : null;
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 0 ? number : null;
 }
 
 function normalizeKeywords(value) {
@@ -75,8 +76,8 @@ function normalizeWorldbookRefs(value) {
   value.forEach((item) => {
     if (!isPlainObject(item)) return;
     const worldbookName = String(item.worldbookName ?? '').trim();
-    const uid = normalizeFiniteInteger(item.uid, null);
-    if (!worldbookName || uid === null || uid < 0) return;
+    const uid = Number(item.uid);
+    if (!worldbookName || !Number.isInteger(uid) || uid < 0) return;
     const key = `${worldbookName}\u0000${uid}`;
     if (seen.has(key)) return;
     seen.add(key);
