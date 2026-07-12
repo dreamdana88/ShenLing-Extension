@@ -43,6 +43,16 @@ export function isWorldbookApiAvailable() {
     && !!resolveThFn('updateWorldbookWith');
 }
 
+/** 设定采集浏览与材料解析只需要世界书只读能力。 */
+export function getWorldbookReadApi() {
+  const getWorldbookNames = resolveThFn('getWorldbookNames');
+  const getWorldbook = resolveThFn('getWorldbook');
+  if (!getWorldbookNames || !getWorldbook) {
+    throw new Error('未找到 TavernHelper 世界书只读 API，无法浏览世界书条目。');
+  }
+  return { getWorldbookNames, getWorldbook };
+}
+
 /**
  * 返回一组已绑定的 TavernHelper 世界书函数；缺少关键函数时抛错。
  * @returns {{ getWorldbookNames, getChatWorldbookName, getOrCreateChatWorldbook, rebindChatWorldbook,

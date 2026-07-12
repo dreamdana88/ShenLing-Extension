@@ -7,13 +7,41 @@ import {
   CAPTURE_TYPES,
   normalizeCaptureState,
 } from './capture-model.js';
-import { buildCaptureSourceMaterial } from './capture-materials.js';
+import {
+  buildCaptureOptionalContextMaterial,
+  buildCaptureSourceMaterial,
+  filterCaptureWorldbookEntries,
+  inspectCaptureOptionalSources,
+  listCaptureWorldbooks,
+  loadCaptureWorldbookEntries,
+  setCaptureWorldbookRefsForBook,
+  toggleCaptureWorldbookRef,
+} from './capture-materials.js';
 
 const SOURCE_LABELS = {
   recent_chat: '最近聊天',
   floor_range: '指定楼层',
   grand_plus_after: '大总结＋后续',
 };
+
+function createStageDState() {
+  return {
+    initialized: false,
+    loading: false,
+    loadingMessage: '',
+    sources: null,
+    worldbookNames: [],
+    books: {},
+    expandedWorldbooks: new Set(),
+    search: '',
+    includeCharacterCard: false,
+    includePersona: false,
+    confirmedRefs: [],
+    workingRefs: [],
+    result: null,
+    error: '',
+  };
+}
 
 let testState = {
   activeChatKey: '',
@@ -24,7 +52,10 @@ let testState = {
   toFloor: '',
   stageBResult: null,
   stageCResult: null,
+  stageD: createStageDState(),
 };
+
+let stageDSearchTimer = null;
 
 function getTestChatKey() {
   const info = getContextInfo();
@@ -43,6 +74,7 @@ function syncTestChatState() {
     toFloor: '',
     stageBResult: null,
     stageCResult: null,
+    stageD: createStageDState(),
   };
 }
 
@@ -186,9 +218,216 @@ function renderStageCResult() {
   `;
 }
 
+function cloneWorldbookRefs(refs = []) {
+  return (Array.isArray(refs) ? refs : []).map(ref => ({
+    worldbookName: ref.worldbookName,
+    uid: ref.uid,
+    entryNameSnapshot: ref.entryNameSnapshot || '',
+  }));
+}
+
+function worldbookRefKey(worldbookName, uid) {
+  return `${worldbookName}\u0000${uid}`;
+}
+
+function isWorkingRefSelected(worldbookName, uid) {
+  const key = worldbookRefKey(worldbookName, uid);
+  return testState.stageD.workingRefs.some(ref => worldbookRefKey(ref.worldbookName, ref.uid) === key);
+}
+
+function renderStageDResult() {
+  const result = testState.stageD.result;
+  if (!result) return '';
+  const errors = Array.isArray(result.errors) ? result.errors : [];
+  return `
+    <div class="slx-capture-test-result ${result.ok ? 'is-pass' : 'is-fail'}">
+      <div class="slx-capture-test-result-title">${result.ok ? '阶段 D 附加材料解析通过' : '阶段 D 附加材料存在问题'}</div>
+      <div class="slx-capture-test-stats">
+        <span>确认引用 ${escapeHtml(result.selectedRefCount || 0)} 条</span>
+        <span>解析成功 ${escapeHtml(result.resolvedEntries?.length || 0)} 条</span>
+        <span>${escapeHtml(result.characterCount || 0)} 字符</span>
+      </div>
+      ${errors.length ? `
+        <ul class="slx-capture-test-errors">${errors.map(error => `<li>${escapeHtml(error.message || error.code)}</li>`).join('')}</ul>
+        <details class="slx-capture-test-output-details">
+          <summary>查看结构化错误</summary>
+          <pre>${escapeHtml(jsonForDisplay(errors))}</pre>
+        </details>
+      ` : ''}
+      <details class="slx-capture-test-output-details" ${result.material ? 'open' : ''}>
+        <summary>查看最终附加材料</summary>
+        <pre>${escapeHtml(result.material || '（没有启用任何附加材料）')}</pre>
+      </details>
+    </div>
+  `;
+}
+
+function renderStageDSourceToggles(stageD) {
+  const character = stageD.sources?.characterCard;
+  const persona = stageD.sources?.persona;
+  return `
+    <div class="slx-capture-test-context-toggles">
+      <label class="${character?.available ? '' : 'is-disabled'}">
+        <input type="checkbox" data-slx-capture-test-d-character ${stageD.includeCharacterCard ? 'checked' : ''} ${character?.available ? '' : 'disabled'} />
+        <span>当前角色卡</span>
+        <small>${escapeHtml(character?.available ? (character.name || '可读取') : (character?.reason || '不可用'))}</small>
+      </label>
+      <label class="${persona?.available ? '' : 'is-disabled'}">
+        <input type="checkbox" data-slx-capture-test-d-persona ${stageD.includePersona ? 'checked' : ''} ${persona?.available ? '' : 'disabled'} />
+        <span>当前 Persona</span>
+        <small>${escapeHtml(persona?.available ? '可读取' : (persona?.reason || '不可用'))}</small>
+      </label>
+    </div>
+  `;
+}
+
+function renderStageDEntry(worldbookName, entry) {
+  const selected = isWorkingRefSelected(worldbookName, entry.uid);
+  const strategyLabel = entry.strategyType === 'constant'
+    ? '常驻'
+    : (entry.strategyType === 'vectorized' ? '向量' : '选择性');
+  const keywords = [...entry.mainKeywords, ...entry.filterKeywords].join('、');
+  return `
+    <label class="slx-capture-test-wb-entry ${selected ? 'is-selected' : ''}">
+      <input
+        type="checkbox"
+        data-slx-capture-test-d-entry
+        data-worldbook-name="${escapeHtml(worldbookName)}"
+        data-entry-uid="${escapeHtml(entry.uid)}"
+        ${selected ? 'checked' : ''}
+      />
+      <span class="slx-capture-test-wb-entry-main">
+        <b>${escapeHtml(entry.name)}</b>
+        <span class="slx-capture-test-wb-badges">
+          <em>${escapeHtml(strategyLabel)}</em>
+          ${entry.enabled ? '' : '<em class="is-disabled">已停用</em>'}
+        </span>
+        ${keywords ? `<small>${escapeHtml(keywords)}</small>` : ''}
+        <small>${escapeHtml(entry.preview || '（正文为空）')}</small>
+      </span>
+    </label>
+  `;
+}
+
+function renderStageDWorldbookGroup(worldbookName, stageD) {
+  const book = stageD.books[worldbookName];
+  const expanded = stageD.expandedWorldbooks.has(worldbookName) || Boolean(stageD.search);
+  const entries = book?.status === 'loaded' ? book.entries : [];
+  const visibleEntries = filterCaptureWorldbookEntries(entries, stageD.search);
+  if (stageD.search && book?.status === 'loaded' && visibleEntries.length === 0) return '';
+  const selectedCount = stageD.workingRefs.filter(ref => ref.worldbookName === worldbookName).length;
+  let body = '';
+  if (expanded) {
+    if (!book || book.status === 'idle') body = '<p class="slx-capture-test-hint">展开后读取本书全部条目。</p>';
+    else if (book.status === 'loading') body = '<p class="slx-capture-test-hint">条目加载中…</p>';
+    else if (book.status === 'failed') body = `<p class="slx-capture-test-error-text">${escapeHtml(book.error || '加载失败')}</p>`;
+    else if (!visibleEntries.length) body = '<p class="slx-capture-test-hint">本书没有符合条件的条目。</p>';
+    else body = visibleEntries.map(entry => renderStageDEntry(worldbookName, entry)).join('');
+  }
+  return `
+    <div class="slx-capture-test-wb-group">
+      <div class="slx-capture-test-wb-head">
+        <button type="button" data-slx-capture-test-d-expand="${escapeHtml(worldbookName)}">
+          <span aria-hidden="true">${expanded ? '▾' : '▸'}</span>
+          <b>${escapeHtml(worldbookName)}</b>
+          <small>${book?.status === 'loaded' ? `${selectedCount}/${entries.length}` : `已选 ${selectedCount}`}</small>
+        </button>
+        ${book?.status === 'loaded' ? `
+          <span>
+            <button type="button" data-slx-capture-test-d-book-all="${escapeHtml(worldbookName)}">全选</button>
+            <button type="button" data-slx-capture-test-d-book-clear="${escapeHtml(worldbookName)}">清空</button>
+          </span>
+        ` : ''}
+      </div>
+      ${expanded ? `<div class="slx-capture-test-wb-entries">${body}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderStageDPanel() {
+  const stageD = testState.stageD;
+  if (!stageD.initialized) {
+    return `
+      <button class="slx-primary-btn" type="button" data-slx-capture-test-d-init>读取可选材料状态</button>
+      <p class="slx-capture-test-hint">读取角色卡、Persona 和全部世界书名称；不会读取条目正文，展开或搜索时才加载。</p>
+    `;
+  }
+  const groups = stageD.worldbookNames.map(name => renderStageDWorldbookGroup(name, stageD)).join('');
+  return `
+    ${renderStageDSourceToggles(stageD)}
+    <div class="slx-capture-test-wb-toolbar">
+      <input type="search" value="${escapeHtml(stageD.search)}" placeholder="搜索标题或关键词…" data-slx-capture-test-d-search />
+      <span>临时选择 ${escapeHtml(stageD.workingRefs.length)} · 已确认 ${escapeHtml(stageD.confirmedRefs.length)}</span>
+    </div>
+    ${stageD.loadingMessage ? `<p class="slx-capture-test-hint">${escapeHtml(stageD.loadingMessage)}</p>` : ''}
+    ${stageD.error ? `<p class="slx-capture-test-error-text">${escapeHtml(stageD.error)}</p>` : ''}
+    <p class="slx-capture-test-hint">手动勾选的条目将直接注入，不受启用状态、常驻/选择性和关键词触发条件影响。</p>
+    <div class="slx-capture-test-wb-list">
+      ${groups || '<p class="slx-capture-test-hint">没有可显示的世界书或搜索结果。</p>'}
+    </div>
+    <div class="slx-capture-test-d-actions">
+      <button class="slx-soft-btn" type="button" data-slx-capture-test-d-cancel>取消临时修改</button>
+      <button class="slx-soft-btn" type="button" data-slx-capture-test-d-confirm>确认临时选择 (${escapeHtml(stageD.workingRefs.length)})</button>
+      <button class="slx-primary-btn" type="button" data-slx-capture-test-d-preview ${stageD.loading ? 'disabled' : ''}>重新读取并预览附加材料</button>
+    </div>
+    <p class="slx-capture-test-hint">“确认临时选择”只更新本验证区，不写入聊天 metadata；取消会恢复到上次确认结果。</p>
+    ${renderStageDResult()}
+  `;
+}
+
+async function initializeStageD(panelRoot) {
+  const stageD = testState.stageD;
+  stageD.initialized = true;
+  stageD.loading = true;
+  stageD.loadingMessage = '正在读取角色卡、Persona 与世界书列表…';
+  stageD.sources = inspectCaptureOptionalSources();
+  const persistedRefs = getMemoirState().capture.optionalContext.worldbookRefs;
+  stageD.confirmedRefs = cloneWorldbookRefs(persistedRefs);
+  stageD.workingRefs = cloneWorldbookRefs(persistedRefs);
+  replaceTestPanel(panelRoot);
+
+  const result = await listCaptureWorldbooks();
+  stageD.loading = false;
+  stageD.loadingMessage = '';
+  if (!result.ok) {
+    stageD.error = result.error?.message || '读取世界书列表失败。';
+  } else {
+    stageD.worldbookNames = result.names;
+    stageD.books = Object.fromEntries(result.names.map(name => [name, { status: 'idle', entries: [], error: '' }]));
+  }
+  replaceTestPanel(panelRoot);
+}
+
+async function ensureStageDBookLoaded(panelRoot, worldbookName, { quiet = false } = {}) {
+  const stageD = testState.stageD;
+  const current = stageD.books[worldbookName];
+  if (!current || current.status === 'loaded' || current.status === 'loading') return current;
+  stageD.books[worldbookName] = { status: 'loading', entries: [], error: '' };
+  if (!quiet) replaceTestPanel(panelRoot);
+  const result = await loadCaptureWorldbookEntries(worldbookName);
+  stageD.books[worldbookName] = result.ok
+    ? { status: 'loaded', entries: result.entries, error: '' }
+    : { status: 'failed', entries: [], error: result.error?.message || '加载失败' };
+  if (!quiet) replaceTestPanel(panelRoot);
+  return stageD.books[worldbookName];
+}
+
+async function loadAllStageDBooksForSearch(panelRoot) {
+  const stageD = testState.stageD;
+  const pending = stageD.worldbookNames.filter(name => stageD.books[name]?.status !== 'loaded');
+  stageD.loading = true;
+  for (const [index, name] of pending.entries()) {
+    stageD.loadingMessage = `搜索正在加载世界书 ${index + 1}/${pending.length}：${name}`;
+    replaceTestPanel(panelRoot);
+    await ensureStageDBookLoaded(panelRoot, name, { quiet: true });
+  }
+  stageD.loading = false;
+  stageD.loadingMessage = '';
+  replaceTestPanel(panelRoot);
+}
+
 function renderFutureStages() {
   const stages = [
-    ['D', '角色卡、Persona 与世界书条目材料预览'],
     ['E', '最终提示词与模型 JSON 解析验证'],
     ['F', '完整表单、草稿卡片与移动端交互验证'],
     ['G', '写入 payload 干跑与 captureId 读回验证'],
@@ -228,6 +467,14 @@ export function renderCaptureStageTestPanel() {
           ${renderSourceControls()}
           <button class="slx-primary-btn" type="button" data-slx-capture-test-c>预览当前聊天材料</button>
           ${renderStageCResult()}
+        </section>
+
+        <section class="slx-capture-test-stage">
+          <div class="slx-capture-test-stage-head">
+            <span>阶段 D</span>
+            <div><b>可选上下文与世界书条目</b><small>测试按需加载、临时选择边界和生成前 UID 重新解析</small></div>
+          </div>
+          ${renderStageDPanel()}
         </section>
 
         ${renderFutureStages()}
@@ -289,6 +536,120 @@ export function bindCaptureStageTestEvents(panelRoot) {
       fromFloor: testState.fromFloor,
       toFloor: testState.toFloor,
     });
+    replaceTestPanel(panelRoot);
+  });
+
+  root.querySelector('[data-slx-capture-test-d-init]')?.addEventListener('click', () => {
+    testState.open = true;
+    void initializeStageD(panelRoot);
+  });
+
+  root.querySelector('[data-slx-capture-test-d-character]')?.addEventListener('change', event => {
+    testState.stageD.includeCharacterCard = event.target.checked;
+    testState.stageD.result = null;
+  });
+
+  root.querySelector('[data-slx-capture-test-d-persona]')?.addEventListener('change', event => {
+    testState.stageD.includePersona = event.target.checked;
+    testState.stageD.result = null;
+  });
+
+  root.querySelectorAll('[data-slx-capture-test-d-expand]').forEach(button => {
+    button.addEventListener('click', () => {
+      const name = button.getAttribute('data-slx-capture-test-d-expand') || '';
+      const expanded = testState.stageD.expandedWorldbooks;
+      if (expanded.has(name)) {
+        expanded.delete(name);
+        replaceTestPanel(panelRoot);
+        return;
+      }
+      expanded.add(name);
+      replaceTestPanel(panelRoot);
+      void ensureStageDBookLoaded(panelRoot, name);
+    });
+  });
+
+  root.querySelector('[data-slx-capture-test-d-search]')?.addEventListener('input', event => {
+    testState.stageD.search = event.target.value;
+    testState.stageD.result = null;
+    if (stageDSearchTimer) window.clearTimeout(stageDSearchTimer);
+    stageDSearchTimer = window.setTimeout(() => {
+      stageDSearchTimer = null;
+      if (testState.stageD.search.trim()) void loadAllStageDBooksForSearch(panelRoot);
+      else replaceTestPanel(panelRoot);
+    }, 250);
+  });
+
+  root.querySelectorAll('[data-slx-capture-test-d-entry]').forEach(input => {
+    input.addEventListener('change', () => {
+      const worldbookName = input.getAttribute('data-worldbook-name') || '';
+      const uid = Number(input.getAttribute('data-entry-uid'));
+      const entry = testState.stageD.books[worldbookName]?.entries?.find(item => item.uid === uid);
+      if (!entry) return;
+      testState.stageD.workingRefs = toggleCaptureWorldbookRef(
+        testState.stageD.workingRefs,
+        { worldbookName, ...entry },
+        input.checked,
+      );
+      testState.stageD.result = null;
+      replaceTestPanel(panelRoot);
+    });
+  });
+
+  root.querySelectorAll('[data-slx-capture-test-d-book-all]').forEach(button => {
+    button.addEventListener('click', () => {
+      const worldbookName = button.getAttribute('data-slx-capture-test-d-book-all') || '';
+      const entries = testState.stageD.books[worldbookName]?.entries || [];
+      testState.stageD.workingRefs = setCaptureWorldbookRefsForBook(
+        testState.stageD.workingRefs,
+        worldbookName,
+        entries,
+        true,
+      );
+      testState.stageD.result = null;
+      replaceTestPanel(panelRoot);
+    });
+  });
+
+  root.querySelectorAll('[data-slx-capture-test-d-book-clear]').forEach(button => {
+    button.addEventListener('click', () => {
+      const worldbookName = button.getAttribute('data-slx-capture-test-d-book-clear') || '';
+      testState.stageD.workingRefs = setCaptureWorldbookRefsForBook(
+        testState.stageD.workingRefs,
+        worldbookName,
+        [],
+        false,
+      );
+      testState.stageD.result = null;
+      replaceTestPanel(panelRoot);
+    });
+  });
+
+  root.querySelector('[data-slx-capture-test-d-cancel]')?.addEventListener('click', () => {
+    testState.stageD.workingRefs = cloneWorldbookRefs(testState.stageD.confirmedRefs);
+    testState.stageD.result = null;
+    replaceTestPanel(panelRoot);
+  });
+
+  root.querySelector('[data-slx-capture-test-d-confirm]')?.addEventListener('click', () => {
+    testState.stageD.confirmedRefs = cloneWorldbookRefs(testState.stageD.workingRefs);
+    testState.stageD.result = null;
+    replaceTestPanel(panelRoot);
+  });
+
+  root.querySelector('[data-slx-capture-test-d-preview]')?.addEventListener('click', async () => {
+    const stageD = testState.stageD;
+    stageD.loading = true;
+    stageD.loadingMessage = '正在按 worldbookName + uid 重新读取已确认条目…';
+    stageD.result = null;
+    replaceTestPanel(panelRoot);
+    stageD.result = await buildCaptureOptionalContextMaterial({
+      includeCharacterCard: stageD.includeCharacterCard,
+      includePersona: stageD.includePersona,
+      worldbookRefs: stageD.confirmedRefs,
+    });
+    stageD.loading = false;
+    stageD.loadingMessage = '';
     replaceTestPanel(panelRoot);
   });
 }

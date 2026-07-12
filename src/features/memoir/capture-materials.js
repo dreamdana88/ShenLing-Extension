@@ -3,8 +3,15 @@
 import { GRAND_MEMORY_BLOCK_RE, LIST_BLOCK_RE, MEMORY_BLOCK_RE } from '../../constants.js';
 import { getChatMessagesSafe, getContextSafe } from '../../core/chat.js';
 import { getChatState, getSummarySettings } from '../../core/settings.js';
+import {
+  formatCharacterCardForPrompt,
+  formatUserPersonaForPrompt,
+  getResolvedCharacterCard,
+  getUserPersona,
+} from '../../core/context-resolver.js';
 import { extractSummarySourceContent } from '../../utils/text.js';
 import { CAPTURE_SOURCE_MODES } from './capture-model.js';
+import { getWorldbookReadApi } from './worldbook-api.js';
 
 export const MAX_CAPTURE_CHAT_MESSAGES = 200;
 
@@ -16,6 +23,14 @@ export const CAPTURE_MATERIAL_ERROR_CODES = Object.freeze({
   EMPTY_MATERIAL: 'empty_material',
   GRAND_SUMMARY_NOT_FOUND: 'grand_summary_not_found',
   TOO_MANY_MESSAGES: 'too_many_messages',
+});
+
+export const CAPTURE_OPTIONAL_ERROR_CODES = Object.freeze({
+  CHARACTER_CARD_UNAVAILABLE: 'character_card_unavailable',
+  PERSONA_UNAVAILABLE: 'persona_unavailable',
+  WORLDBOOK_LIST_FAILED: 'worldbook_list_failed',
+  WORLDBOOK_LOAD_FAILED: 'worldbook_load_failed',
+  WORLDBOOK_REF_MISSING: 'worldbook_ref_missing',
 });
 
 function isPlainObject(value) {
@@ -335,4 +350,249 @@ export function buildCaptureSourceMaterial(source, options = {}) {
   if (mode === 'recent_chat') return resolveRecentChat(normalizedSource, context);
   if (mode === 'floor_range') return resolveFloorRange(normalizedSource, context);
   return resolveGrandPlusAfter(context);
+}
+
+function hasActiveCharacterContext(context, characterMaterial) {
+  if (!characterMaterial) return false;
+  const rawId = context?.characterId ?? context?.this_chid ?? context?.chid;
+  const hasId = rawId !== null && rawId !== undefined && String(rawId).trim() !== '' && Number(rawId) !== -1;
+  return hasId || Boolean(context?.character) || Boolean(context?.name2);
+}
+
+/** 返回角色卡与 Persona 的当前可用状态和已经格式化的材料。 */
+export function inspectCaptureOptionalSources(options = {}) {
+  const context = getContextSafe();
+  const hasInjectedCharacter = Object.hasOwn(options, 'characterCard');
+  const hasInjectedPersona = Object.hasOwn(options, 'persona');
+  const characterCard = hasInjectedCharacter ? options.characterCard : getResolvedCharacterCard();
+  const persona = hasInjectedPersona ? options.persona : getUserPersona();
+  const characterMaterial = formatCharacterCardForPrompt(characterCard);
+  const personaMaterial = formatUserPersonaForPrompt(persona);
+  const characterAvailable = Object.hasOwn(options, 'characterAvailable')
+    ? options.characterAvailable === true
+    : (hasInjectedCharacter ? Boolean(characterMaterial) : hasActiveCharacterContext(context, characterMaterial));
+
+  return {
+    characterCard: {
+      available: characterAvailable && Boolean(characterMaterial),
+      reason: characterAvailable && characterMaterial ? '' : '当前没有可读取的角色卡。',
+      name: String(characterCard?.name || '').trim(),
+      material: characterMaterial,
+      data: characterCard || null,
+    },
+    persona: {
+      available: Boolean(personaMaterial),
+      reason: personaMaterial ? '' : '当前 Persona 没有可读取的描述。',
+      material: personaMaterial,
+    },
+  };
+}
+
+function normalizeWorldbookKeyword(value) {
+  if (value instanceof RegExp) return value.toString();
+  return String(value ?? '').trim();
+}
+
+function normalizeWorldbookKeywords(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(normalizeWorldbookKeyword).filter(Boolean);
+}
+
+function normalizeWorldbookEntryForCapture(worldbookName, entry) {
+  const uid = Number(entry?.uid);
+  if (!Number.isInteger(uid) || uid < 0) return null;
+  const content = String(entry?.content ?? '');
+  const name = String(entry?.name ?? '').trim() || `未命名条目 #${uid}`;
+  return {
+    worldbookName,
+    uid,
+    name,
+    enabled: entry?.enabled !== false,
+    strategyType: ['constant', 'selective', 'vectorized'].includes(entry?.strategy?.type)
+      ? entry.strategy.type
+      : 'selective',
+    mainKeywords: normalizeWorldbookKeywords(entry?.strategy?.keys),
+    filterKeywords: normalizeWorldbookKeywords(entry?.strategy?.keys_secondary?.keys),
+    content,
+    preview: content.replace(/\s+/g, ' ').trim().slice(0, 80),
+    position: String(entry?.position?.type || ''),
+    order: Number.isFinite(Number(entry?.position?.order)) ? Number(entry.position.order) : null,
+  };
+}
+
+export function createCaptureWorldbookRef(worldbookName, entry) {
+  const name = String(worldbookName || '').trim();
+  const uid = Number(entry?.uid);
+  if (!name || !Number.isInteger(uid) || uid < 0) return null;
+  return {
+    worldbookName: name,
+    uid,
+    entryNameSnapshot: String(entry?.name ?? entry?.entryNameSnapshot ?? '').trim(),
+  };
+}
+
+function getCaptureWorldbookRefKey(ref) {
+  return `${String(ref?.worldbookName || '').trim()}\u0000${Number(ref?.uid)}`;
+}
+
+export function toggleCaptureWorldbookRef(refs, ref, selected) {
+  const normalizedRef = createCaptureWorldbookRef(ref?.worldbookName, ref);
+  const current = Array.isArray(refs) ? refs.map(item => createCaptureWorldbookRef(item?.worldbookName, item)).filter(Boolean) : [];
+  if (!normalizedRef) return current;
+  const key = getCaptureWorldbookRefKey(normalizedRef);
+  const exists = current.some(item => getCaptureWorldbookRefKey(item) === key);
+  const shouldSelect = selected === undefined ? !exists : selected === true;
+  if (shouldSelect && !exists) return [...current, normalizedRef];
+  if (!shouldSelect && exists) return current.filter(item => getCaptureWorldbookRefKey(item) !== key);
+  return current;
+}
+
+export function setCaptureWorldbookRefsForBook(refs, worldbookName, entries, selected) {
+  const name = String(worldbookName || '').trim();
+  let next = (Array.isArray(refs) ? refs : [])
+    .map(item => createCaptureWorldbookRef(item?.worldbookName, item))
+    .filter(Boolean);
+  if (!selected) return next.filter(ref => ref.worldbookName !== name);
+  (Array.isArray(entries) ? entries : []).forEach(entry => {
+    const ref = createCaptureWorldbookRef(name, entry);
+    if (ref) next = toggleCaptureWorldbookRef(next, ref, true);
+  });
+  return next;
+}
+
+/** 获取全部世界书名称；失败返回结构化错误，不让选择器静默显示空列表。 */
+export async function listCaptureWorldbooks({ api } = {}) {
+  try {
+    const readApi = api || getWorldbookReadApi();
+    const rawNames = await Promise.resolve(readApi.getWorldbookNames());
+    const names = [...new Set((Array.isArray(rawNames) ? rawNames : [])
+      .map(name => String(name || '').trim())
+      .filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    return { ok: true, names, error: null };
+  } catch (error) {
+    return {
+      ok: false,
+      names: [],
+      error: {
+        code: CAPTURE_OPTIONAL_ERROR_CODES.WORLDBOOK_LIST_FAILED,
+        message: `读取世界书列表失败：${error.message || String(error)}`,
+      },
+    };
+  }
+}
+
+/** 按需加载单本世界书全部条目，保留关闭状态和激活类型供选择器展示。 */
+export async function loadCaptureWorldbookEntries(worldbookName, { api } = {}) {
+  const name = String(worldbookName || '').trim();
+  try {
+    const readApi = api || getWorldbookReadApi();
+    const rawEntries = await readApi.getWorldbook(name);
+    if (!Array.isArray(rawEntries)) throw new Error('返回结果不是条目数组。');
+    const entries = rawEntries
+      .map(entry => normalizeWorldbookEntryForCapture(name, entry))
+      .filter(Boolean);
+    return { ok: true, worldbookName: name, entries, error: null };
+  } catch (error) {
+    return {
+      ok: false,
+      worldbookName: name,
+      entries: [],
+      error: {
+        code: CAPTURE_OPTIONAL_ERROR_CODES.WORLDBOOK_LOAD_FAILED,
+        message: `读取世界书「${name || '未命名'}」失败：${error.message || String(error)}`,
+        worldbookName: name,
+      },
+    };
+  }
+}
+
+export function filterCaptureWorldbookEntries(entries, query) {
+  const keyword = String(query || '').trim().toLocaleLowerCase();
+  if (!keyword) return Array.isArray(entries) ? entries : [];
+  return (Array.isArray(entries) ? entries : []).filter(entry => [
+    entry?.name,
+    ...(Array.isArray(entry?.mainKeywords) ? entry.mainKeywords : []),
+    ...(Array.isArray(entry?.filterKeywords) ? entry.filterKeywords : []),
+  ].some(value => String(value || '').toLocaleLowerCase().includes(keyword)));
+}
+
+function formatSelectedWorldbookEntry(entry) {
+  return [
+    `【世界书参考｜${entry.worldbookName}｜${entry.name}｜UID ${entry.uid}】`,
+    entry.content,
+  ].join('\n');
+}
+
+/**
+ * 正式生成前使用：重新读取所有明确勾选的 worldbookName + uid，并构建最终附加材料。
+ * 关闭、常驻、未触发、位置和递归状态均不参与筛选；缺失引用会明确报错。
+ */
+export async function buildCaptureOptionalContextMaterial(optionalContext, options = {}) {
+  const selection = isPlainObject(optionalContext) ? optionalContext : {};
+  const sources = inspectCaptureOptionalSources(options);
+  const errors = [];
+  const sections = [];
+  if (selection.includeCharacterCard) {
+    if (sources.characterCard.available) sections.push(`【当前角色卡】\n${sources.characterCard.material}`);
+    else errors.push({
+      code: CAPTURE_OPTIONAL_ERROR_CODES.CHARACTER_CARD_UNAVAILABLE,
+      message: sources.characterCard.reason,
+    });
+  }
+  if (selection.includePersona) {
+    if (sources.persona.available) sections.push(`【当前 Persona】\n${sources.persona.material}`);
+    else errors.push({
+      code: CAPTURE_OPTIONAL_ERROR_CODES.PERSONA_UNAVAILABLE,
+      message: sources.persona.reason,
+    });
+  }
+
+  const refs = (Array.isArray(selection.worldbookRefs) ? selection.worldbookRefs : [])
+    .map(ref => createCaptureWorldbookRef(ref?.worldbookName, ref))
+    .filter(Boolean);
+  const uniqueRefs = [...new Map(refs.map(ref => [getCaptureWorldbookRefKey(ref), ref])).values()];
+  const refsByBook = new Map();
+  uniqueRefs.forEach(ref => {
+    if (!refsByBook.has(ref.worldbookName)) refsByBook.set(ref.worldbookName, []);
+    refsByBook.get(ref.worldbookName).push(ref);
+  });
+
+  const resolvedEntries = [];
+  const missingRefs = [];
+  for (const [worldbookName, bookRefs] of refsByBook.entries()) {
+    const loaded = await loadCaptureWorldbookEntries(worldbookName, { api: options.api });
+    if (!loaded.ok) {
+      errors.push(loaded.error);
+      bookRefs.forEach(ref => missingRefs.push(ref));
+      continue;
+    }
+    const byUid = new Map(loaded.entries.map(entry => [entry.uid, entry]));
+    bookRefs.forEach(ref => {
+      const entry = byUid.get(ref.uid);
+      if (!entry) {
+        missingRefs.push(ref);
+        errors.push({
+          code: CAPTURE_OPTIONAL_ERROR_CODES.WORLDBOOK_REF_MISSING,
+          message: `世界书「${ref.worldbookName}」中找不到 UID ${ref.uid}（选择时标题：${ref.entryNameSnapshot || '未记录'}）。`,
+          ref,
+        });
+        return;
+      }
+      resolvedEntries.push(entry);
+      sections.push(formatSelectedWorldbookEntry(entry));
+    });
+  }
+
+  const material = sections.join('\n\n');
+  return {
+    ok: errors.length === 0,
+    material,
+    characterCount: material.length,
+    sources,
+    selectedRefCount: uniqueRefs.length,
+    resolvedEntries,
+    missingRefs,
+    errors,
+  };
 }
