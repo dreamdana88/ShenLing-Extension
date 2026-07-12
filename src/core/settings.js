@@ -24,6 +24,10 @@ import {
   REPLACEMENT_DEFAULTS_VERSION,
 } from '../features/word-replace/core.js';
 import { normalizeScheduleCurrent } from '../features/schedule/model.js';
+import {
+  createDefaultCaptureState,
+  normalizeCaptureState,
+} from '../features/memoir/capture-model.js';
 
 export const defaultGlobalSettings = Object.freeze({
   schemaVersion: STORAGE_VERSION,
@@ -175,6 +179,7 @@ export const defaultChatState = Object.freeze({
     sourceProcessed: [],     // 已处理的大总结标识列表，避免同源重复提炼
     entries: [],             // 已写入绿灯条目索引：{ memoirId, title, digest, storyTime, importance, participants, mainKeywords, filterKeywords, uid, createdAt, updatedAt }
     pending: null,           // 待确认批次：{ sourceKey, sourceKeys:[], candidates:[], generatedAt }；新批次追加而非覆盖
+    capture: createDefaultCaptureState(), // 用户主动发起的设定采集表单与草稿；与 pending 独立
     updatedAt: '',
   },
   parallel: {
@@ -477,6 +482,7 @@ export function getMemoirState(chatState = getChatState()) {
   if (chatState.memoir.bindingDecision !== null && !isPlainObject(chatState.memoir.bindingDecision)) {
     chatState.memoir.bindingDecision = null;
   }
+  chatState.memoir.capture = normalizeCaptureState(chatState.memoir.capture);
   return chatState.memoir;
 }
 
