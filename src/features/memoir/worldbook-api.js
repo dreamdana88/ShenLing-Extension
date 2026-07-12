@@ -4,6 +4,7 @@
 
 const TH_WORLDBOOK_FN_NAMES = [
   'getWorldbookNames',
+  'getCharWorldbookNames',
   'getChatWorldbookName',
   'getOrCreateChatWorldbook',
   'rebindChatWorldbook',
@@ -50,7 +51,9 @@ export function getWorldbookReadApi() {
   if (!getWorldbookNames || !getWorldbook) {
     throw new Error('未找到 TavernHelper 世界书只读 API，无法浏览世界书条目。');
   }
-  return { getWorldbookNames, getWorldbook };
+  // getCharWorldbookNames 用于只读取当前角色卡绑定的世界书；旧环境可能缺失，缺失时置 null 交由上层降级。
+  const getCharWorldbookNames = resolveThFn('getCharWorldbookNames');
+  return { getWorldbookNames, getWorldbook, getCharWorldbookNames };
 }
 
 /**

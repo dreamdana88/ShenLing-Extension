@@ -31,6 +31,7 @@ function createStageDState() {
     loadingMessage: '',
     sources: null,
     worldbookNames: [],
+    primaryWorldbook: '',
     books: {},
     expandedWorldbooks: new Set(),
     search: '',
@@ -349,10 +350,13 @@ function renderStageDPanel() {
   if (!stageD.initialized) {
     return `
       <button class="slx-primary-btn" type="button" data-slx-capture-test-d-init>读取可选材料状态</button>
-      <p class="slx-capture-test-hint">读取角色卡、Persona 和全部世界书名称；不会读取条目正文，展开或搜索时才加载。</p>
+      <p class="slx-capture-test-hint">读取角色卡、Persona 和当前角色卡绑定的世界书，并展开其全部条目。</p>
     `;
   }
   const groups = stageD.worldbookNames.map(name => renderStageDWorldbookGroup(name, stageD)).join('');
+  const boundHint = stageD.worldbookNames.length
+    ? `仅显示当前角色卡绑定的世界书${stageD.primaryWorldbook ? `（主要：${escapeHtml(stageD.primaryWorldbook)}）` : ''}。`
+    : '';
   return `
     ${renderStageDSourceToggles(stageD)}
     <div class="slx-capture-test-wb-toolbar">
@@ -361,9 +365,10 @@ function renderStageDPanel() {
     </div>
     ${stageD.loadingMessage ? `<p class="slx-capture-test-hint">${escapeHtml(stageD.loadingMessage)}</p>` : ''}
     ${stageD.error ? `<p class="slx-capture-test-error-text">${escapeHtml(stageD.error)}</p>` : ''}
+    ${boundHint ? `<p class="slx-capture-test-hint">${boundHint}</p>` : ''}
     <p class="slx-capture-test-hint">手动勾选的条目将直接注入，不受启用状态、常驻/选择性和关键词触发条件影响。</p>
     <div class="slx-capture-test-wb-list">
-      ${groups || '<p class="slx-capture-test-hint">没有可显示的世界书或搜索结果。</p>'}
+      ${groups || '<p class="slx-capture-test-hint">当前角色卡没有绑定任何世界书，无条目可选。</p>'}
     </div>
     <div class="slx-capture-test-d-actions">
       <button class="slx-soft-btn" type="button" data-slx-capture-test-d-cancel>取消临时修改</button>
@@ -379,7 +384,7 @@ async function initializeStageD(panelRoot) {
   const stageD = testState.stageD;
   stageD.initialized = true;
   stageD.loading = true;
-  stageD.loadingMessage = '正在读取角色卡、Persona 与世界书列表…';
+  stageD.loadingMessage = '正在读取角色卡、Persona 与当前角色卡绑定的世界书…';
   stageD.sources = inspectCaptureOptionalSources();
   const persistedRefs = getMemoirState().capture.optionalContext.worldbookRefs;
   stageD.confirmedRefs = cloneWorldbookRefs(persistedRefs);
@@ -390,10 +395,18 @@ async function initializeStageD(panelRoot) {
   stageD.loading = false;
   stageD.loadingMessage = '';
   if (!result.ok) {
-    stageD.error = result.error?.message || '读取世界书列表失败。';
-  } else {
-    stageD.worldbookNames = result.names;
-    stageD.books = Object.fromEntries(result.names.map(name => [name, { status: 'idle', entries: [], error: '' }]));
+    stageD.error = result.error?.message || '读取角色卡绑定的世界书失败。';
+    replaceTestPanel(panelRoot);
+    return;
+  }
+  stageD.worldbookNames = result.names;
+  stageD.primaryWorldbook = result.primary || '';
+  stageD.books = Object.fromEntries(result.names.map(name => [name, { status: 'idle', entries: [], error: '' }]));
+  // 角色卡绑定的书通常只有一两本，直接全部展开并加载条目，省去逐个点开。
+  stageD.worldbookNames.forEach(name => stageD.expandedWorldbooks.add(name));
+  replaceTestPanel(panelRoot);
+  for (const name of stageD.worldbookNames) {
+    await ensureStageDBookLoaded(panelRoot, name, { quiet: true });
   }
   replaceTestPanel(panelRoot);
 }

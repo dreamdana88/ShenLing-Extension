@@ -460,23 +460,32 @@ export function setCaptureWorldbookRefsForBook(refs, worldbookName, entries, sel
   return next;
 }
 
-/** 获取全部世界书名称；失败返回结构化错误，不让选择器静默显示空列表。 */
+/**
+ * 只返回当前角色卡绑定的世界书（primary + additional），不拉取全部世界书。
+ * 设定采集只在角色卡绑定的世界书内选择条目。
+ */
 export async function listCaptureWorldbooks({ api } = {}) {
   try {
     const readApi = api || getWorldbookReadApi();
-    const rawNames = await Promise.resolve(readApi.getWorldbookNames());
-    const names = [...new Set((Array.isArray(rawNames) ? rawNames : [])
+    if (typeof readApi.getCharWorldbookNames !== 'function') {
+      throw new Error('当前环境缺少 getCharWorldbookNames，无法读取角色卡绑定的世界书。');
+    }
+    const bound = await Promise.resolve(readApi.getCharWorldbookNames('current'));
+    const primary = String(bound?.primary || '').trim();
+    const additional = Array.isArray(bound?.additional) ? bound.additional : [];
+    // primary 排在最前，additional 去重跟随；空名剔除。
+    const names = [...new Set([primary, ...additional]
       .map(name => String(name || '').trim())
-      .filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, 'zh-CN'));
-    return { ok: true, names, error: null };
+      .filter(Boolean))];
+    return { ok: true, names, primary: primary || null, error: null };
   } catch (error) {
     return {
       ok: false,
       names: [],
+      primary: null,
       error: {
         code: CAPTURE_OPTIONAL_ERROR_CODES.WORLDBOOK_LIST_FAILED,
-        message: `读取世界书列表失败：${error.message || String(error)}`,
+        message: `读取角色卡绑定的世界书失败：${error.message || String(error)}`,
       },
     };
   }
