@@ -108,6 +108,9 @@ import {
   configureScheduleWorkflow,
 } from './src/features/schedule/workflow.js';
 import {
+  configureCaptureWorkflow,
+} from './src/features/memoir/capture-workflow.js';
+import {
   configurePlotOutlineWorkflow,
   registerPlotOutlineEvents,
 } from './src/features/plot-outline/workflow.js';
@@ -1206,6 +1209,11 @@ function init() {
     refreshPanel: renderFloatingPanel,
   });
   configureScheduleWorkflow({
+    addCommunicationLog,
+    getActiveApiProfile,
+    getGenerateRawFunction,
+  });
+  configureCaptureWorkflow({
     addCommunicationLog,
     getActiveApiProfile,
     getGenerateRawFunction,

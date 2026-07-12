@@ -1,6 +1,6 @@
 // 设定采集开发期阶段验证区。只读检查状态与材料，不调用模型、不写世界书、不修改聊天记录。
 
-import { getContextInfo, getMemoirState } from '../../core/settings.js';
+import { getContextInfo, getGlobalSettings, getMemoirState } from '../../core/settings.js';
 import { escapeHtml } from '../../utils/text.js';
 import {
   CAPTURE_SOURCE_MODES,
@@ -17,6 +17,10 @@ import {
   setCaptureWorldbookRefsForBook,
   toggleCaptureWorldbookRef,
 } from './capture-materials.js';
+import {
+  prepareCaptureGeneration,
+  runCaptureGeneration,
+} from './capture-workflow.js';
 
 const SOURCE_LABELS = {
   recent_chat: '最近聊天',
@@ -44,6 +48,17 @@ function createStageDState() {
   };
 }
 
+function createStageEState() {
+  return {
+    request: '',
+    requestedType: 'auto',
+    loading: false,
+    preview: null,
+    result: null,
+    error: null,
+  };
+}
+
 let testState = {
   activeChatKey: '',
   open: false,
@@ -54,6 +69,7 @@ let testState = {
   stageBResult: null,
   stageCResult: null,
   stageD: createStageDState(),
+  stageE: createStageEState(),
 };
 
 let stageDSearchTimer = null;
@@ -76,6 +92,7 @@ function syncTestChatState() {
     stageBResult: null,
     stageCResult: null,
     stageD: createStageDState(),
+    stageE: createStageEState(),
   };
 }
 
@@ -439,9 +456,140 @@ async function loadAllStageDBooksForSearch(panelRoot) {
   replaceTestPanel(panelRoot);
 }
 
+function buildStageECaptureState() {
+  const base = normalizeCaptureState(getMemoirState().capture);
+  const stageD = testState.stageD;
+  const optionalContext = stageD.initialized
+    ? {
+      includeCharacterCard: stageD.includeCharacterCard,
+      includePersona: stageD.includePersona,
+      worldbookRefs: cloneWorldbookRefs(stageD.confirmedRefs),
+    }
+    : base.optionalContext;
+  return normalizeCaptureState({
+    ...base,
+    request: testState.stageE.request,
+    requestedType: testState.stageE.requestedType,
+    source: {
+      ...base.source,
+      mode: testState.mode,
+      recentCount: testState.recentCount,
+      fromFloor: testState.fromFloor,
+      toFloor: testState.toFloor,
+    },
+    optionalContext,
+  });
+}
+
+function renderStageEPreview() {
+  const preview = testState.stageE.preview;
+  if (!preview) return '';
+  if (!preview.ok) {
+    return `
+      <div class="slx-capture-test-result is-fail">
+        <div class="slx-capture-test-result-title">阶段 E 提示预检未通过</div>
+        <ul class="slx-capture-test-errors">${preview.errors.map(error => `<li>${escapeHtml(error.message || error.code)}</li>`).join('')}</ul>
+        <details class="slx-capture-test-output-details">
+          <summary>查看结构化错误</summary>
+          <pre>${escapeHtml(jsonForDisplay(preview.errors))}</pre>
+        </details>
+      </div>
+    `;
+  }
+  return `
+    <div class="slx-capture-test-result is-pass">
+      <div class="slx-capture-test-result-title">三明治提示构建成功</div>
+      <div class="slx-capture-test-stats">
+        <span>${escapeHtml(preview.messages.length)} 条 messages</span>
+        <span>${escapeHtml(preview.promptText.length)} 字符</span>
+        <span>未调用模型</span>
+      </div>
+      <details class="slx-capture-test-output-details" open>
+        <summary>查看宏替换后的最终 messages</summary>
+        <pre>${escapeHtml(jsonForDisplay(preview.messages))}</pre>
+      </details>
+    </div>
+  `;
+}
+
+function renderStageEResult() {
+  const stageE = testState.stageE;
+  if (stageE.error) {
+    const raw = stageE.error.rawResponse || '';
+    return `
+      <div class="slx-capture-test-result is-fail">
+        <div class="slx-capture-test-result-title">阶段 E 生成或解析失败</div>
+        <p class="slx-capture-test-error-text">${escapeHtml(stageE.error.message || String(stageE.error))}</p>
+        ${raw ? `
+          <details class="slx-capture-test-output-details" open>
+            <summary>查看模型原始响应</summary>
+            <pre>${escapeHtml(raw)}</pre>
+          </details>
+        ` : ''}
+      </div>
+    `;
+  }
+  const result = stageE.result;
+  if (!result) return '';
+  return `
+    <div class="slx-capture-test-result is-pass">
+      <div class="slx-capture-test-result-title">阶段 E 生成与 JSON 解析通过</div>
+      <div class="slx-capture-test-stats">
+        <span>${escapeHtml(result.apiMode === 'main_api' ? '主 API' : '副 API')}</span>
+        <span>新增 ${escapeHtml(result.addedCount)} 条草稿</span>
+        <span>草稿总数 ${escapeHtml(result.drafts.length)}</span>
+      </div>
+      <details class="slx-capture-test-output-details">
+        <summary>查看模型原始响应</summary>
+        <pre>${escapeHtml(result.rawResponse || '')}</pre>
+      </details>
+      <details class="slx-capture-test-output-details" open>
+        <summary>查看标准化草稿</summary>
+        <pre>${escapeHtml(jsonForDisplay(result.parsedEntries))}</pre>
+      </details>
+    </div>
+  `;
+}
+
+function renderStageEPanel() {
+  const stageE = testState.stageE;
+  const apiMode = getGlobalSettings().api?.mode === 'main_api' ? '主 API' : '副 API';
+  const typeLabels = {
+    auto: '自动',
+    npc: 'NPC',
+    item: '物品',
+    location: '地点',
+    other: '其他',
+  };
+  return `
+    <label class="slx-capture-test-e-request">
+      <span>测试需求</span>
+      <textarea rows="3" placeholder="例如：根据所选材料生成 NPC「林鸢」的完整设定" data-slx-capture-test-e-request>${escapeHtml(stageE.request)}</textarea>
+    </label>
+    <div class="slx-capture-test-e-types" role="radiogroup" aria-label="阶段 E 条目类型">
+      ${CAPTURE_TYPES.map(type => `
+        <button
+          class="${stageE.requestedType === type ? 'is-active' : ''}"
+          type="button"
+          role="radio"
+          aria-checked="${stageE.requestedType === type}"
+          data-slx-capture-test-e-type="${type}"
+        >${escapeHtml(typeLabels[type])}</button>
+      `).join('')}
+    </div>
+    <p class="slx-capture-test-hint">使用阶段 C 当前来源和阶段 D 已确认附加材料；模型请求跟随设置页当前的${escapeHtml(apiMode)}。</p>
+    <div class="slx-capture-test-e-actions">
+      <button class="slx-soft-btn" type="button" data-slx-capture-test-e-preview ${stageE.loading ? 'disabled' : ''}>只预览最终提示词</button>
+      <button class="slx-primary-btn" type="button" data-slx-capture-test-e-generate ${stageE.loading ? 'disabled' : ''}>${stageE.loading ? '生成中…' : '调用模型并解析草稿'}</button>
+    </div>
+    <p class="slx-capture-test-hint">只有右侧按钮会调用模型；成功草稿追加到当前聊天 `memoir.capture.drafts`，不会写世界书。</p>
+    ${renderStageEPreview()}
+    ${renderStageEResult()}
+  `;
+}
+
 function renderFutureStages() {
   const stages = [
-    ['E', '最终提示词与模型 JSON 解析验证'],
     ['F', '完整表单、草稿卡片与移动端交互验证'],
     ['G', '写入 payload 干跑与 captureId 读回验证'],
   ];
@@ -459,7 +607,7 @@ export function renderCaptureStageTestPanel() {
   return `
     <details class="slx-capture-test-panel" data-slx-capture-test-root ${testState.open ? 'open' : ''}>
       <summary>
-        <span><b>开发期 · 阶段验证</b><small>只读预览，不调用模型、不写世界书</small></span>
+        <span><b>开发期 · 阶段验证</b><small>预览只读；阶段 E 明确点击后可调用模型，但不写世界书</small></span>
         <i>临时工具</i>
       </summary>
       <div class="slx-capture-test-body">
@@ -490,6 +638,14 @@ export function renderCaptureStageTestPanel() {
           ${renderStageDPanel()}
         </section>
 
+        <section class="slx-capture-test-stage">
+          <div class="slx-capture-test-stage-head">
+            <span>阶段 E</span>
+            <div><b>提示、生成与解析</b><small>预览三明治 messages；明确点击后调用模型并追加标准化草稿</small></div>
+          </div>
+          ${renderStageEPanel()}
+        </section>
+
         ${renderFutureStages()}
       </div>
     </details>
@@ -514,6 +670,11 @@ function syncSourceInputs(root) {
   if (recent) testState.recentCount = recent.value;
   if (from) testState.fromFloor = from.value;
   if (to) testState.toFloor = to.value;
+}
+
+function syncStageEInputs(root) {
+  const request = root.querySelector('[data-slx-capture-test-e-request]');
+  if (request) testState.stageE.request = request.value;
 }
 
 export function bindCaptureStageTestEvents(panelRoot) {
@@ -664,5 +825,71 @@ export function bindCaptureStageTestEvents(panelRoot) {
     stageD.loading = false;
     stageD.loadingMessage = '';
     replaceTestPanel(panelRoot);
+  });
+
+  root.querySelector('[data-slx-capture-test-e-request]')?.addEventListener('input', event => {
+    testState.stageE.request = event.target.value;
+    testState.stageE.preview = null;
+    testState.stageE.result = null;
+    testState.stageE.error = null;
+  });
+
+  root.querySelectorAll('[data-slx-capture-test-e-type]').forEach(button => {
+    button.addEventListener('click', () => {
+      syncStageEInputs(root);
+      testState.stageE.requestedType = button.getAttribute('data-slx-capture-test-e-type') || 'auto';
+      testState.stageE.preview = null;
+      testState.stageE.result = null;
+      testState.stageE.error = null;
+      replaceTestPanel(panelRoot);
+    });
+  });
+
+  root.querySelector('[data-slx-capture-test-e-preview]')?.addEventListener('click', async () => {
+    syncSourceInputs(root);
+    syncStageEInputs(root);
+    const stageE = testState.stageE;
+    stageE.loading = true;
+    stageE.preview = null;
+    stageE.result = null;
+    stageE.error = null;
+    replaceTestPanel(panelRoot);
+    stageE.preview = await prepareCaptureGeneration({
+      captureState: buildStageECaptureState(),
+    });
+    stageE.loading = false;
+    replaceTestPanel(panelRoot);
+  });
+
+  root.querySelector('[data-slx-capture-test-e-generate]')?.addEventListener('click', async () => {
+    syncSourceInputs(root);
+    syncStageEInputs(root);
+    const apiMode = getGlobalSettings().api?.mode === 'main_api' ? '主 API' : '副 API';
+    const confirmed = globalThis.confirm?.(
+      `将调用当前${apiMode}生成设定草稿。\n成功结果会追加到当前聊天的 capture.drafts，但不会写入世界书。\n\n是否继续？`,
+    );
+    if (!confirmed) return;
+    const stageE = testState.stageE;
+    stageE.loading = true;
+    stageE.preview = null;
+    stageE.result = null;
+    stageE.error = null;
+    replaceTestPanel(panelRoot);
+    try {
+      stageE.result = await runCaptureGeneration({
+        captureState: buildStageECaptureState(),
+      });
+    } catch (error) {
+      const preflightMessage = Array.isArray(error.preflightErrors)
+        ? error.preflightErrors.map(item => item.message || item.code).join('；')
+        : '';
+      stageE.error = {
+        message: preflightMessage || error.message || String(error),
+        rawResponse: error.rawResponse || '',
+      };
+    } finally {
+      stageE.loading = false;
+      replaceTestPanel(panelRoot);
+    }
   });
 }

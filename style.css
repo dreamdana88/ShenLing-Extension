@@ -1116,8 +1116,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-capture-test-output-details pre {
-  max-height: 260px;
-  overflow: auto;
+  /* 提示和响应随正文自然拉伸，滚动交给外层 .slx-detail，避免展开后被固定高度截断。 */
   margin: 7px 0 0;
   border: 1px solid var(--slx-border-dim);
   border-radius: 8px;
@@ -1352,6 +1351,64 @@ body.slx-panel-open-lock {
   gap: 6px;
 }
 
+.slx-capture-test-e-request {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--slx-text);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+#shenling-assistant-panel-root .slx-capture-test-e-request textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: auto !important;
+  min-height: 82px !important;
+  resize: vertical;
+  border: 1px solid var(--slx-border-dim) !important;
+  border-radius: 9px !important;
+  background: var(--slx-input-bg) !important;
+  padding: 8px 9px !important;
+  color: var(--slx-input-text) !important;
+  box-shadow: none !important;
+  font: inherit !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+}
+
+.slx-capture-test-e-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.slx-capture-test-e-types button {
+  flex: 1 1 64px;
+  min-height: 31px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 999px;
+  background: var(--slx-bg-btn);
+  color: var(--slx-muted);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.slx-capture-test-e-types button.is-active {
+  border-color: rgba(var(--slx-accent-rgb), 0.48);
+  background: rgba(var(--slx-accent-rgb), 0.16);
+  color: var(--slx-accent-text);
+  font-weight: 800;
+}
+
+.slx-capture-test-e-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .slx-capture-test-future {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1411,6 +1468,10 @@ body.slx-panel-open-lock {
   }
 
   .slx-capture-test-d-actions > button {
+    flex: 1 1 100%;
+  }
+
+  .slx-capture-test-e-actions > button {
     flex: 1 1 100%;
   }
 }
