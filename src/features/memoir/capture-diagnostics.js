@@ -1,6 +1,6 @@
 // 设定采集开发期阶段验证区。只读检查状态与材料，不调用模型、不写世界书、不修改聊天记录。
 
-import { getMemoirState } from '../../core/settings.js';
+import { getContextInfo, getMemoirState } from '../../core/settings.js';
 import { escapeHtml } from '../../utils/text.js';
 import {
   CAPTURE_SOURCE_MODES,
@@ -16,6 +16,7 @@ const SOURCE_LABELS = {
 };
 
 let testState = {
+  activeChatKey: '',
   open: false,
   mode: 'recent_chat',
   recentCount: 20,
@@ -24,6 +25,26 @@ let testState = {
   stageBResult: null,
   stageCResult: null,
 };
+
+function getTestChatKey() {
+  const info = getContextInfo();
+  return `${info.characterId || ''}::${info.chatId || info.chatName || ''}`;
+}
+
+function syncTestChatState() {
+  const activeChatKey = getTestChatKey();
+  if (testState.activeChatKey === activeChatKey) return;
+  testState = {
+    activeChatKey,
+    open: false,
+    mode: 'recent_chat',
+    recentCount: 20,
+    fromFloor: '',
+    toFloor: '',
+    stageBResult: null,
+    stageCResult: null,
+  };
+}
 
 function jsonForDisplay(value) {
   try {
@@ -182,6 +203,7 @@ function renderFutureStages() {
 }
 
 export function renderCaptureStageTestPanel() {
+  syncTestChatState();
   return `
     <details class="slx-capture-test-panel" data-slx-capture-test-root ${testState.open ? 'open' : ''}>
       <summary>
