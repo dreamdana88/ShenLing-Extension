@@ -15,6 +15,10 @@ import {
   runManualMemoirExtraction,
 } from './workflow.js';
 import { reconcileMemoirWorldbookState } from './worldbook-manager.js';
+import {
+  bindCaptureStageTestEvents,
+  renderCaptureStageTestPanel,
+} from './capture-diagnostics.js';
 
 let panelOptions = { refreshPanel: () => {} };
 
@@ -156,6 +160,7 @@ export function renderMemoirPanel(settings = null, chatState = getChatState()) {
     </div>
     ${renderPendingSection(memoir)}
     ${renderEntriesSection(memoir)}
+    ${renderCaptureStageTestPanel()}
   `;
 }
 
@@ -204,6 +209,8 @@ function confirmUseCurrentWorldbook(worldbookName) {
 }
 
 export function bindMemoirPanelEvents(panelRoot, settings) {
+  bindCaptureStageTestEvents(panelRoot);
+
   // 面板打开时异步以真实世界书同步一次展示；仅状态发生变化时重绘，避免无意义刷新。
   void reconcileMemoirWorldbookState()
     .then(result => {

@@ -854,6 +854,318 @@ body.slx-panel-open-lock {
   flex: 0 0 auto;
 }
 
+/* 设定采集开发期阶段验证区：只读、默认折叠，不承担正式功能 UI。 */
+.slx-capture-test-panel {
+  border: 1px dashed rgba(var(--slx-accent-rgb), 0.42);
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgba(var(--slx-accent-rgb), 0.055), transparent 52%),
+    var(--slx-bg-card);
+  overflow: hidden;
+}
+
+.slx-capture-test-panel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 9px 12px;
+  color: var(--slx-text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.slx-capture-test-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.slx-capture-test-panel > summary > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.slx-capture-test-panel > summary b {
+  font-size: 12.5px;
+}
+
+.slx-capture-test-panel > summary small {
+  color: var(--slx-muted);
+  font-size: 10.5px;
+}
+
+.slx-capture-test-panel > summary i {
+  flex: 0 0 auto;
+  border: 1px solid rgba(var(--slx-accent-rgb), 0.28);
+  border-radius: 999px;
+  background: rgba(var(--slx-accent-rgb), 0.09);
+  padding: 3px 7px;
+  color: var(--slx-accent-text);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.slx-capture-test-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--slx-border-dim);
+  padding: 10px;
+}
+
+.slx-capture-test-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: var(--slx-bg-soft);
+  padding: 10px;
+}
+
+.slx-capture-test-stage-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.slx-capture-test-stage-head > span {
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: rgba(var(--slx-accent-rgb), 0.14);
+  padding: 4px 7px;
+  color: var(--slx-accent-text);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.slx-capture-test-stage-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slx-capture-test-stage-head b {
+  color: var(--slx-text);
+  font-size: 12px;
+}
+
+.slx-capture-test-stage-head small,
+.slx-capture-test-hint {
+  margin: 0;
+  color: var(--slx-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.slx-capture-test-source-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 9px;
+}
+
+.slx-capture-test-source-tabs button {
+  min-width: 0;
+  border: 0;
+  border-right: 1px solid var(--slx-border-dim);
+  background: transparent;
+  padding: 7px 4px;
+  color: var(--slx-muted);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.slx-capture-test-source-tabs button:last-child {
+  border-right: 0;
+}
+
+.slx-capture-test-source-tabs button.is-active {
+  background: rgba(var(--slx-accent-rgb), 0.16);
+  color: var(--slx-text);
+  font-weight: 750;
+}
+
+.slx-capture-test-source-detail {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+}
+
+.slx-capture-test-inline-field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--slx-muted);
+  font-size: 11px;
+}
+
+#shenling-assistant-panel-root .slx-capture-test-inline-field input {
+  box-sizing: border-box;
+  width: 68px;
+  min-height: 32px;
+  margin: 0 !important;
+  border: 1px solid var(--slx-border-dim) !important;
+  border-radius: 8px !important;
+  background: var(--slx-input-bg) !important;
+  padding: 5px 7px !important;
+  color: var(--slx-input-text) !important;
+  box-shadow: none !important;
+  font: inherit !important;
+  font-size: 11px !important;
+}
+
+.slx-capture-test-result {
+  border-left: 3px solid currentColor;
+  border-radius: 0 9px 9px 0;
+  padding: 8px 9px;
+}
+
+.slx-capture-test-result.is-pass {
+  background: rgba(77, 153, 105, 0.09);
+  color: #3f8b5b;
+}
+
+.slx-panel[data-theme='dark'] .slx-capture-test-result.is-pass {
+  color: #85c99c;
+}
+
+.slx-capture-test-result.is-fail {
+  background: var(--slx-danger-soft);
+  color: var(--slx-danger);
+}
+
+.slx-capture-test-result-title {
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.slx-capture-test-checks,
+.slx-capture-test-errors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+  margin: 7px 0 0;
+  padding: 0;
+  color: var(--slx-text);
+  font-size: 10.5px;
+  list-style: none;
+}
+
+.slx-capture-test-checks li {
+  display: flex;
+  gap: 5px;
+}
+
+.slx-capture-test-checks li.is-pass > span {
+  color: #3f8b5b;
+}
+
+.slx-capture-test-checks li.is-fail > span {
+  color: var(--slx-danger);
+}
+
+.slx-capture-test-errors {
+  grid-template-columns: 1fr;
+}
+
+.slx-capture-test-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.slx-capture-test-stats span {
+  border-radius: 999px;
+  background: rgba(var(--slx-accent-rgb), 0.1);
+  padding: 3px 7px;
+  color: var(--slx-text);
+  font-size: 10px;
+}
+
+.slx-capture-test-output-details {
+  margin-top: 7px;
+  color: var(--slx-text);
+}
+
+.slx-capture-test-output-details summary {
+  color: var(--slx-muted);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.slx-capture-test-output-details pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 7px 0 0;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 8px;
+  background: var(--slx-input-bg);
+  padding: 8px;
+  color: var(--slx-input-text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.slx-capture-test-future {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.slx-capture-test-future > div {
+  border: 1px dashed var(--slx-border-dim);
+  border-radius: 9px;
+  padding: 8px;
+  opacity: 0.72;
+}
+
+.slx-capture-test-future span,
+.slx-capture-test-future p,
+.slx-capture-test-future em {
+  display: block;
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.slx-capture-test-future span {
+  color: var(--slx-accent-text);
+  font-weight: 800;
+}
+
+.slx-capture-test-future p {
+  margin-top: 3px;
+  color: var(--slx-text);
+}
+
+.slx-capture-test-future em {
+  margin-top: 4px;
+  color: var(--slx-muted);
+  font-style: normal;
+}
+
+@media (max-width: 520px) {
+  .slx-capture-test-checks,
+  .slx-capture-test-future {
+    grid-template-columns: 1fr;
+  }
+
+  .slx-capture-test-panel > summary {
+    align-items: flex-start;
+  }
+}
+
 .slx-detail-icon {
   color: var(--slx-accent);
 }
