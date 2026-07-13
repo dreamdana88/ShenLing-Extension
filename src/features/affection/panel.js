@@ -11,7 +11,20 @@ import {
   replaceAffectionRecord,
   upsertAffectionRecord,
 } from './model.js';
-import { escapeHtml } from '../../utils/text.js';
+import {
+  cloneData,
+  escapeHtml,
+} from '../../utils/text.js';
+import {
+  getAffectionProfileKey,
+  getAffectionSettings,
+  getAffectionSystemState,
+  getChatState,
+  getGlobalSettings,
+  getStorageDiagnostics,
+  saveChatState,
+  saveGlobalSettings,
+} from '../../core/settings.js';
 
 const DEFAULT_CHANGE_LINES = [
   '沈青 |0.1',
@@ -39,6 +52,36 @@ const DEFAULT_LEDGER_RECORDS = JSON.stringify([
   },
 ], null, 2);
 
+const DEFAULT_SETTINGS_MIGRATION_INPUT = JSON.stringify({
+  globalSettings: {
+    modules: {
+      affection: {
+        enabled: true,
+        mode: 'off',
+        buildMode: 'generic',
+        apiMode: 'main_api',
+        obsoleteField: '会被移除',
+      },
+    },
+  },
+  chatState: {
+    affectionSystem: {
+      profiles: {
+        '旧键不会参与身份': {
+          roleName: '  沈 青  ',
+          characterId: 'world-card-id',
+          aliases: ['阿青'],
+          initialValueTenths: 425,
+        },
+      },
+      pendingByMessage: [],
+      buildTasks: '损坏对象',
+      mode: 'reverse',
+      buildMode: 'generic',
+    },
+  },
+}, null, 2);
+
 let affectionPanelOptions = {
   refreshPanel: null,
 };
@@ -58,10 +101,22 @@ function createDefaultTestState() {
     ledgerTargetValue: '50.0',
     ledgerResult: null,
     ledgerError: '',
+    settingsSuiteStatus: 'idle',
+    settingsSuiteResults: [],
+    settingsMigrationInput: DEFAULT_SETTINGS_MIGRATION_INPUT,
+    settingsMigrationStatus: 'idle',
+    settingsMigrationResult: null,
+    settingsMigrationError: '',
+    storageProbeStatus: 'idle',
+    storageProbeResult: null,
+    storageProbeError: '',
     expandedSections: {
       suite: false,
       change: false,
       ledger: false,
+      settingsSuite: false,
+      settingsMigration: false,
+      storageProbe: false,
     },
   };
 }
@@ -294,20 +349,262 @@ function runLedgerSimulator() {
   }
 }
 
+function runAffectionSettingsSuite() {
+  const results = [
+    runModelTest('全局默认设置字段完整且唯一', () => {
+      const holder = { modules: {} };
+      const actual = getAffectionSettings(holder);
+      assertTest(sameValue(actual, {
+        enabled: false,
+        mode: 'normal',
+        defaultBuildMode: 'custom',
+        profileBuildApiMode: 'secondary_api',
+      }), `实际结果：${JSON.stringify(actual)}`);
+      assertTest(sameValue(Object.keys(actual), [
+        'enabled', 'mode', 'defaultBuildMode', 'profileBuildApiMode',
+      ]), `实际字段：${JSON.stringify(Object.keys(actual))}`);
+      return '只生成四个已定稿的全局字段。';
+    }),
+    runModelTest('非法枚举和损坏开关回落到安全默认值', () => {
+      const holder = {
+        modules: {
+          affection: {
+            enabled: 'true',
+            mode: 'broken',
+            defaultBuildMode: 'unknown',
+            profileBuildApiMode: 'third_api',
+            extra: 'remove-me',
+          },
+        },
+      };
+      const actual = getAffectionSettings(holder);
+      assertTest(sameValue(actual, {
+        enabled: false,
+        mode: 'normal',
+        defaultBuildMode: 'custom',
+        profileBuildApiMode: 'secondary_api',
+      }), `实际结果：${JSON.stringify(actual)}`);
+      return '损坏布尔值、非法枚举与多余字段均已安全规范化。';
+    }),
+    runModelTest('合法模式枚举保持兼容但不扩展第一版 UI', () => {
+      const holder = {
+        modules: {
+          affection: {
+            enabled: true,
+            mode: 'reverse',
+            defaultBuildMode: 'generic',
+            profileBuildApiMode: 'main_api',
+          },
+        },
+      };
+      const actual = getAffectionSettings(holder);
+      assertTest(sameValue(actual, {
+        enabled: true,
+        mode: 'reverse',
+        defaultBuildMode: 'generic',
+        profileBuildApiMode: 'main_api',
+      }), `实际结果：${JSON.stringify(actual)}`);
+      return '数据层保留 reverse 枚举兼容；本测试区未提供 reverse 操作入口。';
+    }),
+    runModelTest('旧草案字段迁移且 off 不会误开启攻略', () => {
+      const holder = {
+        modules: {
+          affection: {
+            enabled: true,
+            mode: 'off',
+            buildMode: 'generic',
+            apiMode: 'main_api',
+          },
+        },
+      };
+      const actual = getAffectionSettings(holder);
+      assertTest(sameValue(actual, {
+        enabled: false,
+        mode: 'normal',
+        defaultBuildMode: 'generic',
+        profileBuildApiMode: 'main_api',
+      }), `实际结果：${JSON.stringify(actual)}`);
+      return '旧 off 被迁移为 enabled=false，旧建档/API 字段映射到正式字段。';
+    }),
+    runModelTest('聊天态只保留三个独立数据容器', () => {
+      const holder = {
+        affectionSystem: {
+          profiles: null,
+          pendingByMessage: [],
+          buildTasks: 'broken',
+          mode: 'reverse',
+          buildMode: 'generic',
+          profileBuildApiMode: 'main_api',
+        },
+      };
+      const actual = getAffectionSystemState(holder);
+      assertTest(sameValue(actual, {
+        profiles: {},
+        pendingByMessage: {},
+        buildTasks: {},
+      }), `实际结果：${JSON.stringify(actual)}`);
+      return '损坏容器已修复，聊天态未复制任何全局模式字段。';
+    }),
+    runModelTest('顶层模块和 affectionSystem 损坏时可完整重建', () => {
+      const globalHolder = { modules: [] };
+      const chatHolder = { affectionSystem: [] };
+      const settings = getAffectionSettings(globalHolder);
+      const system = getAffectionSystemState(chatHolder);
+      assertTest(settings.enabled === false && settings.mode === 'normal', `全局设置：${JSON.stringify(settings)}`);
+      assertTest(sameValue(system, { profiles: {}, pendingByMessage: {}, buildTasks: {} }), `聊天态：${JSON.stringify(system)}`);
+      return '数组、空值等损坏顶层结构会回落为完整安全默认值。';
+    }),
+    runModelTest('profile key 只采用保守规范化角色名', () => {
+      const holder = {
+        affectionSystem: {
+          profiles: {
+            'storage-key': {
+              roleName: '  沈 青  ',
+              characterId: 'world-card-id',
+              uuid: 'fake-uuid',
+              aliases: ['阿青'],
+            },
+            ' 阿 蛮 ': {
+              initialValueTenths: 100,
+            },
+            duplicate: {
+              roleName: '沈青',
+              initialValueTenths: 999,
+            },
+          },
+          pendingByMessage: {},
+          buildTasks: {},
+        },
+      };
+      const actual = getAffectionSystemState(holder);
+      assertTest(sameValue(Object.keys(actual.profiles), ['沈青', '阿蛮']), `实际 key：${JSON.stringify(Object.keys(actual.profiles))}`);
+      assertTest(actual.profiles['沈青'].roleName === '沈青', 'profile.roleName 未同步规范化。');
+      assertTest(!Object.hasOwn(actual.profiles, 'world-card-id') && !Object.hasOwn(actual.profiles, 'fake-uuid'), '角色卡或 UUID 被误作 profile key。');
+      assertTest(getAffectionProfileKey(' 苏 暮 香 ') === '苏暮香', '角色名键函数未复用 model 的保守规范化。');
+      return '角色卡 ID、UUID、aliases 均未参与身份键推断，同名保留首条档案。';
+    }),
+    runModelTest('旧数组草案可按显式 roleName 恢复', () => {
+      const holder = {
+        affectionSystem: {
+          profiles: [
+            { roleName: ' 苏 暮 香 ', initialValueTenths: 300 },
+            { name: '没有 roleName', characterId: 'not-a-role' },
+          ],
+        },
+      };
+      const actual = getAffectionSystemState(holder);
+      assertTest(sameValue(Object.keys(actual.profiles), ['苏暮香']), `实际 key：${JSON.stringify(Object.keys(actual.profiles))}`);
+      assertTest(sameValue(Object.keys(actual), ['profiles', 'pendingByMessage', 'buildTasks']), '聊天态字段不完整。');
+      return '只迁移带显式 roleName 的旧数组条目。';
+    }),
+  ];
+
+  affectionTestState.settingsSuiteResults = results;
+  affectionTestState.settingsSuiteStatus = results.every(item => item.status === 'passed') ? 'passed' : 'failed';
+}
+
+function runSettingsMigrationPreview() {
+  try {
+    const source = JSON.parse(affectionTestState.settingsMigrationInput || '{}');
+    const globalSettings = cloneData(source.globalSettings || {});
+    const chatState = cloneData(source.chatState || {});
+    const affectionSettings = getAffectionSettings(globalSettings);
+    const affectionSystem = getAffectionSystemState(chatState);
+    affectionTestState.settingsMigrationResult = {
+      affectionSettings,
+      affectionSystem,
+      persistedGlobalFields: Object.keys(affectionSettings),
+      persistedChatFields: Object.keys(affectionSystem),
+      profileKeys: Object.keys(affectionSystem.profiles),
+      note: '本次预览只修改解析后的页面内存副本。',
+    };
+    affectionTestState.settingsMigrationStatus = 'passed';
+    affectionTestState.settingsMigrationError = '';
+  } catch (error) {
+    affectionTestState.settingsMigrationResult = null;
+    affectionTestState.settingsMigrationStatus = 'failed';
+    affectionTestState.settingsMigrationError = error?.message || String(error);
+  }
+}
+
+function runAffectionStorageProbe() {
+  const diagnostics = getStorageDiagnostics();
+  if (!diagnostics.hasExtensionSettings || !diagnostics.hasChatMetadata) {
+    affectionTestState.storageProbeStatus = 'failed';
+    affectionTestState.storageProbeResult = null;
+    affectionTestState.storageProbeError = '需要先进入一个可保存 metadata 的聊天，并确保扩展设置已就绪。';
+    return;
+  }
+
+  const settings = getGlobalSettings();
+  const chatState = getChatState();
+  const globalSnapshot = cloneData(settings.modules?.affection || {});
+  const chatSnapshot = cloneData(chatState.affectionSystem || {});
+  const probeKey = `settings-probe:${Date.now()}`;
+  let readback = null;
+  let probeError = null;
+  let restored = false;
+
+  try {
+    settings.modules.affection = {
+      enabled: true,
+      mode: 'normal',
+      defaultBuildMode: 'generic',
+      profileBuildApiMode: 'main_api',
+    };
+    const system = getAffectionSystemState(chatState);
+    system.buildTasks[probeKey] = { status: 'probe', probeKey };
+    saveGlobalSettings();
+    saveChatState();
+
+    const readSettings = getAffectionSettings(getGlobalSettings());
+    const readSystem = getAffectionSystemState(getChatState());
+    readback = {
+      settings: cloneData(readSettings),
+      buildTask: cloneData(readSystem.buildTasks[probeKey] || null),
+    };
+    assertTest(readSettings.enabled === true, '全局 enabled 未读回。');
+    assertTest(readSettings.defaultBuildMode === 'generic', '全局建档模式未读回。');
+    assertTest(readSettings.profileBuildApiMode === 'main_api', '全局建档 API 模式未读回。');
+    assertTest(readSystem.buildTasks[probeKey]?.probeKey === probeKey, '聊天 metadata 探针未读回。');
+  } catch (error) {
+    probeError = error;
+  } finally {
+    try {
+      settings.modules.affection = globalSnapshot;
+      chatState.affectionSystem = chatSnapshot;
+      saveGlobalSettings();
+      saveChatState();
+      restored = true;
+    } catch (restoreError) {
+      probeError = probeError || restoreError;
+    }
+  }
+
+  affectionTestState.storageProbeResult = {
+    probeKey,
+    readback,
+    restored,
+    note: restored ? '原全局设置与当前聊天好感状态已恢复。' : '恢复未完成，请查看错误。',
+  };
+  affectionTestState.storageProbeStatus = !probeError && restored ? 'passed' : 'failed';
+  affectionTestState.storageProbeError = probeError?.message || String(probeError || '');
+}
+
 function renderJsonResult(result, error, emptyText) {
   if (error) return `<div class="slx-affection-test-error">${escapeHtml(error)}</div>`;
   if (!result) return `<div class="slx-affection-test-empty">${escapeHtml(emptyText)}</div>`;
   return `<pre class="slx-affection-test-output">${escapeHtml(JSON.stringify(result, null, 2))}</pre>`;
 }
 
-function renderSuiteResults() {
-  if (!affectionTestState.suiteResults.length) {
+function renderSuiteResults(results = []) {
+  if (!results.length) {
     return '<div class="slx-affection-test-empty">尚未运行。点击上方按钮后会逐项显示通过或失败原因。</div>';
   }
 
   return `
     <ul class="slx-affection-test-list">
-      ${affectionTestState.suiteResults.map(item => `
+      ${results.map(item => `
         <li class="is-${escapeHtml(item.status)}">
           <span class="slx-affection-test-mark">${item.status === 'passed' ? '✓' : '×'}</span>
           <span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.detail)}</small></span>
@@ -317,14 +614,23 @@ function renderSuiteResults() {
   `;
 }
 
+function getTestStatusLabel(status, passedCount = 0, totalCount = 0) {
+  if (status === 'passed') return totalCount ? `全部通过（${passedCount}/${totalCount}）` : '通过';
+  if (status === 'failed') return totalCount ? `存在失败（${passedCount}/${totalCount}）` : '失败';
+  return '等待测试';
+}
+
 export function renderAffectionPanel() {
   const passedCount = affectionTestState.suiteResults.filter(item => item.status === 'passed').length;
   const totalCount = affectionTestState.suiteResults.length;
-  const suiteLabel = affectionTestState.suiteStatus === 'passed'
-    ? `全部通过（${passedCount}/${totalCount}）`
-    : affectionTestState.suiteStatus === 'failed'
-      ? `存在失败（${passedCount}/${totalCount}）`
-      : '等待测试';
+  const suiteLabel = getTestStatusLabel(affectionTestState.suiteStatus, passedCount, totalCount);
+  const settingsPassedCount = affectionTestState.settingsSuiteResults.filter(item => item.status === 'passed').length;
+  const settingsTotalCount = affectionTestState.settingsSuiteResults.length;
+  const settingsSuiteLabel = getTestStatusLabel(
+    affectionTestState.settingsSuiteStatus,
+    settingsPassedCount,
+    settingsTotalCount,
+  );
 
   return `
     <div class="slx-affection-test-root">
@@ -345,7 +651,7 @@ export function renderAffectionPanel() {
             <button class="slx-soft-btn" type="button" data-slx-affection-run-suite>运行第 1 步全部检查</button>
             <button class="slx-soft-btn" type="button" data-slx-affection-reset-tests>重置测试区</button>
           </div>
-          ${renderSuiteResults()}
+          ${renderSuiteResults(affectionTestState.suiteResults)}
         </div>
       </details>
 
@@ -409,6 +715,70 @@ export function renderAffectionPanel() {
           ${renderJsonResult(affectionTestState.ledgerResult, affectionTestState.ledgerError, '运行后显示排序、每条记录前后值、最终值和手动调整记录。')}
         </div>
       </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="settingsSuite" ${affectionTestState.expandedSections.settingsSuite ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>开发期测试区</small>
+            <b>第 2 步 · 设置、聊天态与角色名键</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.settingsSuiteStatus)}">${escapeHtml(settingsSuiteLabel)}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>直接向真实 getter 传入页面内存中的模拟对象，检查默认字段、非法枚举、旧草案迁移、损坏容器和角色名键。不会读取或修改当前聊天。</p>
+          <div class="slx-action-row">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-settings-suite>运行第 2 步全部检查</button>
+          </div>
+          ${renderSuiteResults(affectionTestState.settingsSuiteResults)}
+        </div>
+      </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="settingsMigration" ${affectionTestState.expandedSections.settingsMigration ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>自定义模拟 C</small>
+            <b>坏数据迁移预览</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.settingsMigrationStatus)}">${escapeHtml(getTestStatusLabel(affectionTestState.settingsMigrationStatus))}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>输入含 globalSettings 与 chatState 的 JSON。预览直接调用真实 getter，但只处理当前页面内存中的副本。</p>
+          <label class="slx-field slx-field-wide">
+            <span>模拟坏数据 JSON</span>
+            <textarea data-slx-affection-settings-migration-input spellcheck="false">${escapeHtml(affectionTestState.settingsMigrationInput)}</textarea>
+          </label>
+          <div class="slx-action-row slx-affection-test-single-action">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-settings-migration>预览迁移结果</button>
+          </div>
+          ${renderJsonResult(affectionTestState.settingsMigrationResult, affectionTestState.settingsMigrationError, '运行后显示规范化设置、聊天态字段与 profile key。')}
+        </div>
+      </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="storageProbe" ${affectionTestState.expandedSections.storageProbe ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>显式存储探针</small>
+            <b>真实设置与 metadata 写入、读回、恢复</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.storageProbeStatus)}">${escapeHtml(getTestStatusLabel(affectionTestState.storageProbeStatus))}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <div class="slx-affection-test-warning">此按钮会短暂写入当前全局好感设置和当前聊天 metadata，读回后立即用快照恢复。请只在可正常保存的测试聊天中运行。</div>
+          <div class="slx-action-row slx-affection-test-single-action">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-storage-probe>写入 → 读回 → 恢复</button>
+          </div>
+          ${renderJsonResult(affectionTestState.storageProbeResult, affectionTestState.storageProbeError, '等待用户显式运行。不会自动触发。')}
+        </div>
+      </details>
     </div>
   `;
 }
@@ -424,6 +794,8 @@ function syncAffectionTestInputs(panelRoot) {
     ?? affectionTestState.ledgerTargetValue;
   affectionTestState.ledgerRecords = panelRoot.querySelector('[data-slx-affection-ledger-records]')?.value
     ?? affectionTestState.ledgerRecords;
+  affectionTestState.settingsMigrationInput = panelRoot.querySelector('[data-slx-affection-settings-migration-input]')?.value
+    ?? affectionTestState.settingsMigrationInput;
 }
 
 export function bindAffectionPanelEvents(panelRoot) {
@@ -451,6 +823,24 @@ export function bindAffectionPanelEvents(panelRoot) {
   panelRoot.querySelector('[data-slx-affection-run-ledger]')?.addEventListener('click', () => {
     syncAffectionTestInputs(panelRoot);
     runLedgerSimulator();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-settings-suite]')?.addEventListener('click', () => {
+    syncAffectionTestInputs(panelRoot);
+    runAffectionSettingsSuite();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-settings-migration]')?.addEventListener('click', () => {
+    syncAffectionTestInputs(panelRoot);
+    runSettingsMigrationPreview();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-storage-probe]')?.addEventListener('click', () => {
+    syncAffectionTestInputs(panelRoot);
+    runAffectionStorageProbe();
     refreshPanel();
   });
 

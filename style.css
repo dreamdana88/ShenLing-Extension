@@ -3440,6 +3440,16 @@ body.slx-panel-open-lock {
   background: var(--slx-bg-soft);
 }
 
+.slx-affection-test-warning {
+  border: 1px solid rgba(184, 128, 63, 0.32);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: var(--slx-text);
+  background: rgba(184, 128, 63, 0.1);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 @media (max-width: 560px) {
   .slx-affection-test-heading {
     flex-direction: column;

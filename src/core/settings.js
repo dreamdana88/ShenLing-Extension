@@ -24,6 +24,7 @@ import {
   REPLACEMENT_DEFAULTS_VERSION,
 } from '../features/word-replace/core.js';
 import { normalizeScheduleCurrent } from '../features/schedule/model.js';
+import { normalizeAffectionRoleName } from '../features/affection/model.js';
 
 // ── 设定采集状态模型 ────────────────────────────────────────────────
 
@@ -236,6 +237,12 @@ export const defaultGlobalSettings = Object.freeze({
       autoAnalyze: false,
       injectEnabled: true,
     },
+    affection: {
+      enabled: false,
+      mode: 'normal',
+      defaultBuildMode: 'custom',
+      profileBuildApiMode: 'secondary_api',
+    },
     chatBeautify: {
       enabled: true,
       theme: 'light',
@@ -350,6 +357,11 @@ export const defaultChatState = Object.freeze({
     pendingByMessage: {},
     lastUpdatedAt: '',
     lastInjectedAt: '',
+  },
+  affectionSystem: {
+    profiles: {},
+    pendingByMessage: {},
+    buildTasks: {},
   },
   schedule: {
     current: null,
@@ -535,6 +547,68 @@ export function getEmotionProfileSettings(settings = getGlobalSettings()) {
     cloneData(defaultGlobalSettings.modules.emotionProfile),
   );
   return settings.modules.emotionProfile;
+}
+
+export function getAffectionSettings(settings = getGlobalSettings()) {
+  if (!isPlainObject(settings.modules)) {
+    settings.modules = {};
+  }
+
+  const source = isPlainObject(settings.modules.affection)
+    ? settings.modules.affection
+    : {};
+  const legacyModeOff = source.mode === 'off';
+  const mode = ['normal', 'reverse'].includes(source.mode) ? source.mode : 'normal';
+  const defaultBuildModeSource = source.defaultBuildMode ?? source.buildMode;
+  const profileBuildApiModeSource = source.profileBuildApiMode ?? source.apiMode;
+
+  settings.modules.affection = {
+    enabled: legacyModeOff ? false : source.enabled === true,
+    mode,
+    defaultBuildMode: ['custom', 'generic'].includes(defaultBuildModeSource)
+      ? defaultBuildModeSource
+      : 'custom',
+    profileBuildApiMode: ['secondary_api', 'main_api'].includes(profileBuildApiModeSource)
+      ? profileBuildApiModeSource
+      : 'secondary_api',
+  };
+  return settings.modules.affection;
+}
+
+export function getAffectionProfileKey(roleName) {
+  return normalizeAffectionRoleName(roleName);
+}
+
+function normalizeAffectionProfiles(value) {
+  const entries = Array.isArray(value)
+    ? value.map(profile => [profile?.roleName || '', profile])
+    : isPlainObject(value)
+      ? Object.entries(value)
+      : [];
+  const profiles = {};
+
+  entries.forEach(([storedKey, profile]) => {
+    if (!isPlainObject(profile)) return;
+    const roleName = getAffectionProfileKey(profile.roleName || storedKey);
+    if (!roleName || Object.hasOwn(profiles, roleName)) return;
+    profiles[roleName] = {
+      ...profile,
+      roleName,
+    };
+  });
+  return profiles;
+}
+
+export function getAffectionSystemState(chatState = getChatState()) {
+  const source = isPlainObject(chatState.affectionSystem)
+    ? chatState.affectionSystem
+    : {};
+  chatState.affectionSystem = {
+    profiles: normalizeAffectionProfiles(source.profiles),
+    pendingByMessage: isPlainObject(source.pendingByMessage) ? source.pendingByMessage : {},
+    buildTasks: isPlainObject(source.buildTasks) ? source.buildTasks : {},
+  };
+  return chatState.affectionSystem;
 }
 
 export function getWordReplaceSettings(settings = getGlobalSettings()) {
