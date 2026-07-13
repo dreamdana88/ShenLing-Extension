@@ -35,6 +35,7 @@ import {
   getContextInfo,
   getEmotionProfileSettings,
   getGlobalSettings,
+  getMemoirSettings,
   getStorageDiagnostics,
   saveChatState,
   saveGlobalSettings,
@@ -479,6 +480,15 @@ function renderModuleHeaderAction(activeModule, settings) {
       <label class="slx-setting-toggle-row slx-module-head-toggle" for="slx-outline-enabled" title="启用剧情大纲正文注入">
         <input id="slx-outline-enabled" type="checkbox" data-slx-outline-enabled ${outline.enabled ? 'checked' : ''} />
       </label>
+    `;
+  }
+  if (activeModule.id === 'memoir') {
+    const memoirSettings = getMemoirSettings(settings);
+    return `
+      <div class="slx-schedule-api-toggle slx-memoir-api-toggle" role="group" aria-label="回忆录 API 模式">
+        <button class="${memoirSettings.apiMode === 'main_api' ? 'is-active' : ''}" type="button" data-slx-memoir-api-mode="main_api">主 API</button>
+        <button class="${memoirSettings.apiMode === 'secondary_api' ? 'is-active' : ''}" type="button" data-slx-memoir-api-mode="secondary_api">副 API</button>
+      </div>
     `;
   }
   return '';

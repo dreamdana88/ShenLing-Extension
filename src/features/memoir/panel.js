@@ -21,6 +21,7 @@ import {
   CAPTURE_TYPES,
   buildCaptureSourceMaterial,
   clearCaptureDrafts,
+  commitCaptureDrafts,
   filterCaptureWorldbookEntries,
   inspectCaptureOptionalSources,
   listCaptureWorldbooks,
@@ -336,6 +337,16 @@ export function bindMemoirPanelEvents(panelRoot, settings) {
     refreshPanel();
   });
 
+  panelRoot.querySelectorAll('[data-slx-memoir-api-mode]').forEach(button => {
+    button.addEventListener('click', () => {
+      const mode = button.getAttribute('data-slx-memoir-api-mode');
+      if (!['main_api', 'secondary_api'].includes(mode)) return;
+      getMemoirSettings(settings).apiMode = mode;
+      saveGlobalSettings();
+      refreshPanel();
+    });
+  });
+
   panelRoot.querySelector('[data-slx-memoir-manual]')?.addEventListener('click', async () => {
     setStatus('extracting');
     refreshPanel();
@@ -439,7 +450,7 @@ export function bindMemoirPanelEvents(panelRoot, settings) {
 
 // 设定采集正式界面：需求与材料表单、草稿审阅、批量操作与世界书条目选择器。
 // UI 临时态保存在本模块；持久数据统一写回 getMemoirState().capture 并 saveChatState()。
-// 本阶段（F）暂不开放正式写入按钮，写入在阶段 G 接入。
+// 阶段 G：正式写入只按 captureId 独立读回结果清理草稿，缺失项保留供安全重试。
 
 
 const TYPE_LABELS = { auto: '自动', npc: 'NPC', item: '物品', location: '地点', other: '其他' };
@@ -478,8 +489,11 @@ function createCaptureUiState() {
     activeChatKey: '',
     formCollapsed: false,
     generating: false,
+    writing: false,
     advancedOpen: false,
     error: null, // { message, rawResponse }
+    writeNotice: null, // { kind: success | partial | error, message }
+    draftErrors: new Map(),
     confirmAction: null, // { kind, ids, message, confirmLabel }
     selectedDraftIds: new Set(),
     highlightDraftIds: new Set(),
@@ -713,9 +727,10 @@ function buildFormSummary(capture) {
 function renderDraftCard(draft) {
   const selected = uiState.selectedDraftIds.has(draft.captureId);
   const highlight = uiState.highlightDraftIds.has(draft.captureId);
+  const writeError = uiState.draftErrors.get(draft.captureId) || '';
   const typeLabel = DRAFT_TYPE_LABELS[draft.type] || '其他';
   return `
-    <div class="slx-capture-draft-card slx-editor ${selected ? 'is-selected' : ''} ${highlight ? 'is-new' : ''}" data-slx-capture-draft="${escapeHtml(draft.captureId)}">
+    <div class="slx-capture-draft-card slx-editor ${selected ? 'is-selected' : ''} ${highlight ? 'is-new' : ''} ${writeError ? 'has-write-error' : ''}" data-slx-capture-draft="${escapeHtml(draft.captureId)}">
       <div class="slx-capture-draft-head">
         <label class="slx-capture-draft-check">
           <input type="checkbox" data-slx-capture-draft-select ${selected ? 'checked' : ''} aria-label="选择此草稿" />
@@ -756,9 +771,19 @@ function renderDraftCard(draft) {
           <input class="slx-editor-input slx-capture-draft-order" type="number" data-slx-capture-field="order" value="${escapeHtml(draft.order)}" aria-label="插入顺序" />
         </label>
       </div>
+      ${writeError ? `<div class="slx-capture-draft-error" role="alert">${escapeHtml(writeError)}</div>` : ''}
       ${uiState.confirmAction?.kind === 'delete-one' && uiState.confirmAction.ids.includes(draft.captureId)
         ? renderCaptureConfirmation(uiState.confirmAction)
         : ''}
+    </div>
+  `;
+}
+
+function renderCaptureWriteNotice() {
+  if (!uiState.writeNotice) return '';
+  return `
+    <div class="slx-capture-write-notice is-${escapeHtml(uiState.writeNotice.kind)}" role="status">
+      ${escapeHtml(uiState.writeNotice.message)}
     </div>
   `;
 }
@@ -768,6 +793,7 @@ function renderDraftsArea(capture) {
   if (!drafts.length && !uiState.generating) {
     return `
       <div class="slx-capture-drafts">
+        ${renderCaptureWriteNotice()}
         <div class="slx-capture-empty">
           <span aria-hidden="true">📝</span>
           <p>填写需求后点击「生成草稿」</p>
@@ -777,6 +803,7 @@ function renderDraftsArea(capture) {
   }
   return `
     <div class="slx-capture-drafts">
+      ${renderCaptureWriteNotice()}
       ${uiState.generating ? `
         <div class="slx-capture-generating" role="status" aria-live="polite">
           <span class="slx-capture-spinner" aria-hidden="true"></span>
@@ -794,6 +821,7 @@ function renderBatchBar(capture) {
   const total = drafts.length;
   const selectedCount = drafts.filter(draft => uiState.selectedDraftIds.has(draft.captureId)).length;
   const allSelected = selectedCount === total && total > 0;
+  const actionDisabled = uiState.writing ? 'disabled' : '';
   const batchConfirmation = uiState.confirmAction && uiState.confirmAction.kind !== 'delete-one'
     ? renderCaptureConfirmation(uiState.confirmAction)
     : '';
@@ -801,23 +829,24 @@ function renderBatchBar(capture) {
     <div class="slx-capture-batch-wrap">
       ${batchConfirmation}
       <div class="slx-capture-batch-bar">
-      <button class="slx-soft-btn" type="button" data-slx-capture-select-all>${allSelected ? '取消全选' : '全选'}</button>
-      <button class="slx-soft-btn slx-capture-discard-btn" type="button" data-slx-capture-discard-all>放弃全部</button>
+      <button class="slx-soft-btn" type="button" data-slx-capture-select-all ${actionDisabled}>${allSelected ? '取消全选' : '全选'}</button>
+      <button class="slx-soft-btn slx-capture-discard-btn" type="button" data-slx-capture-discard-all ${actionDisabled}>放弃全部</button>
       <span class="slx-capture-batch-spacer"></span>
-      <button class="slx-soft-btn slx-danger-mini-btn" type="button" data-slx-capture-delete-selected ${selectedCount ? '' : 'disabled'}>删除已选${selectedCount ? ` (${selectedCount})` : ''}</button>
-      <button class="slx-soft-btn slx-primary-btn slx-capture-write-btn" type="button" data-slx-capture-write-selected disabled title="正式写入将在阶段 G 开放">写入已选${selectedCount ? ` (${selectedCount})` : ''}</button>
+      <button class="slx-soft-btn slx-danger-mini-btn" type="button" data-slx-capture-delete-selected ${selectedCount && !uiState.writing ? '' : 'disabled'}>删除已选${selectedCount ? ` (${selectedCount})` : ''}</button>
+      <button class="slx-soft-btn slx-primary-btn slx-capture-write-btn" type="button" data-slx-capture-write-selected ${selectedCount && !uiState.writing ? '' : 'disabled'}>${uiState.writing ? '写入并核对中…' : `写入已选${selectedCount ? ` (${selectedCount})` : ''}`}</button>
       </div>
     </div>
   `;
 }
 
 function renderCaptureConfirmation(action) {
+  const isWrite = action.kind === 'write-selected';
   return `
     <div class="slx-capture-confirm" role="alertdialog" aria-modal="false" aria-label="确认操作">
       <p>${escapeHtml(action.message)}</p>
       <span class="slx-capture-confirm-actions">
         <button class="slx-soft-btn" type="button" data-slx-capture-confirm-cancel>取消</button>
-        <button class="slx-soft-btn slx-danger-mini-btn" type="button" data-slx-capture-confirm-accept>${escapeHtml(action.confirmLabel || '确认删除')}</button>
+        <button class="slx-soft-btn ${isWrite ? 'slx-primary-btn' : 'slx-danger-mini-btn'}" type="button" data-slx-capture-confirm-accept>${escapeHtml(action.confirmLabel || '确认')}</button>
       </span>
     </div>
   `;
@@ -1128,9 +1157,10 @@ async function runGeneration(panelRoot, region) {
   persistCapture();
   uiState.generating = true;
   uiState.error = null;
+  uiState.writeNotice = null;
   replaceCaptureRegion(panelRoot);
   try {
-    const result = await runCaptureGeneration({});
+    const result = await runCaptureGeneration({ apiMode: getMemoirSettings().apiMode });
     uiState.generating = false;
     if (result.addedCount > 0) {
       uiState.highlightDraftIds = new Set(
@@ -1179,6 +1209,7 @@ function bindDraftEvents(panelRoot, region) {
           const parsed = Number(input.value);
           draft.order = Number.isFinite(parsed) ? Math.trunc(parsed) : draft.order;
         }
+        uiState.draftErrors.delete(captureId);
         persistCapture();
       });
     });
@@ -1214,6 +1245,11 @@ function bindCaptureConfirmationEvents(panelRoot, region) {
     button.addEventListener('click', () => {
       const action = uiState.confirmAction;
       if (!action) return;
+      if (action.kind === 'write-selected') {
+        uiState.confirmAction = null;
+        void runCaptureWrite(panelRoot, action.ids);
+        return;
+      }
       const capture = getCapture();
       if (action.kind === 'discard-all') {
         capture.drafts = clearCaptureDrafts();
@@ -1268,7 +1304,67 @@ function bindBatchEvents(panelRoot, region) {
     replaceCaptureRegion(panelRoot);
   });
 
-  // 写入已选：阶段 F 暂不开放，按钮保持 disabled，无需绑定。
+  region.querySelector('[data-slx-capture-write-selected]')?.addEventListener('click', () => {
+    const ids = [...uiState.selectedDraftIds];
+    if (!ids.length || uiState.writing) return;
+    uiState.confirmAction = {
+      kind: 'write-selected',
+      ids,
+      message: `将已选的 ${ids.length} 条设定草稿写入当前回忆录世界书，并按 captureId 独立读回核对。确认继续？`,
+      confirmLabel: `确认写入 ${ids.length} 条`,
+    };
+    replaceCaptureRegion(panelRoot);
+  });
+}
+
+async function runCaptureWrite(panelRoot, captureIds) {
+  const ids = [...new Set(Array.isArray(captureIds) ? captureIds : [])];
+  const drafts = getCapture().drafts.filter(draft => ids.includes(draft.captureId));
+  if (!drafts.length) return;
+  uiState.writing = true;
+  uiState.writeNotice = null;
+  ids.forEach(id => uiState.draftErrors.delete(id));
+  replaceCaptureRegion(panelRoot);
+
+  try {
+    const result = await commitCaptureDrafts(drafts, {
+      confirmUseCurrent: confirmUseCurrentWorldbook,
+    });
+    result.verifiedIds.forEach(id => {
+      uiState.selectedDraftIds.delete(id);
+      uiState.highlightDraftIds.delete(id);
+      uiState.draftErrors.delete(id);
+    });
+    result.failures.forEach(failure => {
+      uiState.draftErrors.set(failure.captureId, failure.message);
+    });
+    if (result.ok) {
+      uiState.writeNotice = {
+        kind: 'success',
+        message: `已向「${result.worldbookName}」写入并读回核对 ${result.verifiedCount} 条设定。`,
+      };
+    } else if (result.verifiedCount > 0) {
+      uiState.writeNotice = {
+        kind: 'partial',
+        message: `已核对成功 ${result.verifiedCount} 条；另有 ${result.failures.length} 条未通过，草稿已保留，可修正后重试。`,
+      };
+    } else {
+      uiState.writeNotice = {
+        kind: 'error',
+        message: `本次没有草稿通过读回核对；${result.failures.length} 条均已保留。`,
+      };
+    }
+  } catch (error) {
+    const message = error.message || String(error);
+    ids.forEach(id => uiState.draftErrors.set(id, message));
+    uiState.writeNotice = {
+      kind: 'error',
+      message: `写入或独立读回失败：${message}。草稿未清理，可安全重试。`,
+    };
+  } finally {
+    uiState.writing = false;
+    replaceCaptureRegion(panelRoot);
+  }
 }
 
 // ── 世界书弹层逻辑 ────────────────────────────────────────────────────

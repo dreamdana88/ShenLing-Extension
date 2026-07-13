@@ -328,14 +328,15 @@ export function collectPriorMemoriesForSummary(messageId) {
   return latestGrandMemory && allPriorMemories.length < 4 ? [latestGrandMemory, ...priorMemories] : priorMemories;
 }
 
-export async function generateSummaryMemory(prompt, { type = '自动小总结' } = {}) {
+export async function generateSummaryMemory(prompt, { type = '自动小总结', apiMode = '' } = {}) {
   const settings = getGlobalSettings();
   const api = requireWorkflowOption('getApiSettings')(settings);
+  const resolvedApiMode = ['main_api', 'secondary_api'].includes(apiMode) ? apiMode : api.mode;
   const addCommunicationLog = requireWorkflowOption('addCommunicationLog');
   const startedAt = performance.now();
   const messages = replacePromptMessageMacros(buildMemorySummaryMessages(prompt));
 
-  if (api.mode === 'main_api') {
+  if (resolvedApiMode === 'main_api') {
     const requestBody = {
       prompt: messages,
     };

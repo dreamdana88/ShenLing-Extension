@@ -7220,6 +7220,14 @@ button.slx-outline-check-item:active {
   cursor: not-allowed;
 }
 
+.slx-memoir-api-toggle {
+  flex: 0 0 auto;
+}
+
+.slx-memoir-api-toggle button {
+  min-width: 52px;
+}
+
 .slx-schedule-api-segment .slx-segment-btn {
   min-width: 72px;
 }
@@ -9145,6 +9153,49 @@ body.dark .slx-memory-wrap,
 .slx-capture-draft-card.is-selected {
   border-color: rgba(var(--slx-accent-rgb), 0.6);
   box-shadow: 0 0 0 2px rgba(var(--slx-accent-rgb), 0.08);
+}
+
+.slx-capture-draft-card.has-write-error {
+  border-color: rgba(190, 78, 84, 0.48);
+  box-shadow: inset 3px 0 0 rgba(190, 78, 84, 0.42);
+}
+
+.slx-capture-draft-error {
+  padding: 8px 10px;
+  border: 1px solid rgba(190, 78, 84, 0.24);
+  border-radius: 9px;
+  background: rgba(190, 78, 84, 0.08);
+  color: #b6575d;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.slx-capture-write-notice {
+  padding: 9px 11px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: var(--slx-bg-soft);
+  color: var(--slx-text);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.slx-capture-write-notice.is-success {
+  border-color: rgba(75, 147, 120, 0.34);
+  background: rgba(75, 147, 120, 0.09);
+  color: #4e8873;
+}
+
+.slx-capture-write-notice.is-partial {
+  border-color: rgba(198, 151, 68, 0.34);
+  background: rgba(198, 151, 68, 0.09);
+  color: #9c7435;
+}
+
+.slx-capture-write-notice.is-error {
+  border-color: rgba(190, 78, 84, 0.3);
+  background: rgba(190, 78, 84, 0.08);
+  color: #b6575d;
 }
 
 .slx-capture-draft-card.is-new {
