@@ -8752,34 +8752,6 @@ body.dark .slx-memory-wrap,
   backdrop-filter: blur(12px);
 }
 
-.slx-panel-memoir-active:not(.slx-panel-capture-wb-only) .slx-detail {
-  overflow: hidden;
-}
-
-.slx-panel-memoir-active:not(.slx-panel-capture-wb-only) .slx-memoir-root {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.slx-panel-memoir-active:not(.slx-panel-capture-wb-only) .slx-memoir-tabpanel:not([hidden]) {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: 2px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--slx-border) transparent;
-}
-
-.slx-panel-memoir-active:not(.slx-panel-capture-wb-only) .slx-memoir-tabpanel:not([hidden])::-webkit-scrollbar {
-  width: 4px;
-}
-
-.slx-panel-memoir-active:not(.slx-panel-capture-wb-only) .slx-memoir-tabpanel:not([hidden])::-webkit-scrollbar-thumb {
-  border-radius: 2px;
-  background: var(--slx-border);
-}
-
 .slx-memoir-tab {
   min-width: 0;
   min-height: 34px;
@@ -8881,7 +8853,6 @@ body.dark .slx-memory-wrap,
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  height: auto !important;
   border: 1px solid var(--slx-border-dim) !important;
   border-radius: 9px !important;
   background: var(--slx-input-bg) !important;
@@ -8894,6 +8865,7 @@ body.dark .slx-memory-wrap,
 #shenling-assistant-panel-root .slx-editor-input,
 #shenling-assistant-panel-root .slx-capture-inline-field input,
 #shenling-assistant-panel-root .slx-capture-wb-modal-search input {
+  height: auto !important;
   padding: 7px 9px !important;
 }
 

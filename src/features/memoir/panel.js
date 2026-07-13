@@ -116,7 +116,7 @@ function renderPendingSection(memoir) {
         ${pending.candidates.map(renderPendingCard).join('')}
       </div>
       <div class="slx-action-row">
-        <button class="slx-primary-btn" type="button" data-slx-memoir-commit ${panelState.status === 'committing' ? 'disabled' : ''}>
+        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-memoir-commit ${panelState.status === 'committing' ? 'disabled' : ''}>
           ${panelState.status === 'committing' ? '写入中…' : '确认写入世界书'}
         </button>
         <button class="slx-soft-btn" type="button" data-slx-memoir-discard>全部忽略</button>
@@ -805,7 +805,7 @@ function renderBatchBar(capture) {
       <button class="slx-soft-btn slx-capture-discard-btn" type="button" data-slx-capture-discard-all>放弃全部</button>
       <span class="slx-capture-batch-spacer"></span>
       <button class="slx-soft-btn slx-danger-mini-btn" type="button" data-slx-capture-delete-selected ${selectedCount ? '' : 'disabled'}>删除已选${selectedCount ? ` (${selectedCount})` : ''}</button>
-      <button class="slx-primary-btn slx-capture-write-btn" type="button" data-slx-capture-write-selected disabled title="正式写入将在阶段 G 开放">写入已选${selectedCount ? ` (${selectedCount})` : ''}</button>
+      <button class="slx-soft-btn slx-primary-btn slx-capture-write-btn" type="button" data-slx-capture-write-selected disabled title="正式写入将在阶段 G 开放">写入已选${selectedCount ? ` (${selectedCount})` : ''}</button>
       </div>
     </div>
   `;
@@ -969,7 +969,7 @@ function renderWorldbookModal() {
         </div>
         <div class="slx-capture-wb-modal-foot">
           <button type="button" class="slx-soft-btn" data-slx-capture-wb-cancel>取消</button>
-          <button type="button" class="slx-primary-btn" data-slx-capture-wb-confirm>确认选择 (${escapeHtml(selectedCount)})</button>
+          <button type="button" class="slx-soft-btn slx-primary-btn" data-slx-capture-wb-confirm>确认选择 (${escapeHtml(selectedCount)})</button>
         </div>
       </div>
     </div>
