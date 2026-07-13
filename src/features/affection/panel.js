@@ -25,6 +25,20 @@ import {
   saveChatState,
   saveGlobalSettings,
 } from '../../core/settings.js';
+import { createMessageContentFingerprint } from '../../core/message-fingerprint.js';
+import {
+  getPendingCommitHandlerIds,
+  isPendingCommitEventRegistered,
+  registerPendingCommitEvents,
+  registerPendingCommitHandler,
+  runPendingCommitHandlers,
+} from '../../core/pending-commit.js';
+import {
+  isPromptStateLineSanitizerRegistered,
+  registerPromptStateLineSanitizerEvents,
+  sanitizeChatCompletionPromptStateLines,
+  stripInlineStateLinesForSendingText,
+} from '../../core/prompt-state-lines.js';
 
 const DEFAULT_CHANGE_LINES = [
   '沈青 |0.1',
@@ -82,6 +96,16 @@ const DEFAULT_SETTINGS_MIGRATION_INPUT = JSON.stringify({
   },
 }, null, 2);
 
+const DEFAULT_STATE_LINE_INPUT = `<memory>
+[number:12]
+[plot:{{user}}尊重了沈青的边界。]
+[emotion_changed:true]
+[emotion:沈青|朋友|戒备略松|开始信任]
+[affection_changed:true]
+[affection:沈青|0.1]
+[affection_candidate:阿蛮|25.0]
+</memory>`;
+
 let affectionPanelOptions = {
   refreshPanel: null,
 };
@@ -110,6 +134,13 @@ function createDefaultTestState() {
     storageProbeStatus: 'idle',
     storageProbeResult: null,
     storageProbeError: '',
+    sharedCoreSuiteStatus: 'idle',
+    sharedCoreSuiteResults: [],
+    stateLineMode: 'ordinary',
+    stateLineInput: DEFAULT_STATE_LINE_INPUT,
+    stateLineStatus: 'idle',
+    stateLineResult: null,
+    stateLineError: '',
     expandedSections: {
       suite: false,
       change: false,
@@ -117,6 +148,8 @@ function createDefaultTestState() {
       settingsSuite: false,
       settingsMigration: false,
       storageProbe: false,
+      sharedCoreSuite: false,
+      stateLines: false,
     },
   };
 }
@@ -145,6 +178,23 @@ function sameValue(actual, expected) {
 function runModelTest(title, run) {
   try {
     const detail = run();
+    return {
+      title,
+      status: 'passed',
+      detail: String(detail || '结果符合预期。'),
+    };
+  } catch (error) {
+    return {
+      title,
+      status: 'failed',
+      detail: error?.message || String(error),
+    };
+  }
+}
+
+async function runAsyncTest(title, run) {
+  try {
+    const detail = await run();
     return {
       title,
       status: 'passed',
@@ -591,6 +641,148 @@ function runAffectionStorageProbe() {
   affectionTestState.storageProbeError = probeError?.message || String(probeError || '');
 }
 
+async function runAffectionSharedCoreSuite() {
+  const tests = [
+    ['中性 fingerprint 对同内容稳定、对不同 swipe 可区分', async () => {
+      const first = createMessageContentFingerprint('沈青看向 {{user}}。\n她略微放松。');
+      const same = createMessageContentFingerprint('  沈青看向 {{user}}。   她略微放松。  ');
+      const different = createMessageContentFingerprint('沈青移开了视线。');
+      assertTest(Boolean(first) && first === same, `同内容指纹不稳定：${first} / ${same}`);
+      assertTest(first !== different, `不同内容得到相同指纹：${first}`);
+      return `稳定指纹 ${first}，不同 swipe 指纹 ${different}。`;
+    }],
+    ['pending 协调器：无处理器', async () => {
+      const results = await runPendingCommitHandlers([], { source: 'test-area' });
+      assertTest(Array.isArray(results) && results.length === 0, `实际结果：${JSON.stringify(results)}`);
+      return '无处理器时直接返回空结果。';
+    }],
+    ['pending 协调器：单处理器成功', async () => {
+      const calls = [];
+      const results = await runPendingCommitHandlers([
+        ['emotion', async context => {
+          calls.push(context.source);
+          return 'emotion-ok';
+        }],
+      ], { source: 'single' });
+      assertTest(sameValue(calls, ['single']), `调用记录：${JSON.stringify(calls)}`);
+      assertTest(results[0]?.status === 'fulfilled' && results[0]?.value === 'emotion-ok', `实际结果：${JSON.stringify(results)}`);
+      return '单处理器收到上下文并正常返回。';
+    }],
+    ['pending 协调器：处理器抛错不阻断后续', async () => {
+      const calls = [];
+      const results = await runPendingCommitHandlers([
+        ['emotion', async () => {
+          calls.push('emotion');
+          throw new Error('模拟情感提交失败');
+        }],
+        ['affection', async () => {
+          calls.push('affection');
+          return 'affection-ok';
+        }],
+      ]);
+      assertTest(sameValue(calls, ['emotion', 'affection']), `调用顺序：${JSON.stringify(calls)}`);
+      assertTest(results[0]?.status === 'rejected' && results[1]?.status === 'fulfilled', `实际结果：${JSON.stringify(results)}`);
+      return '首个失败被隔离，后续好感处理器仍成功执行。';
+    }],
+    ['pending 协调器：双处理器依次成功', async () => {
+      const calls = [];
+      const results = await runPendingCommitHandlers([
+        ['emotion', async () => calls.push('emotion')],
+        ['affection', async () => calls.push('affection')],
+      ]);
+      assertTest(sameValue(calls, ['emotion', 'affection']), `调用顺序：${JSON.stringify(calls)}`);
+      assertTest(results.every(result => result.status === 'fulfilled'), `实际结果：${JSON.stringify(results)}`);
+      return '情感与好感按注册顺序独立完成。';
+    }],
+    ['处理器注册同 id 去重且可安全清理', async () => {
+      const id = `affection-test:${Date.now()}`;
+      const firstHandler = async () => 'first';
+      const secondHandler = async () => 'second';
+      const unregisterFirst = registerPendingCommitHandler(id, firstHandler);
+      const unregisterSecond = registerPendingCommitHandler(id, secondHandler);
+      try {
+        assertTest(getPendingCommitHandlerIds().filter(item => item === id).length === 1, '同 id 产生了重复处理器。');
+        unregisterFirst();
+        assertTest(getPendingCommitHandlerIds().includes(id), '旧注销函数误删了新处理器。');
+      } finally {
+        unregisterSecond();
+      }
+      assertTest(!getPendingCommitHandlerIds().includes(id), '模拟处理器未清理。');
+      return '同 id 覆盖注册，测试结束后 registry 已恢复。';
+    }],
+    ['共享事件注册重复调用仍保持单例', async () => {
+      const pendingFirst = registerPendingCommitEvents();
+      const pendingSecond = registerPendingCommitEvents();
+      const sanitizerFirst = registerPromptStateLineSanitizerEvents();
+      const sanitizerSecond = registerPromptStateLineSanitizerEvents();
+      assertTest(pendingFirst && pendingSecond && isPendingCommitEventRegistered(), 'MESSAGE_SENT 协调器事件未保持注册。');
+      assertTest(sanitizerFirst && sanitizerSecond && isPromptStateLineSanitizerRegistered(), 'prompt-ready 剥离事件未保持注册。');
+      return '两类共享事件重复初始化均复用既有监听。';
+    }],
+    ['普通正文剥离状态行，内部总结完整保留', async () => {
+      const ordinary = { chat: [{ role: 'user', content: DEFAULT_STATE_LINE_INPUT }] };
+      const ordinaryResult = sanitizeChatCompletionPromptStateLines(ordinary);
+      assertTest(ordinaryResult.skipped === false && ordinaryResult.changedMessages === 1, `普通正文结果：${JSON.stringify(ordinaryResult)}`);
+      assertTest(!/\[(?:emotion|affection)/i.test(ordinary.chat[0].content), `普通正文仍含状态行：${ordinary.chat[0].content}`);
+      assertTest(ordinary.chat[0].content.includes('[plot:'), '普通 memory 字段被误删。');
+
+      const multipart = {
+        chat: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: DEFAULT_STATE_LINE_INPUT },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,test' } },
+          ],
+        }],
+      };
+      sanitizeChatCompletionPromptStateLines(multipart);
+      assertTest(!/\[(?:emotion|affection)/i.test(multipart.chat[0].content[0].text), '多段文本中的状态行未剥离。');
+      assertTest(multipart.chat[0].content[1].type === 'image_url', '非文本内容段被误改。');
+
+      const internalContent = `现在是梦境小总结模块\n${DEFAULT_STATE_LINE_INPUT}`;
+      const internal = { chat: [{ role: 'system', content: internalContent }] };
+      const internalResult = sanitizeChatCompletionPromptStateLines(internal);
+      assertTest(internalResult.skipped === true && internal.chat[0].content === internalContent, '内部小总结材料被误剥离。');
+      return '普通字符串/多段文本的五类状态行已删除，内部小总结原文未变。';
+    }],
+  ];
+
+  const results = [];
+  for (const [title, run] of tests) {
+    results.push(await runAsyncTest(title, run));
+  }
+  affectionTestState.sharedCoreSuiteResults = results;
+  affectionTestState.sharedCoreSuiteStatus = results.every(item => item.status === 'passed') ? 'passed' : 'failed';
+}
+
+function runStateLineSimulator() {
+  try {
+    const original = affectionTestState.stateLineInput;
+    if (affectionTestState.stateLineMode === 'internal') {
+      const eventData = {
+        chat: [{ role: 'system', content: `现在是梦境小总结模块\n${original}` }],
+      };
+      const result = sanitizeChatCompletionPromptStateLines(eventData);
+      affectionTestState.stateLineResult = {
+        mode: 'internal',
+        result,
+        output: eventData.chat[0].content,
+      };
+    } else {
+      affectionTestState.stateLineResult = {
+        mode: 'ordinary',
+        output: stripInlineStateLinesForSendingText(original),
+      };
+    }
+    affectionTestState.stateLineStatus = 'passed';
+    affectionTestState.stateLineError = '';
+  } catch (error) {
+    affectionTestState.stateLineResult = null;
+    affectionTestState.stateLineStatus = 'failed';
+    affectionTestState.stateLineError = error?.message || String(error);
+  }
+}
+
 function renderJsonResult(result, error, emptyText) {
   if (error) return `<div class="slx-affection-test-error">${escapeHtml(error)}</div>`;
   if (!result) return `<div class="slx-affection-test-empty">${escapeHtml(emptyText)}</div>`;
@@ -630,6 +822,13 @@ export function renderAffectionPanel() {
     affectionTestState.settingsSuiteStatus,
     settingsPassedCount,
     settingsTotalCount,
+  );
+  const sharedCorePassedCount = affectionTestState.sharedCoreSuiteResults.filter(item => item.status === 'passed').length;
+  const sharedCoreTotalCount = affectionTestState.sharedCoreSuiteResults.length;
+  const sharedCoreSuiteLabel = getTestStatusLabel(
+    affectionTestState.sharedCoreSuiteStatus,
+    sharedCorePassedCount,
+    sharedCoreTotalCount,
   );
 
   return `
@@ -779,6 +978,59 @@ export function renderAffectionPanel() {
           ${renderJsonResult(affectionTestState.storageProbeResult, affectionTestState.storageProbeError, '等待用户显式运行。不会自动触发。')}
         </div>
       </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="sharedCoreSuite" ${affectionTestState.expandedSections.sharedCoreSuite ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>开发期测试区</small>
+            <b>第 3 步 · fingerprint、pending 协调器与发送前剥离</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.sharedCoreSuiteStatus)}">${escapeHtml(sharedCoreSuiteLabel)}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>直接调用共享 core。pending 检查只使用隔离的模拟处理器，不会执行真实情感或好感提交；事件检查只验证重复注册是否复用现有监听。</p>
+          <div class="slx-action-row">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-shared-core-suite>运行第 3 步全部检查</button>
+          </div>
+          ${renderSuiteResults(affectionTestState.sharedCoreSuiteResults)}
+        </div>
+      </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="stateLines" ${affectionTestState.expandedSections.stateLines ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>自定义模拟 D</small>
+            <b>正文状态行剥离预览</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.stateLineStatus)}">${escapeHtml(getTestStatusLabel(affectionTestState.stateLineStatus))}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>普通正文应移除 emotion/affection 的 gate、candidate 和数据行；内部小总结模式应完整保留输入。</p>
+          <div class="slx-affection-test-grid">
+            <label class="slx-field">
+              <span>模拟请求类型</span>
+              <select data-slx-affection-state-line-mode>
+                <option value="ordinary" ${affectionTestState.stateLineMode === 'ordinary' ? 'selected' : ''}>普通正文请求</option>
+                <option value="internal" ${affectionTestState.stateLineMode === 'internal' ? 'selected' : ''}>蜃灵内部小总结</option>
+              </select>
+            </label>
+            <label class="slx-field slx-affection-test-wide">
+              <span>待处理文本</span>
+              <textarea data-slx-affection-state-line-input spellcheck="false">${escapeHtml(affectionTestState.stateLineInput)}</textarea>
+            </label>
+          </div>
+          <div class="slx-action-row slx-affection-test-single-action">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-state-lines>预览处理结果</button>
+          </div>
+          ${renderJsonResult(affectionTestState.stateLineResult, affectionTestState.stateLineError, '运行后显示剥离结果或内部任务保留结果。')}
+        </div>
+      </details>
     </div>
   `;
 }
@@ -796,6 +1048,10 @@ function syncAffectionTestInputs(panelRoot) {
     ?? affectionTestState.ledgerRecords;
   affectionTestState.settingsMigrationInput = panelRoot.querySelector('[data-slx-affection-settings-migration-input]')?.value
     ?? affectionTestState.settingsMigrationInput;
+  affectionTestState.stateLineMode = panelRoot.querySelector('[data-slx-affection-state-line-mode]')?.value
+    || affectionTestState.stateLineMode;
+  affectionTestState.stateLineInput = panelRoot.querySelector('[data-slx-affection-state-line-input]')?.value
+    ?? affectionTestState.stateLineInput;
 }
 
 export function bindAffectionPanelEvents(panelRoot) {
@@ -841,6 +1097,18 @@ export function bindAffectionPanelEvents(panelRoot) {
   panelRoot.querySelector('[data-slx-affection-run-storage-probe]')?.addEventListener('click', () => {
     syncAffectionTestInputs(panelRoot);
     runAffectionStorageProbe();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-shared-core-suite]')?.addEventListener('click', async () => {
+    syncAffectionTestInputs(panelRoot);
+    await runAffectionSharedCoreSuite();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-state-lines]')?.addEventListener('click', () => {
+    syncAffectionTestInputs(panelRoot);
+    runStateLineSimulator();
     refreshPanel();
   });
 

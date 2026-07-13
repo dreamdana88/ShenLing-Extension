@@ -22,6 +22,8 @@ import {
 import {
   registerWorldInfoContextEvents,
 } from './src/core/context-resolver.js';
+import { registerPendingCommitEvents } from './src/core/pending-commit.js';
+import { registerPromptStateLineSanitizerEvents } from './src/core/prompt-state-lines.js';
 import {
   copyText,
   createCommunicationLog,
@@ -993,6 +995,8 @@ function openFloatingPanel() {
   scanExistingSummaryState();
   registerAutoSummaryEvents();
   registerEmotionProfileEvents();
+  registerPendingCommitEvents();
+  registerPromptStateLineSanitizerEvents();
   renderFloatingPanel();
   document.body.classList.add('slx-panel-open-lock');
   panelRoot?.classList.add('slx-panel-open');
@@ -1269,6 +1273,8 @@ function init() {
   scanExistingSummaryState();
   registerAutoSummaryEvents();
   registerEmotionProfileEvents();
+  registerPendingCommitEvents();
+  registerPromptStateLineSanitizerEvents();
   registerPlotOutlineEvents();
   registerWorldInfoContextEvents();
   registerChatBeautifyRenderer();

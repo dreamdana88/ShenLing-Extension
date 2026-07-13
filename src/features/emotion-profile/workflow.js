@@ -1,5 +1,4 @@
 import {
-  extractSummarySourceContent,
   formatTimestamp,
   isPlainObject,
 } from '../../utils/text.js';
@@ -7,20 +6,24 @@ import {
   getChatState,
   getEmotionProfileSettings,
   getGlobalSettings,
-  getSummarySettings,
   saveChatState,
 } from '../../core/settings.js';
-import {
-  getContextSafe,
-  getChatMessageById,
-} from '../../core/chat.js';
+import { getContextSafe } from '../../core/chat.js';
 import {
   getMemoryField,
   getMemoryFields,
   normalizeMemoryBlock,
   parsePipeFields,
-  stripMemoryBlock,
 } from '../../core/summary.js';
+import {
+  createMessageContentFingerprint,
+  getMessageContentFingerprint,
+} from '../../core/message-fingerprint.js';
+import { registerPendingCommitHandler } from '../../core/pending-commit.js';
+import {
+  getTavernEventsSafe,
+  registerTavernEvent,
+} from '../../core/tavern-events.js';
 import {
   buildEmotionUpdatePromptSection as buildEmotionUpdatePromptSectionText,
   buildLegacyArchiveEmotionUpdatePromptSection as buildLegacyArchiveEmotionUpdatePromptSectionText,
@@ -96,15 +99,6 @@ function getRecordField(record, fields) {
     }
   }
   return '';
-}
-
-function createEmotionFingerprint(content) {
-  let hash = 0;
-  const text = String(content || '').replace(/\s+/g, ' ').trim();
-  for (let index = 0; index < text.length; index += 1) {
-    hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
-  }
-  return `${text.length}:${Math.abs(hash)}`;
 }
 
 function parseBooleanFlag(value) {
@@ -194,14 +188,6 @@ function sanitizeMemoryForEmotionAnalysis(memory) {
     .trim();
 }
 
-export function getMessageEmotionFingerprint(messageId, settings = getGlobalSettings()) {
-  const message = getChatMessageById(Number(messageId));
-  if (!message || message.role !== 'assistant') return '';
-  const body = stripMemoryBlock(String(message.message || ''));
-  const aiContent = extractSummarySourceContent(body, getSummarySettings(settings)).trim();
-  return aiContent ? createEmotionFingerprint(aiContent) : '';
-}
-
 function normalizePendingBucket(store, messageId) {
   const key = String(Number(messageId));
   if (!isPlainObject(store.pendingByMessage[key])) {
@@ -262,7 +248,7 @@ export function updateCurrentPendingEmotionProfile({ messageId, roleName, curren
   const bucket = store.pendingByMessage?.[String(numericMessageId)];
   if (!isPlainObject(bucket) || !isPlainObject(bucket.items)) return false;
 
-  const fingerprint = getMessageEmotionFingerprint(numericMessageId, settings);
+  const fingerprint = getMessageContentFingerprint(numericMessageId, settings);
   if (!fingerprint) return false;
 
   const item = bucket.items[fingerprint];
@@ -293,7 +279,7 @@ function getCurrentPendingEmotionItems(settings = getGlobalSettings()) {
   return Object.entries(store.pendingByMessage || {})
     .map(([messageId, bucket]) => {
       if (!isPlainObject(bucket) || !isPlainObject(bucket.items)) return null;
-      const fingerprint = getMessageEmotionFingerprint(messageId, settings);
+      const fingerprint = getMessageContentFingerprint(messageId, settings);
       if (!fingerprint) return null;
       const item = bucket.items[fingerprint];
       if (!isPlainObject(item)) return null;
@@ -490,7 +476,7 @@ export async function processEmotionUpdateFromSummaryResult(result, { messageId 
       return;
     }
     const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
-    const fingerprint = getMessageEmotionFingerprint(messageId);
+    const fingerprint = getMessageContentFingerprint(messageId);
     if (!fingerprint) return;
     const updates = changed ? normalizeProfileItems(parsed) : [];
     const pending = storePendingEmotionUpdate({
@@ -520,7 +506,7 @@ export async function processEmotionUpdateFromArchiveResult(result, { messageId,
     const updates = changed ? normalizeProfileItems(parsed) : [];
     if (!updates.length) return;
 
-    const fingerprint = createEmotionFingerprint(String(result || ''));
+    const fingerprint = createMessageContentFingerprint(String(result || ''));
     const roleNames = appendEmotionProfileRecords(updates, {
       messageId: Number(messageId),
       fingerprint,
@@ -553,7 +539,7 @@ export async function commitSelectedPendingEmotionUpdates({ notify = false } = {
       continue;
     }
 
-    const fingerprint = getMessageEmotionFingerprint(messageId);
+    const fingerprint = getMessageContentFingerprint(messageId);
     if (!fingerprint) continue;
     const item = bucket.items[fingerprint];
     if (!isPlainObject(item)) continue;
@@ -579,12 +565,6 @@ export async function commitSelectedPendingEmotionUpdates({ notify = false } = {
   if (notify && committedRoleNames.length) {
     notifyEmotion('success', `情感档案已确认：${[...new Set(committedRoleNames)].join('、')}`);
   }
-}
-
-function schedulePendingEmotionCommit() {
-  void commitSelectedPendingEmotionUpdates().catch(error => {
-    console.warn('[蜃灵助手] 情感档案确认失败。', error);
-  });
 }
 
 export async function syncEmotionProfileInjection() {
@@ -636,91 +616,8 @@ async function clearEmotionProfileInjection(setExtensionPrompt) {
   );
 }
 
-function getTavernEventsSafe() {
-  const context = getContextSafe();
-  return globalThis.tavern_events || context?.tavern_events || context?.event_types || {};
-}
-
-function registerTavernEvent(eventName, handler) {
-  if (!eventName) return null;
-  const context = getContextSafe();
-  if (context?.eventSource?.on) {
-    context.eventSource.on(eventName, handler);
-    return {
-      stop: () => context.eventSource.off?.(eventName, handler),
-    };
-  }
-  const eventSource = globalThis.eventSource || globalThis.parent?.eventSource;
-  if (eventSource?.on) {
-    eventSource.on(eventName, handler);
-    return {
-      stop: () => eventSource.off?.(eventName, handler),
-    };
-  }
-  return null;
-}
-
-function stripEmotionLinesForSendingText(text) {
-  const value = String(text || '');
-  if (!/^\s*\[emotion(?:_changed)?\s*:/im.test(value)) return value;
-  return value
-    .replace(/^\s*\[emotion_changed\s*:[^\r\n]*\]\s*$/gim, '')
-    .replace(/^\s*\[emotion\s*:[^\r\n]*\]\s*$/gim, '')
-    .replace(/\n{3,}/g, '\n\n');
-}
-
-function stripEmotionLinesFromSendingContent(content) {
-  if (typeof content === 'string') {
-    return stripEmotionLinesForSendingText(content);
-  }
-  if (!Array.isArray(content)) return content;
-
-  let changed = false;
-  const nextContent = content.map(part => {
-    if (!part || typeof part !== 'object' || typeof part.text !== 'string') return part;
-    const text = stripEmotionLinesForSendingText(part.text);
-    if (text === part.text) return part;
-    changed = true;
-    return { ...part, text };
-  });
-  return changed ? nextContent : content;
-}
-
-function getSendingContentText(content) {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  return content
-    .map(part => (part && typeof part === 'object' && typeof part.text === 'string' ? part.text : ''))
-    .filter(Boolean)
-    .join('\n');
-}
-
-function isShenlingInternalMemoryTask(chat) {
-  const text = chat
-    .map(message => getSendingContentText(message?.content))
-    .filter(Boolean)
-    .join('\n\n');
-  return [
-    '现在是梦境小总结模块',
-    '现在是梦境大归档模块',
-    '蜃灵助手的总档案压缩模块',
-    '现在是旧聊天归档模块',
-  ].some(marker => text.includes(marker));
-}
-
-function stripEmotionLinesFromChatCompletionPrompt(eventData) {
-  const chat = Array.isArray(eventData?.chat) ? eventData.chat : [];
-  if (isShenlingInternalMemoryTask(chat)) return;
-  chat.forEach(message => {
-    if (!message || typeof message !== 'object') return;
-    const content = stripEmotionLinesFromSendingContent(message.content);
-    if (content !== message.content) {
-      message.content = content;
-    }
-  });
-}
-
 export function registerEmotionProfileEvents() {
+  registerPendingCommitHandler('emotion-profile', commitSelectedPendingEmotionUpdates);
   if (emotionEventsRegistered) return;
   const tavernEvents = getTavernEventsSafe();
   const syncHandler = () => {
@@ -730,17 +627,8 @@ export function registerEmotionProfileEvents() {
   };
   const refreshHandler = () => refreshPanel();
 
-  const messageSentStop = registerTavernEvent(tavernEvents.MESSAGE_SENT, schedulePendingEmotionCommit);
-  if (messageSentStop) emotionEventStops.push(messageSentStop);
-
   const beforeCombineStop = registerTavernEvent(tavernEvents.GENERATE_BEFORE_COMBINE_PROMPTS, syncHandler);
   if (beforeCombineStop) emotionEventStops.push(beforeCombineStop);
-
-  const chatCompletionPromptReadyStop = registerTavernEvent(
-    tavernEvents.CHAT_COMPLETION_PROMPT_READY,
-    stripEmotionLinesFromChatCompletionPrompt,
-  );
-  if (chatCompletionPromptReadyStop) emotionEventStops.push(chatCompletionPromptReadyStop);
 
   const chatChangedStop = registerTavernEvent(tavernEvents.CHAT_CHANGED, syncHandler);
   if (chatChangedStop) emotionEventStops.push(chatChangedStop);
