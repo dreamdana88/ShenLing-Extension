@@ -749,6 +749,7 @@ function renderFloatingPanel(options = {}) {
 
   const panelClasses = [
     'slx-panel',
+    communicationLogOpen ? 'slx-panel-log-only' : '',
     activeModule.id === 'profile' && isEmotionProfileEditorOpen() ? 'slx-panel-emotion-editor-only' : '',
     activeModule.id === 'diary' && isDiaryNotebookOpen() ? 'slx-panel-diary-book-only' : '',
     activeModule.id === 'theater' && isMiniTheaterOverlayOpen() ? 'slx-panel-theater-preview-only' : '',

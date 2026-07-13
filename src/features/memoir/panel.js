@@ -494,7 +494,7 @@ function createCaptureUiState() {
     error: null, // { message, rawResponse }
     writeNotice: null, // { kind: success | partial | error, message }
     draftErrors: new Map(),
-    confirmAction: null, // { kind, ids, message, confirmLabel }
+    confirmAction: null, // 写入世界书前的确认：{ kind: 'write-selected', ids, message, confirmLabel }
     selectedDraftIds: new Set(),
     highlightDraftIds: new Set(),
     worldbook: createWorldbookModalState(),
@@ -772,9 +772,6 @@ function renderDraftCard(draft) {
         </label>
       </div>
       ${writeError ? `<div class="slx-capture-draft-error" role="alert">${escapeHtml(writeError)}</div>` : ''}
-      ${uiState.confirmAction?.kind === 'delete-one' && uiState.confirmAction.ids.includes(draft.captureId)
-        ? renderCaptureConfirmation(uiState.confirmAction)
-        : ''}
     </div>
   `;
 }
@@ -822,9 +819,7 @@ function renderBatchBar(capture) {
   const selectedCount = drafts.filter(draft => uiState.selectedDraftIds.has(draft.captureId)).length;
   const allSelected = selectedCount === total && total > 0;
   const actionDisabled = uiState.writing ? 'disabled' : '';
-  const batchConfirmation = uiState.confirmAction && uiState.confirmAction.kind !== 'delete-one'
-    ? renderCaptureConfirmation(uiState.confirmAction)
-    : '';
+  const batchConfirmation = uiState.confirmAction ? renderCaptureConfirmation(uiState.confirmAction) : '';
   return `
     <div class="slx-capture-batch-wrap">
       ${batchConfirmation}
@@ -1221,14 +1216,12 @@ function bindDraftEvents(panelRoot, region) {
     });
 
     card.querySelector('[data-slx-capture-draft-del]')?.addEventListener('click', () => {
-      const draft = findDraft(captureId);
-      const title = draft?.title?.trim() || '未命名草稿';
-      uiState.confirmAction = {
-        kind: 'delete-one',
-        ids: [captureId],
-        message: `删除草稿「${title}」？此操作不可撤销。`,
-        confirmLabel: '删除草稿',
-      };
+      const capture = getCapture();
+      capture.drafts = removeCaptureDrafts(capture.drafts, [captureId]);
+      uiState.selectedDraftIds.delete(captureId);
+      uiState.highlightDraftIds.delete(captureId);
+      uiState.draftErrors.delete(captureId);
+      persistCapture();
       replaceCaptureRegion(panelRoot);
     });
   });
@@ -1250,20 +1243,7 @@ function bindCaptureConfirmationEvents(panelRoot, region) {
         void runCaptureWrite(panelRoot, action.ids);
         return;
       }
-      const capture = getCapture();
-      if (action.kind === 'discard-all') {
-        capture.drafts = clearCaptureDrafts();
-        uiState.selectedDraftIds.clear();
-        uiState.highlightDraftIds.clear();
-      } else {
-        capture.drafts = removeCaptureDrafts(capture.drafts, action.ids);
-        action.ids.forEach(id => {
-          uiState.selectedDraftIds.delete(id);
-          uiState.highlightDraftIds.delete(id);
-        });
-      }
       uiState.confirmAction = null;
-      persistCapture();
       replaceCaptureRegion(panelRoot);
     });
   });
@@ -1283,24 +1263,25 @@ function bindBatchEvents(panelRoot, region) {
   region.querySelector('[data-slx-capture-delete-selected]')?.addEventListener('click', () => {
     const ids = [...uiState.selectedDraftIds];
     if (!ids.length) return;
-    uiState.confirmAction = {
-      kind: 'delete-selected',
-      ids,
-      message: `删除已选的 ${ids.length} 条草稿？此操作不可撤销。`,
-      confirmLabel: `删除 ${ids.length} 条`,
-    };
+    const capture = getCapture();
+    capture.drafts = removeCaptureDrafts(capture.drafts, ids);
+    ids.forEach(id => {
+      uiState.selectedDraftIds.delete(id);
+      uiState.highlightDraftIds.delete(id);
+      uiState.draftErrors.delete(id);
+    });
+    persistCapture();
     replaceCaptureRegion(panelRoot);
   });
 
   region.querySelector('[data-slx-capture-discard-all]')?.addEventListener('click', () => {
     const capture = getCapture();
     if (!capture.drafts.length) return;
-    uiState.confirmAction = {
-      kind: 'discard-all',
-      ids: capture.drafts.map(draft => draft.captureId),
-      message: `放弃全部 ${capture.drafts.length} 条草稿？此操作不可撤销。`,
-      confirmLabel: '放弃全部',
-    };
+    capture.drafts = clearCaptureDrafts();
+    uiState.selectedDraftIds.clear();
+    uiState.highlightDraftIds.clear();
+    uiState.draftErrors.clear();
+    persistCapture();
     replaceCaptureRegion(panelRoot);
   });
 
