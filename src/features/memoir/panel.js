@@ -494,7 +494,6 @@ function createCaptureUiState() {
     error: null, // { message, rawResponse }
     writeNotice: null, // { kind: success | partial | error, message }
     draftErrors: new Map(),
-    confirmAction: null, // 写入世界书前的确认：{ kind: 'write-selected', ids, message, confirmLabel }
     selectedDraftIds: new Set(),
     highlightDraftIds: new Set(),
     worldbook: createWorldbookModalState(),
@@ -819,10 +818,8 @@ function renderBatchBar(capture) {
   const selectedCount = drafts.filter(draft => uiState.selectedDraftIds.has(draft.captureId)).length;
   const allSelected = selectedCount === total && total > 0;
   const actionDisabled = uiState.writing ? 'disabled' : '';
-  const batchConfirmation = uiState.confirmAction ? renderCaptureConfirmation(uiState.confirmAction) : '';
   return `
     <div class="slx-capture-batch-wrap">
-      ${batchConfirmation}
       <div class="slx-capture-batch-bar">
       <button class="slx-soft-btn" type="button" data-slx-capture-select-all ${actionDisabled}>${allSelected ? '取消全选' : '全选'}</button>
       <button class="slx-soft-btn slx-capture-discard-btn" type="button" data-slx-capture-discard-all ${actionDisabled}>放弃全部</button>
@@ -830,19 +827,6 @@ function renderBatchBar(capture) {
       <button class="slx-soft-btn slx-danger-mini-btn" type="button" data-slx-capture-delete-selected ${selectedCount && !uiState.writing ? '' : 'disabled'}>删除已选${selectedCount ? ` (${selectedCount})` : ''}</button>
       <button class="slx-soft-btn slx-primary-btn slx-capture-write-btn" type="button" data-slx-capture-write-selected ${selectedCount && !uiState.writing ? '' : 'disabled'}>${uiState.writing ? '写入并核对中…' : `写入已选${selectedCount ? ` (${selectedCount})` : ''}`}</button>
       </div>
-    </div>
-  `;
-}
-
-function renderCaptureConfirmation(action) {
-  const isWrite = action.kind === 'write-selected';
-  return `
-    <div class="slx-capture-confirm" role="alertdialog" aria-modal="false" aria-label="确认操作">
-      <p>${escapeHtml(action.message)}</p>
-      <span class="slx-capture-confirm-actions">
-        <button class="slx-soft-btn" type="button" data-slx-capture-confirm-cancel>取消</button>
-        <button class="slx-soft-btn ${isWrite ? 'slx-primary-btn' : 'slx-danger-mini-btn'}" type="button" data-slx-capture-confirm-accept>${escapeHtml(action.confirmLabel || '确认')}</button>
-      </span>
     </div>
   `;
 }
@@ -1045,7 +1029,6 @@ export function bindCaptureEvents(panelRoot) {
     bindFormEvents(panelRoot, region);
     bindDraftEvents(panelRoot, region);
     bindBatchEvents(panelRoot, region);
-    bindCaptureConfirmationEvents(panelRoot, region);
   }
   bindWorldbookModalEvents(panelRoot);
 }
@@ -1227,28 +1210,6 @@ function bindDraftEvents(panelRoot, region) {
   });
 }
 
-function bindCaptureConfirmationEvents(panelRoot, region) {
-  region.querySelectorAll('[data-slx-capture-confirm-cancel]').forEach(button => {
-    button.addEventListener('click', () => {
-      uiState.confirmAction = null;
-      replaceCaptureRegion(panelRoot);
-    });
-  });
-  region.querySelectorAll('[data-slx-capture-confirm-accept]').forEach(button => {
-    button.addEventListener('click', () => {
-      const action = uiState.confirmAction;
-      if (!action) return;
-      if (action.kind === 'write-selected') {
-        uiState.confirmAction = null;
-        void runCaptureWrite(panelRoot, action.ids);
-        return;
-      }
-      uiState.confirmAction = null;
-      replaceCaptureRegion(panelRoot);
-    });
-  });
-}
-
 // ── 批量操作栏事件 ────────────────────────────────────────────────────
 
 function bindBatchEvents(panelRoot, region) {
@@ -1288,13 +1249,7 @@ function bindBatchEvents(panelRoot, region) {
   region.querySelector('[data-slx-capture-write-selected]')?.addEventListener('click', () => {
     const ids = [...uiState.selectedDraftIds];
     if (!ids.length || uiState.writing) return;
-    uiState.confirmAction = {
-      kind: 'write-selected',
-      ids,
-      message: `将已选的 ${ids.length} 条设定草稿写入当前回忆录世界书，并按 captureId 独立读回核对。确认继续？`,
-      confirmLabel: `确认写入 ${ids.length} 条`,
-    };
-    replaceCaptureRegion(panelRoot);
+    void runCaptureWrite(panelRoot, ids);
   });
 }
 

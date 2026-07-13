@@ -9313,33 +9313,6 @@ body.dark .slx-memory-wrap,
   backdrop-filter: blur(12px);
 }
 
-.slx-capture-confirm {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
-  border: 1px solid rgba(190, 78, 84, 0.3);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--slx-bg-panel) 92%, rgba(190, 78, 84, 0.12));
-  box-shadow: 0 8px 24px rgba(40, 18, 18, 0.14);
-}
-
-.slx-capture-confirm p {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-  color: var(--slx-text);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.slx-capture-confirm-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
-}
-
 .slx-capture-batch-spacer {
   flex: 1 1 20px;
 }
@@ -9665,15 +9638,6 @@ body.dark .slx-memory-wrap,
 
   .slx-capture-batch-bar > button {
     flex: 1 1 calc(50% - 7px);
-  }
-
-  .slx-capture-confirm {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .slx-capture-confirm-actions {
-    justify-content: flex-end;
   }
 
   .slx-capture-wb-overlay {
