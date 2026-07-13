@@ -3245,6 +3245,154 @@ body.slx-panel-open-lock {
   overflow: hidden;
 }
 
+/* ========================================================================== 
+   Affection Development Test Area
+   ========================================================================== */
+
+.slx-affection-test-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slx-affection-test-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.slx-affection-test-status {
+  flex: 0 0 auto;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: var(--slx-muted);
+  background: var(--slx-bg-soft);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.slx-affection-test-status.is-passed {
+  border-color: rgba(76, 145, 105, 0.32);
+  color: #4c9169;
+  background: rgba(76, 145, 105, 0.1);
+}
+
+.slx-affection-test-status.is-failed,
+.slx-affection-test-error {
+  border-color: rgba(184, 80, 63, 0.32);
+  color: var(--slx-danger);
+  background: var(--slx-danger-soft);
+}
+
+.slx-affection-test-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.slx-affection-test-wide {
+  grid-column: 1 / -1;
+}
+
+#shenling-assistant-panel-root .slx-affection-test-root textarea {
+  min-height: 118px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+
+.slx-affection-test-single-action {
+  grid-template-columns: minmax(0, 220px);
+}
+
+.slx-affection-test-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.slx-affection-test-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 9px;
+  padding: 7px 8px;
+  background: var(--slx-bg-soft);
+}
+
+.slx-affection-test-list li.is-passed .slx-affection-test-mark {
+  color: #4c9169;
+}
+
+.slx-affection-test-list li.is-failed .slx-affection-test-mark {
+  color: var(--slx-danger);
+}
+
+.slx-affection-test-list li span:last-child {
+  min-width: 0;
+}
+
+.slx-affection-test-list b,
+.slx-affection-test-list small {
+  display: block;
+}
+
+.slx-affection-test-list b {
+  color: var(--slx-text);
+  font-size: 12px;
+}
+
+.slx-affection-test-list small {
+  margin-top: 2px;
+  color: var(--slx-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.slx-affection-test-output,
+.slx-affection-test-empty,
+.slx-affection-test-error {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 9px;
+  padding: 9px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.slx-affection-test-output {
+  max-height: 280px;
+  overflow: auto;
+  color: var(--slx-text);
+  background: var(--slx-input-bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.slx-affection-test-empty {
+  color: var(--slx-muted);
+  background: var(--slx-bg-soft);
+}
+
+@media (max-width: 560px) {
+  .slx-affection-test-heading {
+    flex-direction: column;
+  }
+
+  .slx-affection-test-grid,
+  .slx-affection-test-single-action {
+    grid-template-columns: 1fr;
+  }
+}
+
 .slx-panel.slx-panel-log-only > .slx-bubbles,
 .slx-panel.slx-panel-log-only > .slx-body {
   visibility: hidden;

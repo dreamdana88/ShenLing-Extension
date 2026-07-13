@@ -200,7 +200,7 @@ export function sortAffectionRecords(records = []) {
 
 export function recalculateAffectionLedger(initialValueTenths, records = []) {
   const initialValue = normalizeStoredValueTenths(initialValueTenths);
-  let rawValueTenths = initialValue;
+  let valueTenths = initialValue;
   const normalizedRecords = [];
   const diagnostics = [];
 
@@ -216,20 +216,20 @@ export function recalculateAffectionLedger(initialValueTenths, records = []) {
       return;
     }
 
-    const valueBeforeTenths = clampTenths(rawValueTenths);
-    rawValueTenths += deltaTenths;
+    const valueBeforeTenths = valueTenths;
+    valueTenths = clampTenths(valueBeforeTenths + deltaTenths);
     normalizedRecords.push({
       ...record,
       sourceMessageId: normalizeRecordMessageId(record.sourceMessageId),
       deltaTenths,
       valueBeforeTenths,
-      valueAfterTenths: clampTenths(rawValueTenths),
+      valueAfterTenths: valueTenths,
     });
   });
 
   return {
     initialValueTenths: initialValue,
-    valueTenths: clampTenths(rawValueTenths),
+    valueTenths,
     records: normalizedRecords,
     diagnostics,
   };
@@ -288,9 +288,7 @@ export function createManualAffectionAdjustmentRecord({
   const targetNumber = Number(targetValueTenths);
   if (!Number.isInteger(targetNumber)) return null;
   const targetValue = clampTenths(targetNumber);
-  const rawCurrentValue = ledger.initialValueTenths
-    + ledger.records.reduce((total, record) => total + record.deltaTenths, 0);
-  const deltaTenths = targetValue - rawCurrentValue;
+  const deltaTenths = targetValue - ledger.valueTenths;
   if (deltaTenths === 0) return null;
 
   return {

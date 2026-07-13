@@ -116,6 +116,11 @@ import {
   configurePlotOutlineWorkflow,
   registerPlotOutlineEvents,
 } from './src/features/plot-outline/workflow.js';
+import {
+  bindAffectionPanelEvents,
+  configureAffectionPanel,
+  renderAffectionPanel,
+} from './src/features/affection/panel.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -684,6 +689,10 @@ function renderModuleDetail(module, settings) {
     return renderMiniTheaterPanel();
   }
 
+  if (module.id === 'pursuit') {
+    return renderAffectionPanel();
+  }
+
   if (module.id === 'settings') {
     return `
 
@@ -937,6 +946,7 @@ function renderFloatingPanel(options = {}) {
   bindMiniTheaterPanelEvents(panelRoot);
   bindPlotOutlinePanelEvents(panelRoot);
   bindSchedulePanelEvents(panelRoot);
+  bindAffectionPanelEvents(panelRoot);
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
     button.addEventListener('click', () => {
@@ -1220,6 +1230,12 @@ function init() {
   });
   configureSchedulePanel({
     refreshPanel: renderFloatingPanel,
+  });
+  configureAffectionPanel({
+    refreshPanel: () => renderFloatingPanel({
+      moduleScrollTop: panelRoot?.querySelector('.slx-module-grid')?.scrollTop,
+      detailScrollTop: panelRoot?.querySelector('.slx-detail')?.scrollTop,
+    }),
   });
   configureScheduleWorkflow({
     addCommunicationLog,
