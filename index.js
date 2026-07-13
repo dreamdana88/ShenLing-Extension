@@ -110,7 +110,7 @@ import {
 } from './src/features/schedule/workflow.js';
 import {
   configureCaptureWorkflow,
-} from './src/features/memoir/capture-workflow.js';
+} from './src/features/memoir/workflow.js';
 import {
   configurePlotOutlineWorkflow,
   registerPlotOutlineEvents,
@@ -739,6 +739,7 @@ function renderFloatingPanel(options = {}) {
 
   const panelClasses = [
     'slx-panel',
+    activeModule.id === 'memoir' ? 'slx-panel-memoir-active' : '',
     activeModule.id === 'profile' && isEmotionProfileEditorOpen() ? 'slx-panel-emotion-editor-only' : '',
     activeModule.id === 'diary' && isDiaryNotebookOpen() ? 'slx-panel-diary-book-only' : '',
     activeModule.id === 'theater' && isMiniTheaterOverlayOpen() ? 'slx-panel-theater-preview-only' : '',
