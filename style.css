@@ -3262,6 +3262,64 @@ body.slx-panel-open-lock {
   gap: 12px;
 }
 
+.slx-affection-test-section {
+  display: block;
+}
+
+.slx-affection-test-section > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.slx-affection-test-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.slx-affection-test-title,
+.slx-affection-test-title small,
+.slx-affection-test-title b {
+  display: block;
+}
+
+.slx-affection-test-title small {
+  color: var(--slx-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.slx-affection-test-title b {
+  margin-top: 2px;
+  color: var(--slx-text);
+  font-size: 14px;
+}
+
+.slx-affection-test-summary-side {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.slx-affection-test-chevron {
+  color: var(--slx-muted);
+  font-size: 17px;
+  line-height: 1;
+  transition: transform 0.18s ease;
+}
+
+.slx-affection-test-section[open] .slx-affection-test-chevron {
+  transform: rotate(180deg);
+}
+
+.slx-affection-test-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 11px;
+}
+
 .slx-affection-test-status {
   flex: 0 0 auto;
   border: 1px solid var(--slx-border-dim);

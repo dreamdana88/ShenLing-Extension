@@ -30,6 +30,7 @@ function normalizeStoredValueTenths(value, fallback = 0) {
 }
 
 function normalizeRecordMessageId(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
   const number = Number(value);
   return Number.isInteger(number) && number >= 0 ? number : null;
 }
@@ -71,7 +72,10 @@ function normalizeChangeEntry(entry) {
 }
 
 export function normalizeAffectionRoleName(value) {
-  return String(value ?? '').trim().replace(/\s+/g, ' ');
+  return String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/([\p{Script=Han}])\s+(?=[\p{Script=Han}])/gu, '$1');
 }
 
 export function parseAffectionDeltaTenths(value) {

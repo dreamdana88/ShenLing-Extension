@@ -14,9 +14,9 @@ import {
 import { escapeHtml } from '../../utils/text.js';
 
 const DEFAULT_CHANGE_LINES = [
-  ' 沈   青 |0.1',
+  '沈青 |0.1',
   '沈 青|0.2',
-  '阿蛮|0',
+  '阿蛮|5',
   '苏暮香|-0.2',
 ].join('\n');
 
@@ -58,6 +58,11 @@ function createDefaultTestState() {
     ledgerTargetValue: '50.0',
     ledgerResult: null,
     ledgerError: '',
+    expandedSections: {
+      suite: false,
+      change: false,
+      ledger: false,
+    },
   };
 }
 
@@ -116,8 +121,9 @@ function runAffectionModelSuite() {
     }),
     runModelTest('角色名保守规范化', () => {
       const actual = normalizeAffectionRoleName('  沈\n   青  ');
-      assertTest(actual === '沈 青', `实际结果：${actual}`);
-      return '只清理首尾与连续空白，不猜测别名。';
+      assertTest(actual === '沈青', `中文名实际结果：${actual}`);
+      assertTest(normalizeAffectionRoleName('  Mary   Jane  ') === 'Mary Jane', '外文姓名的正常分隔空格被误删。');
+      return '中文字符间异常空格已清除，外文姓名分隔空格保留。';
     }),
     runModelTest('affection_changed 关闭时忽略变化行', () => {
       const actual = normalizeAffectionChanges({
@@ -131,10 +137,10 @@ function runAffectionModelSuite() {
     runModelTest('同轮同名角色只保留第一条合法变化', () => {
       const actual = normalizeAffectionChanges({
         changed: true,
-        entries: [[' 沈   青 ', '0.1'], ['沈 青', '0.2'], ['阿蛮', '-0.2']],
+        entries: [['沈青', '0.1'], ['沈 青', '0.2'], ['阿蛮', '-0.2']],
       });
       assertTest(sameValue(actual.items, [
-        { roleName: '沈 青', deltaTenths: 1 },
+        { roleName: '沈青', deltaTenths: 1 },
         { roleName: '阿蛮', deltaTenths: -2 },
       ]), `实际结果：${JSON.stringify(actual.items)}`);
       assertTest(actual.diagnostics.some(item => item.code === 'duplicate_role'), '缺少 duplicate_role 诊断。');
@@ -214,8 +220,11 @@ function runAffectionModelSuite() {
       });
       assertTest(manual?.deltaTenths === 77, `手动 delta：${manual?.deltaTenths}`);
       const ledger = recalculateAffectionLedger(422, [...records, manual]);
+      assertTest(manual?.sourceMessageId === null, `手动记录楼层号应为 null，实际为：${manual?.sourceMessageId}`);
+      assertTest(sameValue(ledger.records.map(item => item.recordId), ['auto', 'manual']), '手动记录没有排在现有楼层记录之后。');
+      assertTest(manual?.valueBeforeTenths === 423 && manual?.valueAfterTenths === 500, '手动记录的前后值不正确。');
       assertTest(ledger.valueTenths === 500, `调整后最终值：${ledger.valueTenths}`);
-      return '42.3 调整到 50.0，生成 +7.7 的手动记录。';
+      return '自动记录先算到 42.3，随后以无楼层手动记录调整到 50.0。';
     }),
   ];
 
@@ -319,68 +328,87 @@ export function renderAffectionPanel() {
 
   return `
     <div class="slx-affection-test-root">
-      <div class="slx-detail-card slx-affection-test-intro">
-        <div class="slx-affection-test-heading">
-          <div>
-            <div class="slx-detail-kicker">开发期测试区</div>
-            <div class="slx-detail-title">第 1 步 · 纯数据模型</div>
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="suite" ${affectionTestState.expandedSections.suite ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>开发期测试区</small>
+            <b>第 1 步 · 纯数据模型</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.suiteStatus)}">${escapeHtml(suiteLabel)}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>直接调用 <code>affection/model.js</code> 的真实函数。所有输入和结果只保留在当前页面内存中，不写聊天、不改设置、不请求 API。</p>
+          <div class="slx-action-row">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-suite>运行第 1 步全部检查</button>
+            <button class="slx-soft-btn" type="button" data-slx-affection-reset-tests>重置测试区</button>
           </div>
-          <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.suiteStatus)}">${escapeHtml(suiteLabel)}</span>
+          ${renderSuiteResults()}
         </div>
-        <p>直接调用 <code>affection/model.js</code> 的真实函数。所有输入和结果只保留在当前页面内存中，不写聊天、不改设置、不请求 API。</p>
-        <div class="slx-action-row">
-          <button class="slx-soft-btn" type="button" data-slx-affection-run-suite>运行第 1 步全部检查</button>
-          <button class="slx-soft-btn" type="button" data-slx-affection-reset-tests>重置测试区</button>
-        </div>
-        ${renderSuiteResults()}
-      </div>
+      </details>
 
-      <div class="slx-detail-card">
-        <div class="slx-detail-kicker">自定义模拟 A</div>
-        <div class="slx-detail-title">变化门控、角色去重与非法值</div>
-        <p>每行格式为“角色名|变化值”。可修改 gate 和样例，观察规范化结果及 diagnostics。</p>
-        <div class="slx-affection-test-grid">
-          <label class="slx-field">
-            <span>affection_changed</span>
-            <select data-slx-affection-change-gate>
-              <option value="true" ${affectionTestState.changeGate === 'true' ? 'selected' : ''}>true</option>
-              <option value="false" ${affectionTestState.changeGate === 'false' ? 'selected' : ''}>false</option>
-            </select>
-          </label>
-          <label class="slx-field slx-affection-test-wide">
-            <span>affection 行</span>
-            <textarea data-slx-affection-change-lines spellcheck="false">${escapeHtml(affectionTestState.changeLines)}</textarea>
-          </label>
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="change" ${affectionTestState.expandedSections.change ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>自定义模拟 A</small>
+            <b>变化门控、角色去重与非法值</b>
+          </span>
+          <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>每行格式为“角色名|变化值”。可修改 gate 和样例，观察规范化结果及 diagnostics。</p>
+          <div class="slx-affection-test-grid">
+            <label class="slx-field">
+              <span>affection_changed</span>
+              <select data-slx-affection-change-gate>
+                <option value="true" ${affectionTestState.changeGate === 'true' ? 'selected' : ''}>true</option>
+                <option value="false" ${affectionTestState.changeGate === 'false' ? 'selected' : ''}>false</option>
+              </select>
+            </label>
+            <label class="slx-field slx-affection-test-wide">
+              <span>affection 行</span>
+              <textarea data-slx-affection-change-lines spellcheck="false">${escapeHtml(affectionTestState.changeLines)}</textarea>
+            </label>
+          </div>
+          <div class="slx-action-row slx-affection-test-single-action">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-change>模拟规范化</button>
+          </div>
+          ${renderJsonResult(affectionTestState.changeResult, affectionTestState.changeError, '运行后显示 changed、items 与 diagnostics。')}
         </div>
-        <div class="slx-action-row slx-affection-test-single-action">
-          <button class="slx-soft-btn" type="button" data-slx-affection-run-change>模拟规范化</button>
-        </div>
-        ${renderJsonResult(affectionTestState.changeResult, affectionTestState.changeError, '运行后显示 changed、items 与 diagnostics。')}
-      </div>
+      </details>
 
-      <div class="slx-detail-card">
-        <div class="slx-detail-kicker">自定义模拟 B</div>
-        <div class="slx-detail-title">楼层排序、账本重算与手动调整</div>
-        <p>记录使用整数十分位：1 代表 +0.1。输入顺序可以打乱，结果应按 sourceMessageId 重排并逐条承接。</p>
-        <div class="slx-affection-test-grid">
-          <label class="slx-field">
-            <span>初始好感（0—100）</span>
-            <input type="number" min="0" max="100" step="0.1" value="${escapeHtml(affectionTestState.ledgerInitialValue)}" data-slx-affection-ledger-initial />
-          </label>
-          <label class="slx-field">
-            <span>手动调整目标（可留空）</span>
-            <input type="number" min="0" max="100" step="0.1" value="${escapeHtml(affectionTestState.ledgerTargetValue)}" data-slx-affection-ledger-target />
-          </label>
-          <label class="slx-field slx-affection-test-wide">
-            <span>records JSON</span>
-            <textarea data-slx-affection-ledger-records spellcheck="false">${escapeHtml(affectionTestState.ledgerRecords)}</textarea>
-          </label>
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="ledger" ${affectionTestState.expandedSections.ledger ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>自定义模拟 B</small>
+            <b>楼层排序、账本重算与手动调整</b>
+          </span>
+          <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>记录使用整数十分位：1 代表 +0.1。输入顺序可以打乱，结果应按 sourceMessageId 重排并逐条承接。</p>
+          <div class="slx-affection-test-grid">
+            <label class="slx-field">
+              <span>初始好感（0—100）</span>
+              <input type="number" min="0" max="100" step="0.1" value="${escapeHtml(affectionTestState.ledgerInitialValue)}" data-slx-affection-ledger-initial />
+            </label>
+            <label class="slx-field">
+              <span>手动调整目标（可留空）</span>
+              <input type="number" min="0" max="100" step="0.1" value="${escapeHtml(affectionTestState.ledgerTargetValue)}" data-slx-affection-ledger-target />
+            </label>
+            <label class="slx-field slx-affection-test-wide">
+              <span>records JSON</span>
+              <textarea data-slx-affection-ledger-records spellcheck="false">${escapeHtml(affectionTestState.ledgerRecords)}</textarea>
+            </label>
+          </div>
+          <div class="slx-action-row slx-affection-test-single-action">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-ledger>模拟账本</button>
+          </div>
+          ${renderJsonResult(affectionTestState.ledgerResult, affectionTestState.ledgerError, '运行后显示排序、每条记录前后值、最终值和手动调整记录。')}
         </div>
-        <div class="slx-action-row slx-affection-test-single-action">
-          <button class="slx-soft-btn" type="button" data-slx-affection-run-ledger>模拟账本</button>
-        </div>
-        ${renderJsonResult(affectionTestState.ledgerResult, affectionTestState.ledgerError, '运行后显示排序、每条记录前后值、最终值和手动调整记录。')}
-      </div>
+      </details>
     </div>
   `;
 }
@@ -399,6 +427,15 @@ function syncAffectionTestInputs(panelRoot) {
 }
 
 export function bindAffectionPanelEvents(panelRoot) {
+  panelRoot.querySelectorAll('[data-slx-affection-test-section]').forEach(section => {
+    section.addEventListener('toggle', () => {
+      const sectionId = section.dataset.slxAffectionTestSection;
+      if (sectionId && Object.hasOwn(affectionTestState.expandedSections, sectionId)) {
+        affectionTestState.expandedSections[sectionId] = section.open;
+      }
+    });
+  });
+
   panelRoot.querySelector('[data-slx-affection-run-suite]')?.addEventListener('click', () => {
     syncAffectionTestInputs(panelRoot);
     runAffectionModelSuite();
