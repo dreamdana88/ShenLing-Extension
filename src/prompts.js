@@ -549,22 +549,17 @@ export function buildAffectionUpdatePromptSection({ knownAffectionText }) {
 如暂无法判断该角色是否为长期主要角色，默认不开启。
 
 请在 [emotion:...] 之后、[progress:...] 之前追加：
-[affection_changed:true/false]
-[affection:\${角色名}|\${非零好感变化值}]
+[affection:\${角色名}|\${好感变化值}]
 [affection_first:\${未建档角色名}|\${截至当前楼层结束后的初始好感}]
 
 要求：
-- [affection_changed:true/false] 必须输出。
-- 好感变化值只能是 -0.3 -0.2 -0.1 0.1 0.2 0.3 之一；无变化时不要输出 affection 行。
-- [affection_changed:false] 时禁止输出 [affection:...]。
-- [affection_changed:true] 时至少输出一条 [affection:...]。
+- 好感变化值只能是 -0.3 -0.2 -0.1 0.1 0.2 0.3 之一；无实质性交流或互动时输出 0。
 - 若本轮也有 [emotion:...]，角色名优先与 [emotion:...] 一致；若 [emotion_changed:false] 但好感有变化，角色名必须是本轮明确互动对象。
-- [affection_first:...] 独立于 affection_changed，只针对尚未建档且符合可攻略角色入选规则的角色输出一次；已建档角色禁止输出。
+- [affection_first:...] 只针对尚未建档且符合可攻略角色入选规则的角色输出一次；已建档角色禁止输出。
 - affection_first 的初始好感必须判断截至当前楼层结束后的既有关系程度，范围为 0-100，允许一位小数，不能固定从陌生阶段开始。
-- affection_first 不代表本轮变化，不能为了输出 affection_first 而把 affection_changed 写成 true，也不能伪造 delta=0 的 affection 行。
+- affection_first 不代表本轮变化。
 - 同一角色输出 affection_first 时，禁止再输出该角色的 affection 行；首次初值不是本轮变化。
-- AI 只输出两段 affection，不计算或输出第三段当前值；第三段由插件账本统一补全。
-- 不要因为普通礼貌、重复问候、重复赞美、重复照顾、场景气氛浪漫或为了推进剧情而机械增加好感。
+- 避免因普通礼貌、简单问候、重复赞美、重复照顾、场景气氛浪漫或为了推进剧情而机械增加好感。
 - 只有本轮出现角色此前没有据此调整过态度的新信息、新行为或新体验，且角色确实知晓时，才允许变化；同一事件被回忆、总结或换一种说法再次出现时不重复计分。
 - 同一角色本轮最多输出一条 affection 行。
 - 不要输出 JSON、Markdown、解释文字或额外 XML 标签，也不要在正文中播报好感数值。

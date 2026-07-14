@@ -55,10 +55,6 @@ function shouldRenderField(memoryText, key) {
     const changed = getMemoryField(memoryText, 'emotion_changed').trim().toLowerCase();
     return changed !== 'false';
   }
-  if (key === 'affection') {
-    const changed = getMemoryField(memoryText, 'affection_changed').trim().toLowerCase();
-    return changed === 'true';
-  }
   return true;
 }
 

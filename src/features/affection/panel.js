@@ -50,7 +50,7 @@ const DEFAULT_CHANGE_LINES = [
   '沈青 |0.1',
   '沈 青|0.2',
   '阿蛮|5',
-  '苏暮香|-0.2',
+  '苏暮香|0',
 ].join('\n');
 
 const DEFAULT_LEDGER_RECORDS = JSON.stringify([
@@ -107,7 +107,6 @@ const DEFAULT_STATE_LINE_INPUT = `<memory>
 [plot:{{user}}尊重了沈青的边界。]
 [emotion_changed:true]
 [emotion:沈青|朋友|戒备略松|开始信任]
-[affection_changed:true]
 [affection:沈青|0.1|35.2]
 [affection_first:阿蛮|25.0]
 </memory>`;
@@ -115,8 +114,7 @@ const DEFAULT_STATE_LINE_INPUT = `<memory>
 const DEFAULT_FIELD_MEMORY_INPUT = `<memory>
 [number:20]
 [emotion_changed:false]
-[affection_changed:true]
-[affection:沈青|0.2]
+[affection:沈青|0]
 [affection_first:阿蛮|35.0]
 [progress:main|推进|1|5]
 </memory>`;
@@ -140,7 +138,6 @@ function createDefaultTestState() {
   return {
     suiteStatus: 'idle',
     suiteResults: [],
-    changeGate: 'true',
     changeLines: DEFAULT_CHANGE_LINES,
     changeResult: null,
     changeError: '',
@@ -246,15 +243,15 @@ async function runAsyncTest(title, run) {
 
 function runAffectionModelSuite() {
   const results = [
-    runModelTest('合法 delta 转为整数十分位', () => {
-      const actual = ['-0.3', '-0.2', '-0.1', '0.1', '0.2', '0.3']
+    runModelTest('合法 delta 与 0 转为整数十分位', () => {
+      const actual = ['-0.3', '-0.2', '-0.1', '0', '0.1', '0.2', '0.3']
         .map(parseAffectionDeltaTenths);
-      assertTest(sameValue(actual, [-3, -2, -1, 1, 2, 3]), `实际结果：${JSON.stringify(actual)}`);
-      assertTest(sameValue(AFFECTION_ALLOWED_DELTA_TENTHS, [-3, -2, -1, 1, 2, 3]), '允许值常量与解析规则不一致。');
-      return '±0.1 / ±0.2 / ±0.3 均正确转换。';
+      assertTest(sameValue(actual, [-3, -2, -1, 0, 1, 2, 3]), `实际结果：${JSON.stringify(actual)}`);
+      assertTest(sameValue(AFFECTION_ALLOWED_DELTA_TENTHS, [-3, -2, -1, 0, 1, 2, 3]), '允许值常量与解析规则不一致。');
+      return '0 与 ±0.1 / ±0.2 / ±0.3 均正确转换。';
     }),
-    runModelTest('拒绝 0、越界值与非法小数', () => {
-      const values = [0, '0', '0.11', '1', '999', 'abc', ''];
+    runModelTest('拒绝越界值与非法小数', () => {
+      const values = ['0.11', '1', '999', 'abc', ''];
       const actual = values.map(parseAffectionDeltaTenths);
       assertTest(actual.every(value => value === null), `未全部拒绝：${JSON.stringify(actual)}`);
       return '所有非法变化值均返回 null。';
@@ -265,18 +262,15 @@ function runAffectionModelSuite() {
       assertTest(normalizeAffectionRoleName('  Mary   Jane  ') === 'Mary Jane', '外文姓名的正常分隔空格被误删。');
       return '中文字符间异常空格已清除，外文姓名分隔空格保留。';
     }),
-    runModelTest('affection_changed 关闭时忽略变化行', () => {
+    runModelTest('0 表示已判断但本轮无变化', () => {
       const actual = normalizeAffectionChanges({
-        changed: false,
-        entries: [['沈青', '0.1']],
+        entries: [['沈青', '0']],
       });
-      assertTest(actual.changed === false && actual.items.length === 0, 'gate 关闭后仍产生了变化。');
-      assertTest(actual.diagnostics.some(item => item.code === 'gate_closed'), '缺少 gate_closed 诊断。');
-      return '变化被忽略且给出 gate_closed 诊断。';
+      assertTest(actual.changed === false && actual.items[0]?.deltaTenths === 0, '0 判断没有被保留为无变化结果。');
+      return '保留角色的 0 判断，同时 changed=false。';
     }),
     runModelTest('同轮同名角色只保留第一条合法变化', () => {
       const actual = normalizeAffectionChanges({
-        changed: true,
         entries: [['沈青', '0.1'], ['沈 青', '0.2'], ['阿蛮', '-0.2']],
       });
       assertTest(sameValue(actual.items, [
@@ -286,10 +280,9 @@ function runAffectionModelSuite() {
       assertTest(actual.diagnostics.some(item => item.code === 'duplicate_role'), '缺少 duplicate_role 诊断。');
       return '规范化同名已去重，并保留其他角色。';
     }),
-    runModelTest('gate 开启但无合法 delta 时归一为无变化', () => {
+    runModelTest('没有合法 delta 时归一为无变化', () => {
       const actual = normalizeAffectionChanges({
-        changed: true,
-        entries: [['沈青', '0'], ['', '0.1']],
+        entries: [['沈青', '5'], ['', '0.1']],
       });
       assertTest(actual.changed === false && actual.items.length === 0, '无合法变化时 changed 未关闭。');
       assertTest(actual.diagnostics.some(item => item.code === 'no_valid_delta'), '缺少 no_valid_delta 诊断。');
@@ -387,7 +380,6 @@ function parseChangeLines(text) {
 function runChangeSimulator() {
   try {
     const result = normalizeAffectionChanges({
-      changed: affectionTestState.changeGate,
       entries: parseChangeLines(affectionTestState.changeLines),
     });
     affectionTestState.changeResult = result;
@@ -754,7 +746,7 @@ async function runAffectionSharedCoreSuite() {
       assertTest(sanitizerFirst && sanitizerSecond && isPromptStateLineSanitizerRegistered(), 'prompt-ready 剥离事件未保持注册。');
       return '两类共享事件重复初始化均复用既有监听。';
     }],
-    ['普通正文只剥离 changed 控制行，内部总结完整保留', async () => {
+    ['普通正文剥离 emotion 与旧 affection 控制行，内部总结完整保留', async () => {
       const ordinary = { chat: [{ role: 'user', content: DEFAULT_STATE_LINE_INPUT }] };
       const ordinaryResult = sanitizeChatCompletionPromptStateLines(ordinary);
       assertTest(ordinaryResult.skipped === false && ordinaryResult.changedMessages === 1, `普通正文结果：${JSON.stringify(ordinaryResult)}`);
@@ -783,7 +775,7 @@ async function runAffectionSharedCoreSuite() {
       const internal = { chat: [{ role: 'system', content: internalContent }] };
       const internalResult = sanitizeChatCompletionPromptStateLines(internal);
       assertTest(internalResult.skipped === true && internal.chat[0].content === internalContent, '内部小总结材料被误剥离。');
-      return '普通字符串/多段文本只删除两个 changed 控制行，emotion/三段 affection/affection_first 均保留；内部小总结原文未变。';
+      return '普通字符串/多段文本删除 emotion_changed，并兼容清理旧 affection_changed；emotion/三段 affection/affection_first 均保留，内部小总结原文未变。';
     }],
   ];
 
@@ -857,9 +849,10 @@ function runAffectionFieldSuite() {
         affectionSystem: { profiles: createExistingAffectionProfiles(), pendingByMessage: {}, buildTasks: {} },
       };
       const prompt = buildAffectionUpdatePromptSection(activeSettings, chatState);
-      assertTest(prompt.includes('[affection_changed:true/false]'), '提示词缺少 affection_changed。');
+      assertTest(!prompt.includes('[affection_changed:'), '提示词仍要求 affection_changed。');
+      assertTest(prompt.includes('无实质性交流或互动时输出 0'), '提示词没有要求无变化时输出 0。');
       assertTest(prompt.includes('[affection_first:'), '提示词缺少 affection_first。');
-      assertTest(prompt.includes('AI 只输出两段 affection'), '提示词没有禁止 AI 计算第三段。');
+      assertTest(!prompt.includes('AI 只输出两段 affection'), '用户删除的两段 affection 说明句仍存在。');
       assertTest(prompt.includes('同一角色输出 affection_first 时，禁止再输出该角色的 affection 行'), '提示词没有禁止同角色同时输出 first 与 affection。');
       assertTest(prompt.includes('【沈青】已建档'), '提示词没有带入已知正式档案。');
       assertTest(buildAffectionUpdatePromptSection({ ...activeSettings, enabled: false }, chatState) === '', '插件总开关关闭后仍追加提示词。');
@@ -871,31 +864,27 @@ function runAffectionFieldSuite() {
       assertTest(buildAffectionUpdatePromptSection(affectionOff, chatState) === '', '好感开关关闭后仍追加提示词。');
       return '三项依赖全部开启时才追加攻略判断，并列出已建档角色。';
     }),
-    runModelTest('异常三段 affection 被忽略并由正式账本重算', () => {
+    runModelTest('0 判断保留角色与当前值但不形成数值变化', () => {
       const analysis = parseAffectionUpdateFromMemory(`<memory>
-[affection_changed:true]
-[affection:沈青|0.2|99.9]
+[affection:沈青|0]
 </memory>`, { profiles: createExistingAffectionProfiles() });
       assertTest(analysis.changes[0]?.valueBeforeTenths === 350, '变化前值不是 35.0。');
-      assertTest(analysis.changes[0]?.valueAfterTenths === 352, '变化后值不是 35.2。');
-      assertTest(analysis.normalizedMemory.includes('[affection:沈青|0.2|35.2]'), '未写回账本计算的三段 affection。');
-      assertTest(!analysis.normalizedMemory.includes('99.9'), '错误的 AI 第三段仍被保留。');
-      assertTest(analysis.diagnostics.some(item => item.code === 'ignored_ai_value_after'), '缺少忽略 AI 第三段诊断。');
-      return '异常输入中的 99.9 被丢弃；正常两段输入仍由代码按 35.0 + 0.2 补全为 35.2。';
+      assertTest(analysis.changes[0]?.valueAfterTenths === 350, '0 判断改变了当前好感。');
+      assertTest(analysis.changed === false, '0 判断被标记为实际变化。');
+      assertTest(analysis.normalizedMemory.includes('[affection:沈青|0|35.0]'), '没有写回 0 与当前好感。');
+      return '本轮保留“沈青 0 / 当前 35.0”，但 changed=false，后续不应生成正式增减记录。';
     }),
-    runModelTest('affection_first 独立于 gate 且可单独形成首次数据', () => {
+    runModelTest('affection_first 可单独形成首次数据', () => {
       const analysis = parseAffectionUpdateFromMemory(`<memory>
-[affection_changed:false]
 [affection_first:苏暮香|85.0]
 </memory>`, { profiles: createExistingAffectionProfiles() });
-      assertTest(analysis.changed === false && analysis.changes.length === 0, 'gate=false 时仍产生变化。');
+      assertTest(analysis.changed === false && analysis.changes.length === 0, 'first 单独出现时产生了变化。');
       assertTest(analysis.firsts[0]?.roleName === '苏暮香' && analysis.firsts[0]?.initialValueTenths === 850, '首次好感未独立解析。');
       assertTest(analysis.normalizedMemory.includes('[affection_first:苏暮香|85.0]'), '首次好感未保留。');
       return '无本轮变化时仍可独立记录未建档角色的 85.0 初值。';
     }),
     runModelTest('first/affection 冲突按是否已建档分流', () => {
       const unprofiled = parseAffectionUpdateFromMemory(`<memory>
-[affection_changed:true]
 [affection:阿蛮|0.2]
 [affection_first:阿蛮|35.0]
 </memory>`, { profiles: createExistingAffectionProfiles() });
@@ -906,7 +895,6 @@ function runAffectionFieldSuite() {
       assertTest(unprofiled.diagnostics.some(item => item.code === 'first_suppresses_same_turn_change'), '缺少 first 优先诊断。');
 
       const profiled = parseAffectionUpdateFromMemory(`<memory>
-[affection_changed:true]
 [affection:沈青|0.2]
 [affection_first:沈青|35.0]
 </memory>`, { profiles: createExistingAffectionProfiles() });
@@ -919,8 +907,7 @@ function runAffectionFieldSuite() {
     }),
     runModelTest('非法值、重复角色与已有档案 first 均留下诊断', () => {
       const analysis = parseAffectionUpdateFromMemory(`<memory>
-[affection_changed:true]
-[affection:沈青|0]
+[affection:沈青|5]
 [affection:沈青|0.2]
 [affection_first:沈青|40.0]
 [affection_first:阿蛮|999]
@@ -938,7 +925,6 @@ function runAffectionFieldSuite() {
     }),
     runModelTest('未建档角色缺少 affection_first 时拒绝变化', () => {
       const analysis = parseAffectionUpdateFromMemory(`<memory>
-[affection_changed:true]
 [affection:陌生路人|0.1]
 </memory>`, { profiles: createExistingAffectionProfiles() });
       assertTest(analysis.changed === false && analysis.changes.length === 0, '无法确定当前值的变化仍被接受。');
@@ -951,8 +937,8 @@ function runAffectionFieldSuite() {
       const chatState = {
         affectionSystem: { profiles, pendingByMessage: {}, buildTasks: {} },
       };
-      const first = parseAffectionUpdateFromMemory('<memory>\n[affection_changed:true]\n[affection:沈青|0.1]\n</memory>', { profiles });
-      const second = parseAffectionUpdateFromMemory('<memory>\n[affection_changed:true]\n[affection:沈青|-0.2]\n</memory>', { profiles });
+      const first = parseAffectionUpdateFromMemory('<memory>\n[affection:沈青|0.1]\n</memory>', { profiles });
+      const second = parseAffectionUpdateFromMemory('<memory>\n[affection:沈青|-0.2]\n</memory>', { profiles });
       storePendingAffectionUpdate({ messageId: 20, fingerprint: 'swipe-a', analysis: first }, { chatState, persist: false });
       storePendingAffectionUpdate({ messageId: 20, fingerprint: 'swipe-b', analysis: second }, { chatState, persist: false });
       const items = chatState.affectionSystem.pendingByMessage['20'].items;
@@ -960,10 +946,9 @@ function runAffectionFieldSuite() {
       assertTest(items['swipe-a'].changes[0].deltaTenths === 1 && items['swipe-b'].changes[0].deltaTenths === -2, '两个 swipe 的变化互相覆盖。');
       return 'swipe-a 与 swipe-b 在同一楼层下独立保存。';
     }),
-    runModelTest('正式写回只剥离两个 changed 控制行', () => {
+    runModelTest('正式写回剥离 emotion_changed 并保留好感数据', () => {
       const analysis = parseAffectionUpdateFromMemory(`<memory>
 [emotion_changed:false]
-[affection_changed:true]
 [affection:沈青|0.2]
 [affection_first:阿蛮|35.0]
 </memory>`, { profiles: createExistingAffectionProfiles() });
@@ -971,7 +956,7 @@ function runAffectionFieldSuite() {
       assertTest(!/\[(?:emotion_changed|affection_changed)\s*:/i.test(written), 'changed 控制行仍存在。');
       assertTest(written.includes('[affection:沈青|0.2|35.2]'), '三段 affection 被误删。');
       assertTest(written.includes('[affection_first:阿蛮|35.0]'), 'affection_first 被误删。');
-      return '楼层只删除两个 changed，三段历史与首次初值完整保留。';
+      return '新协议不含 affection_changed；emotion_changed 被剥离，三段历史与首次初值完整保留。';
     }),
   ];
 
@@ -989,7 +974,7 @@ function runAffectionFieldSimulator() {
       affectionTestState.fieldMemoryInput,
       { profiles },
     );
-    if (!analysis) throw new Error('输入中没有 affection_changed、affection 或 affection_first。');
+    if (!analysis) throw new Error('输入中没有 affection 或 affection_first。');
 
     const chatState = {
       affectionSystem: {
@@ -1008,7 +993,6 @@ function runAffectionFieldSimulator() {
       selectedSwipe: affectionTestState.fieldSwipe,
       fingerprint,
       parsed: {
-        gatePresent: analysis.gatePresent,
         changed: analysis.changed,
         changes: analysis.changes,
         firsts: analysis.firsts,
@@ -1111,20 +1095,13 @@ export function renderAffectionPanel() {
         <summary class="slx-affection-test-heading">
           <span class="slx-affection-test-title">
             <small>自定义模拟 A</small>
-            <b>变化门控、角色去重与非法值</b>
+            <b>0 变化、角色去重与非法值</b>
           </span>
           <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
         </summary>
         <div class="slx-affection-test-body">
-          <p>每行格式为“角色名|变化值”。可修改 gate 和样例，观察规范化结果及 diagnostics。</p>
+          <p>每行格式为“角色名|变化值”。0 表示已完成判断但本轮无变化；可修改样例观察规范化结果及 diagnostics。</p>
           <div class="slx-affection-test-grid">
-            <label class="slx-field">
-              <span>affection_changed</span>
-              <select data-slx-affection-change-gate>
-                <option value="true" ${affectionTestState.changeGate === 'true' ? 'selected' : ''}>true</option>
-                <option value="false" ${affectionTestState.changeGate === 'false' ? 'selected' : ''}>false</option>
-              </select>
-            </label>
             <label class="slx-field slx-affection-test-wide">
               <span>affection 行</span>
               <textarea data-slx-affection-change-lines spellcheck="false">${escapeHtml(affectionTestState.changeLines)}</textarea>
@@ -1264,7 +1241,7 @@ export function renderAffectionPanel() {
           </span>
         </summary>
         <div class="slx-affection-test-body">
-          <p>普通正文只移除 emotion_changed / affection_changed，保留 emotion、三段 affection 与 affection_first；内部小总结模式完整保留输入。</p>
+          <p>普通正文移除 emotion_changed，并兼容清理旧楼层残留的 affection_changed；emotion、三段 affection 与 affection_first 保留，内部小总结模式完整保留输入。</p>
           <div class="slx-affection-test-grid">
             <label class="slx-field">
               <span>模拟请求类型</span>
@@ -1347,8 +1324,6 @@ export function renderAffectionPanel() {
 }
 
 function syncAffectionTestInputs(panelRoot) {
-  affectionTestState.changeGate = panelRoot.querySelector('[data-slx-affection-change-gate]')?.value
-    || affectionTestState.changeGate;
   affectionTestState.changeLines = panelRoot.querySelector('[data-slx-affection-change-lines]')?.value
     ?? affectionTestState.changeLines;
   affectionTestState.ledgerInitialValue = panelRoot.querySelector('[data-slx-affection-ledger-initial]')?.value

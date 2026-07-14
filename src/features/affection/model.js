@@ -1,6 +1,6 @@
 const MIN_VALUE_TENTHS = 0;
 const MAX_VALUE_TENTHS = 1000;
-const ALLOWED_DELTA_TENTHS = new Set([-3, -2, -1, 1, 2, 3]);
+const ALLOWED_DELTA_TENTHS = new Set([-3, -2, -1, 0, 1, 2, 3]);
 
 export const AFFECTION_VALUE_MIN_TENTHS = MIN_VALUE_TENTHS;
 export const AFFECTION_VALUE_MAX_TENTHS = MAX_VALUE_TENTHS;
@@ -15,12 +15,6 @@ export const AFFECTION_STAGE_RANGES = Object.freeze([
 
 function clampTenths(value) {
   return Math.min(MAX_VALUE_TENTHS, Math.max(MIN_VALUE_TENTHS, value));
-}
-
-function parseBooleanFlag(value) {
-  if (value === true) return true;
-  const normalized = String(value ?? '').trim().toLowerCase();
-  return normalized === 'true' || normalized === '1' || normalized === 'yes';
 }
 
 function normalizeStoredValueTenths(value, fallback = 0) {
@@ -126,24 +120,13 @@ export function formatAffectionValueTenths(valueTenths) {
 export function formatAffectionDeltaTenths(deltaTenths) {
   const value = Number(deltaTenths);
   return Number.isInteger(value) && ALLOWED_DELTA_TENTHS.has(value)
-    ? (value / 10).toFixed(1)
+    ? value === 0 ? '0' : (value / 10).toFixed(1)
     : '';
 }
 
-export function normalizeAffectionChanges({ changed, entries = [] } = {}) {
-  const gateOpen = parseBooleanFlag(changed);
+export function normalizeAffectionChanges({ entries = [] } = {}) {
   const sourceEntries = Array.isArray(entries) ? entries : [];
   const diagnostics = [];
-
-  if (!gateOpen) {
-    if (sourceEntries.length) {
-      diagnostics.push({
-        code: 'gate_closed',
-        message: 'affection_changed 不是 true，已忽略本轮 affection 行。',
-      });
-    }
-    return { changed: false, items: [], diagnostics };
-  }
 
   const seenRoleNames = new Set();
   const items = [];
@@ -189,12 +172,12 @@ export function normalizeAffectionChanges({ changed, entries = [] } = {}) {
   if (!items.length) {
     diagnostics.push({
       code: 'no_valid_delta',
-      message: 'affection_changed 为 true，但没有合法的非零 affection 变化，已规范化为无变化。',
+      message: '本轮没有合法的 affection 判断结果。',
     });
   }
 
   return {
-    changed: items.length > 0,
+    changed: items.some(item => item.deltaTenths !== 0),
     items,
     diagnostics,
   };

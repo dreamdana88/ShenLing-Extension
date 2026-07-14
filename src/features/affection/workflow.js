@@ -137,23 +137,11 @@ export function buildAffectionUpdatePromptSection(
 
 export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {}) {
   const memory = normalizeMemoryBlock(memoryText);
-  const changedValues = getMemoryFields(memory, 'affection_changed');
   const rawAffectionValues = getMemoryFields(memory, 'affection');
   const rawFirstValues = getMemoryFields(memory, 'affection_first');
-  if (!changedValues.length && !rawAffectionValues.length && !rawFirstValues.length) return null;
+  if (!rawAffectionValues.length && !rawFirstValues.length) return null;
 
   const diagnostics = [];
-  if (!changedValues.length) {
-    diagnostics.push({
-      code: 'missing_changed_gate',
-      message: '小总结缺少 affection_changed，affection 变化按 gate 关闭处理；affection_first 仍独立解析。',
-    });
-  } else if (changedValues.length > 1) {
-    diagnostics.push({
-      code: 'duplicate_changed_gate',
-      message: '同一轮重复输出 affection_changed，已只采用第一条。',
-    });
-  }
 
   const rawAffectionEntries = rawAffectionValues.map((value, index) => {
     const entry = parseRawPipeEntry(value, 'delta');
@@ -182,7 +170,6 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
   });
 
   const normalizedChanges = normalizeAffectionChanges({
-    changed: changedValues[0] || '',
     entries: rawAffectionEntries,
   });
   const normalizedFirsts = normalizeAffectionFirstEntries({
@@ -223,7 +210,7 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
     }];
   });
 
-  const changed = changes.length > 0;
+  const changed = changes.some(item => item.deltaTenths !== 0);
   if (
     normalizedChanges.changed
     && !changed
@@ -238,13 +225,11 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
   const normalizedMemory = rewriteAffectionMemoryFields(memory, { changes, firsts });
 
   return {
-    gatePresent: changedValues.length > 0,
     changed,
     changes,
     firsts,
     diagnostics,
     raw: {
-      affectionChanged: changedValues[0] || '',
       affection: rawAffectionValues,
       affectionFirst: rawFirstValues,
     },
@@ -272,7 +257,6 @@ export function storePendingAffectionUpdate(
   const pending = {
     messageId: numericMessageId,
     fingerprint: cleanFingerprint,
-    gatePresent: analysis.gatePresent === true,
     changed: analysis.changed === true,
     changes: Array.isArray(analysis.changes) ? analysis.changes.map(item => ({ ...item })) : [],
     firsts: Array.isArray(analysis.firsts) ? analysis.firsts.map(item => ({ ...item })) : [],
@@ -315,7 +299,7 @@ export function processAffectionUpdateFromSummaryResult(
   if (!isAffectionAnalysisActive(settings)) return null;
   const prepared = analysis || prepareAffectionUpdateFromSummaryResult(result, { settings, chatState });
   if (!prepared) {
-    console.warn('[蜃灵助手] 本轮小总结未返回 affection_changed / affection_first，已跳过好感 pending。');
+    console.warn('[蜃灵助手] 本轮小总结未返回 affection / affection_first，已跳过好感 pending。');
     return null;
   }
   const fingerprint = getMessageContentFingerprint(messageId, settings);
