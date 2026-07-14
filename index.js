@@ -123,6 +123,7 @@ import {
   configureAffectionPanel,
   renderAffectionPanel,
 } from './src/features/affection/panel.js';
+import { configureAffectionWorkflow } from './src/features/affection/workflow.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -1240,6 +1241,12 @@ function init() {
       moduleScrollTop: panelRoot?.querySelector('.slx-module-grid')?.scrollTop,
       detailScrollTop: panelRoot?.querySelector('.slx-detail')?.scrollTop,
     }),
+  });
+  configureAffectionWorkflow({
+    addCommunicationLog,
+    getActiveApiProfile,
+    getGenerateRawFunction,
+    refreshPanel: renderFloatingPanel,
   });
   configureScheduleWorkflow({
     addCommunicationLog,

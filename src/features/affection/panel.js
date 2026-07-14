@@ -43,6 +43,8 @@ import { stripMemoryChangedControlLines } from '../../core/summary.js';
 import {
   buildAffectionUpdatePromptSection,
   parseAffectionUpdateFromMemory,
+  runAffectionProfileBuildApiPreview,
+  startAffectionProfileBuildsForPending,
   storePendingAffectionUpdate,
 } from './workflow.js';
 
@@ -171,6 +173,17 @@ function createDefaultTestState() {
     fieldStatus: 'idle',
     fieldResult: null,
     fieldError: '',
+    buildSuiteStatus: 'idle',
+    buildSuiteResults: [],
+    buildRoleName: '阿蛮',
+    buildInitialValue: '35.0',
+    buildMode: 'generic',
+    buildStatus: 'idle',
+    buildResult: null,
+    buildError: '',
+    buildRealStatus: 'idle',
+    buildRealResult: null,
+    buildRealError: '',
     expandedSections: {
       suite: false,
       change: false,
@@ -182,6 +195,8 @@ function createDefaultTestState() {
       stateLines: false,
       fieldSuite: false,
       fieldSimulator: false,
+      buildSuite: false,
+      buildSimulator: false,
     },
   };
 }
@@ -1013,6 +1028,224 @@ function runAffectionFieldSimulator() {
   }
 }
 
+function createBuildTestSettings(buildMode) {
+  return {
+    enabled: true,
+    modules: {
+      summary: { enabled: true },
+      affection: {
+        enabled: true,
+        mode: 'normal',
+        defaultBuildMode: buildMode,
+        profileBuildApiMode: 'secondary_api',
+      },
+    },
+  };
+}
+
+function createMockCustomStages() {
+  return {
+    roleName: '模型可能返回的错误名称',
+    stages: Array.from({ length: 5 }, (_, index) => ({
+      range: '模型范围不可信',
+      name: `角色阶段${index + 1}`,
+      meaning: `第${index + 1}阶段的关系含义`,
+      behaviors: [`行为${index + 1}-A`, `行为${index + 1}-B`, `行为${index + 1}-C`],
+      trend: `第${index + 1}阶段的递进趋势`,
+      boundary: `第${index + 1}阶段的关系边界`,
+    })),
+  };
+}
+
+function createBuildTestPending(initialValueTenths = 350) {
+  return {
+    messageId: 20,
+    fingerprint: 'swipe-a',
+    firsts: [{ roleName: '阿蛮', initialValueTenths }],
+    diagnostics: [],
+  };
+}
+
+function createBuildTestChatState() {
+  return {
+    affectionSystem: { profiles: {}, pendingByMessage: {}, buildTasks: {} },
+  };
+}
+
+function createBuildTestOptions(chatState, settings, overrides = {}) {
+  return {
+    settings,
+    chatState,
+    chatId: 'chat-a',
+    persist: false,
+    getCurrentSnapshot: () => ({ chatId: 'chat-a', fingerprint: 'swipe-a', active: true }),
+    getCurrentChatState: () => chatState,
+    resolveContextMaterial: async () => '模拟角色与关系材料',
+    ...overrides,
+  };
+}
+
+async function runAffectionBuildSuite() {
+  const tests = [];
+  tests.push(await runAsyncTest('generic 使用 first 初值且不请求 API', async () => {
+    const chatState = createBuildTestChatState();
+    let requestCount = 0;
+    const tasks = await startAffectionProfileBuildsForPending(
+      createBuildTestPending(),
+      createBuildTestOptions(chatState, createBuildTestSettings('generic'), {
+        requestCustomProfile: async () => {
+          requestCount += 1;
+          return createMockCustomStages();
+        },
+      }),
+    );
+    assertTest(requestCount === 0, `generic 意外请求 API ${requestCount} 次。`);
+    assertTest(tasks[0]?.buildStatus === 'ready', 'generic 未生成 ready 任务。');
+    assertTest(tasks[0]?.profileDraft?.initialValueTenths === 350, 'generic 没有采用 first=35.0。');
+    assertTest(tasks[0]?.stages?.length === 5, 'generic 阶段表不是五项。');
+    return '零 API，初值保持 35.0，并生成固定五阶段 ready 草稿。';
+  }));
+  tests.push(await runAsyncTest('custom 同任务去重且强制采用触发角色名与固定范围', async () => {
+    const chatState = createBuildTestChatState();
+    let requestCount = 0;
+    let releaseRequest = null;
+    const waitForRelease = new Promise(resolve => { releaseRequest = resolve; });
+    const options = createBuildTestOptions(chatState, createBuildTestSettings('custom'), {
+      requestCustomProfile: async () => {
+        requestCount += 1;
+        await waitForRelease;
+        return createMockCustomStages();
+      },
+    });
+    const first = startAffectionProfileBuildsForPending(createBuildTestPending(), options);
+    const second = startAffectionProfileBuildsForPending(createBuildTestPending(), options);
+    await Promise.resolve();
+    await Promise.resolve();
+    assertTest(requestCount === 1, `相同任务请求了 ${requestCount} 次。`);
+    releaseRequest();
+    const [firstTasks, secondTasks] = await Promise.all([first, second]);
+    const task = firstTasks[0];
+    assertTest(task?.buildStatus === 'ready', 'custom 未生成 ready 任务。');
+    assertTest(secondTasks[0]?.buildRequestId === task?.buildRequestId, '重复调用没有复用同一任务。');
+    assertTest(task?.profileDraft?.roleName === '阿蛮', '模型返回名称覆盖了触发角色名。');
+    assertTest(task?.stages?.[0]?.stageId === 'S1' && task?.stages?.[4]?.maxTenths === 1000, '没有强制写入固定阶段范围。');
+    return '相同绑定键只请求一次；模型名称/range 均不可信，由代码固定。';
+  }));
+  tests.push(await runAsyncTest('不完整 custom 返回进入 error 且没有半成品', async () => {
+    const chatState = createBuildTestChatState();
+    const tasks = await startAffectionProfileBuildsForPending(
+      createBuildTestPending(),
+      createBuildTestOptions(chatState, createBuildTestSettings('custom'), {
+        requestCustomProfile: async () => ({ stages: [{ name: '只有一项' }] }),
+      }),
+    );
+    assertTest(tasks[0]?.buildStatus === 'error', '坏返回没有进入 error。');
+    assertTest(!tasks[0]?.profileDraft && tasks[0]?.stages?.length === 0, '坏返回留下了半成品。');
+    return '阶段不足五项时保存具体错误，不生成 profileDraft。';
+  }));
+  tests.push(await runAsyncTest('切换 swipe 后异步结果标记 stale', async () => {
+    const chatState = createBuildTestChatState();
+    let selectedFingerprint = 'swipe-a';
+    let releaseRequest = null;
+    const waitForRelease = new Promise(resolve => { releaseRequest = resolve; });
+    const run = startAffectionProfileBuildsForPending(
+      createBuildTestPending(),
+      createBuildTestOptions(chatState, createBuildTestSettings('custom'), {
+        getCurrentSnapshot: () => ({ chatId: 'chat-a', fingerprint: selectedFingerprint, active: true }),
+        requestCustomProfile: async () => {
+          await waitForRelease;
+          return createMockCustomStages();
+        },
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    selectedFingerprint = 'swipe-b';
+    releaseRequest();
+    const tasks = await run;
+    assertTest(tasks[0]?.buildStatus === 'stale' && !tasks[0]?.profileDraft, '失效结果仍生成 ready 草稿。');
+    return 'API 返回前切换 swipe，旧任务只标记 stale，不可供正式提交。';
+  }));
+  tests.push(await runAsyncTest('非法或缺失 first 初值进入 needs_initial_value', async () => {
+    const chatState = createBuildTestChatState();
+    const pending = {
+      messageId: 20,
+      fingerprint: 'swipe-a',
+      firsts: [],
+      diagnostics: [{ code: 'first_invalid_initial_value', roleName: '苏暮香' }],
+    };
+    const tasks = await startAffectionProfileBuildsForPending(
+      pending,
+      createBuildTestOptions(chatState, createBuildTestSettings('generic')),
+    );
+    assertTest(tasks[0]?.buildStatus === 'needs_initial_value', '非法初值没有进入待处理状态。');
+    assertTest(tasks[0]?.initialValueTenths === null && !tasks[0]?.profileDraft, '非法初值被静默替换。');
+    return '不套用 10.0 或其他默认值，明确等待合法初值。';
+  }));
+
+  affectionTestState.buildSuiteResults = tests;
+  affectionTestState.buildSuiteStatus = tests.every(item => item.status === 'passed') ? 'passed' : 'failed';
+}
+
+async function runAffectionBuildSimulator() {
+  try {
+    const roleName = String(affectionTestState.buildRoleName || '').trim();
+    const initialValueTenths = parseAffectionValueTenths(affectionTestState.buildInitialValue);
+    if (!roleName) throw new Error('请输入模拟角色名。');
+    if (initialValueTenths === null) throw new Error('初始好感必须是 0—100、最多一位小数。');
+    const chatState = createBuildTestChatState();
+    let requestCount = 0;
+    const tasks = await startAffectionProfileBuildsForPending(
+      {
+        messageId: 20,
+        fingerprint: 'simulated:build',
+        firsts: [{ roleName, initialValueTenths }],
+        diagnostics: [],
+      },
+      {
+        ...createBuildTestOptions(chatState, createBuildTestSettings(affectionTestState.buildMode)),
+        getCurrentSnapshot: () => ({ chatId: 'chat-a', fingerprint: 'simulated:build', active: true }),
+        requestCustomProfile: async () => {
+          requestCount += 1;
+          return createMockCustomStages();
+        },
+      },
+    );
+    affectionTestState.buildResult = {
+      mode: affectionTestState.buildMode,
+      mockApiRequestCount: requestCount,
+      task: tasks[0] || null,
+      buildTasksSnapshot: chatState.affectionSystem.buildTasks,
+    };
+    affectionTestState.buildStatus = 'passed';
+    affectionTestState.buildError = '';
+  } catch (error) {
+    affectionTestState.buildResult = null;
+    affectionTestState.buildStatus = 'failed';
+    affectionTestState.buildError = error?.message || String(error);
+  }
+}
+
+async function runAffectionBuildRealApiPreview() {
+  affectionTestState.buildRealStatus = 'running';
+  affectionTestState.buildRealResult = null;
+  affectionTestState.buildRealError = '';
+  refreshPanel();
+  try {
+    const initialValueTenths = parseAffectionValueTenths(affectionTestState.buildInitialValue);
+    if (initialValueTenths === null) throw new Error('初始好感必须是 0—100、最多一位小数。');
+    affectionTestState.buildRealResult = await runAffectionProfileBuildApiPreview({
+      roleName: affectionTestState.buildRoleName,
+      initialValueTenths,
+    });
+    affectionTestState.buildRealStatus = 'passed';
+  } catch (error) {
+    affectionTestState.buildRealStatus = 'failed';
+    affectionTestState.buildRealError = error?.message || String(error);
+  }
+  refreshPanel();
+}
+
 function renderJsonResult(result, error, emptyText) {
   if (error) return `<div class="slx-affection-test-error">${escapeHtml(error)}</div>`;
   if (!result) return `<div class="slx-affection-test-empty">${escapeHtml(emptyText)}</div>`;
@@ -1039,6 +1272,7 @@ function renderSuiteResults(results = []) {
 function getTestStatusLabel(status, passedCount = 0, totalCount = 0) {
   if (status === 'passed') return totalCount ? `全部通过（${passedCount}/${totalCount}）` : '通过';
   if (status === 'failed') return totalCount ? `存在失败（${passedCount}/${totalCount}）` : '失败';
+  if (status === 'running') return '运行中';
   return '等待测试';
 }
 
@@ -1066,6 +1300,13 @@ export function renderAffectionPanel() {
     affectionTestState.fieldSuiteStatus,
     fieldPassedCount,
     fieldTotalCount,
+  );
+  const buildPassedCount = affectionTestState.buildSuiteResults.filter(item => item.status === 'passed').length;
+  const buildTotalCount = affectionTestState.buildSuiteResults.length;
+  const buildSuiteLabel = getTestStatusLabel(
+    affectionTestState.buildSuiteStatus,
+    buildPassedCount,
+    buildTotalCount,
   );
 
   return `
@@ -1319,6 +1560,66 @@ export function renderAffectionPanel() {
           ${renderJsonResult(affectionTestState.fieldResult, affectionTestState.fieldError, '运行后显示原始解析、三段写回结果和多 swipe pending 快照。')}
         </div>
       </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="buildSuite" ${affectionTestState.expandedSections.buildSuite ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>开发期测试区</small>
+            <b>第 5 步 · 首次角色预建档</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.buildSuiteStatus)}">${escapeHtml(buildSuiteLabel)}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>使用页面内存与 mock API 调用真实预建档函数，覆盖 generic、custom 去重、坏返回、切 swipe 失效和缺失初值；不写聊天、不改 metadata、不请求真实 API。</p>
+          <div class="slx-action-row">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-build-suite>运行第 5 步全部检查</button>
+          </div>
+          ${renderSuiteResults(affectionTestState.buildSuiteResults)}
+        </div>
+      </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="buildSimulator" ${affectionTestState.expandedSections.buildSimulator ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>自定义模拟 F</small>
+            <b>generic / custom 建档草稿与显式 API 预览</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.buildStatus)}">${escapeHtml(getTestStatusLabel(affectionTestState.buildStatus))}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>“模拟预建档”只使用 mock API 和页面内存；“显式调用真实 API”才会使用当前设置中的建档 API，并把完整请求、响应和解析结果写入通讯日志，但不会写入正式 profiles。</p>
+          <div class="slx-affection-test-grid">
+            <label class="slx-field">
+              <span>角色名</span>
+              <input type="text" data-slx-affection-build-role value="${escapeHtml(affectionTestState.buildRoleName)}">
+            </label>
+            <label class="slx-field">
+              <span>affection_first 初值</span>
+              <input type="number" min="0" max="100" step="0.1" data-slx-affection-build-initial value="${escapeHtml(affectionTestState.buildInitialValue)}">
+            </label>
+            <label class="slx-field">
+              <span>模拟建档方式</span>
+              <select data-slx-affection-build-mode>
+                <option value="generic" ${affectionTestState.buildMode === 'generic' ? 'selected' : ''}>generic · 通用阶段表</option>
+                <option value="custom" ${affectionTestState.buildMode === 'custom' ? 'selected' : ''}>custom · mock 专属阶段表</option>
+              </select>
+            </label>
+          </div>
+          <div class="slx-action-row">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-build-simulator>模拟预建档</button>
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-build-real ${affectionTestState.buildRealStatus === 'running' ? 'disabled' : ''}>${affectionTestState.buildRealStatus === 'running' ? '真实 API 请求中…' : '显式调用真实 API'}</button>
+          </div>
+          ${renderJsonResult(affectionTestState.buildResult, affectionTestState.buildError, '模拟后显示 buildTask、profileDraft 与请求次数。')}
+          <p><b>真实 API 预览：</b>${escapeHtml(getTestStatusLabel(affectionTestState.buildRealStatus))}</p>
+          ${renderJsonResult(affectionTestState.buildRealResult, affectionTestState.buildRealError, '只有点击“显式调用真实 API”后才会产生请求。')}
+        </div>
+      </details>
     </div>
   `;
 }
@@ -1344,6 +1645,12 @@ function syncAffectionTestInputs(panelRoot) {
     ?? affectionTestState.fieldProfilesInput;
   affectionTestState.fieldMemoryInput = panelRoot.querySelector('[data-slx-affection-field-memory]')?.value
     ?? affectionTestState.fieldMemoryInput;
+  affectionTestState.buildRoleName = panelRoot.querySelector('[data-slx-affection-build-role]')?.value
+    ?? affectionTestState.buildRoleName;
+  affectionTestState.buildInitialValue = panelRoot.querySelector('[data-slx-affection-build-initial]')?.value
+    ?? affectionTestState.buildInitialValue;
+  affectionTestState.buildMode = panelRoot.querySelector('[data-slx-affection-build-mode]')?.value
+    || affectionTestState.buildMode;
 }
 
 export function bindAffectionPanelEvents(panelRoot) {
@@ -1423,6 +1730,23 @@ export function bindAffectionPanelEvents(panelRoot) {
     affectionTestState.fieldStatus = 'idle';
     affectionTestState.fieldError = '';
     refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-build-suite]')?.addEventListener('click', async () => {
+    syncAffectionTestInputs(panelRoot);
+    await runAffectionBuildSuite();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-build-simulator]')?.addEventListener('click', async () => {
+    syncAffectionTestInputs(panelRoot);
+    await runAffectionBuildSimulator();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-build-real]')?.addEventListener('click', async () => {
+    syncAffectionTestInputs(panelRoot);
+    await runAffectionBuildRealApiPreview();
   });
 
   panelRoot.querySelector('[data-slx-affection-reset-tests]')?.addEventListener('click', () => {

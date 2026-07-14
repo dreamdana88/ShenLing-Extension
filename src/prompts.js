@@ -568,6 +568,42 @@ export function buildAffectionUpdatePromptSection({ knownAffectionText }) {
 ${String(knownAffectionText || "暂无已建档角色。").trim() || "暂无已建档角色。"}`;
 }
 
+export function buildAffectionProfilePrompt({
+  roleName,
+  initialAffection,
+  contextMaterial,
+}) {
+  return `## 攻略角色专属阶段表建档
+
+请只为角色「${String(roleName || '').trim()}」生成一套从 0 到 100 的五阶段攻略关系表。
+当前正式初始好感已经由同一次小总结确定为 ${String(initialAffection || '').trim()}；不得重新估算、修改或覆盖这个初值。
+
+只输出一个合法 JSON 对象，不要输出 Markdown、代码围栏或解释：
+{
+  "roleName": "角色名",
+  "stages": [
+    {
+      "range": "0-20",
+      "name": "贴合角色气质的阶段名",
+      "meaning": "一句话说明该阶段角色如何看待 {{user}}。",
+      "behaviors": ["具体可演行为1", "具体可演行为2", "具体可演行为3"],
+      "trend": "接近下一阶段时会新增什么行为。",
+      "boundary": "本阶段禁止提前出现什么关系表现。"
+    }
+  ]
+}
+
+要求：
+- stages 必须恰好五项，并依次对应 0-20、21-40、41-60、61-80、81-100。
+- 每一阶段必须包含非空的 name、meaning、trend、boundary，以及恰好三条非空 behaviors。
+- 阶段名和行为必须贴合「${String(roleName || '').trim()}」的人设、既有关系与表达方式，不使用通用模板名。
+- 行为必须具体、可演、逐阶段递进，不违背角色核心人设，也不提前越过本阶段关系边界。
+- 不得在 JSON 外输出任何内容。
+
+以下材料只用于理解角色和既有关系：
+${String(contextMaterial || '暂无额外材料。').trim() || '暂无额外材料。'}`;
+}
+
 export function buildLegacyArchiveEmotionUpdatePromptSection({
   knownProfilesText,
 }) {
