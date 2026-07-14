@@ -3,7 +3,7 @@ import {
   registerTavernEvent,
 } from './tavern-events.js';
 
-const STATE_LINE_RE = /^\s*\[(?:emotion_changed|emotion|affection_changed|affection_candidate|affection)\s*:[^\r\n]*\]\s*$/gim;
+const STATE_CHANGE_CONTROL_LINE_RE = /^\s*\[(?:emotion_changed|affection_changed)\s*:[^\r\n]*\]\s*$/gim;
 const INTERNAL_MEMORY_TASK_MARKERS = Object.freeze([
   '现在是梦境小总结模块',
   '现在是梦境大归档模块',
@@ -15,9 +15,9 @@ let promptSanitizerEventStop = null;
 
 export function stripInlineStateLinesForSendingText(text) {
   const value = String(text || '');
-  if (!/^\s*\[(?:emotion|affection)/im.test(value)) return value;
+  if (!/^\s*\[(?:emotion_changed|affection_changed)\s*:/im.test(value)) return value;
   return value
-    .replace(STATE_LINE_RE, '')
+    .replace(STATE_CHANGE_CONTROL_LINE_RE, '')
     .replace(/\n{3,}/g, '\n\n');
 }
 

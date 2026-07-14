@@ -719,11 +719,14 @@ async function runAffectionSharedCoreSuite() {
       assertTest(sanitizerFirst && sanitizerSecond && isPromptStateLineSanitizerRegistered(), 'prompt-ready 剥离事件未保持注册。');
       return '两类共享事件重复初始化均复用既有监听。';
     }],
-    ['普通正文剥离状态行，内部总结完整保留', async () => {
+    ['普通正文只剥离 changed 控制行，内部总结完整保留', async () => {
       const ordinary = { chat: [{ role: 'user', content: DEFAULT_STATE_LINE_INPUT }] };
       const ordinaryResult = sanitizeChatCompletionPromptStateLines(ordinary);
       assertTest(ordinaryResult.skipped === false && ordinaryResult.changedMessages === 1, `普通正文结果：${JSON.stringify(ordinaryResult)}`);
-      assertTest(!/\[(?:emotion|affection)/i.test(ordinary.chat[0].content), `普通正文仍含状态行：${ordinary.chat[0].content}`);
+      assertTest(!/\[(?:emotion_changed|affection_changed)\s*:/i.test(ordinary.chat[0].content), `普通正文仍含 changed 控制行：${ordinary.chat[0].content}`);
+      assertTest(ordinary.chat[0].content.includes('[emotion:'), 'emotion 状态行被误删。');
+      assertTest(ordinary.chat[0].content.includes('[affection:'), 'affection 数值行被误删。');
+      assertTest(ordinary.chat[0].content.includes('[affection_candidate:'), 'affection_candidate 数据行被误删。');
       assertTest(ordinary.chat[0].content.includes('[plot:'), '普通 memory 字段被误删。');
 
       const multipart = {
@@ -736,14 +739,15 @@ async function runAffectionSharedCoreSuite() {
         }],
       };
       sanitizeChatCompletionPromptStateLines(multipart);
-      assertTest(!/\[(?:emotion|affection)/i.test(multipart.chat[0].content[0].text), '多段文本中的状态行未剥离。');
+      assertTest(!/\[(?:emotion_changed|affection_changed)\s*:/i.test(multipart.chat[0].content[0].text), '多段文本中的 changed 控制行未剥离。');
+      assertTest(multipart.chat[0].content[0].text.includes('[emotion:') && multipart.chat[0].content[0].text.includes('[affection:'), '多段文本中的状态数据被误删。');
       assertTest(multipart.chat[0].content[1].type === 'image_url', '非文本内容段被误改。');
 
       const internalContent = `现在是梦境小总结模块\n${DEFAULT_STATE_LINE_INPUT}`;
       const internal = { chat: [{ role: 'system', content: internalContent }] };
       const internalResult = sanitizeChatCompletionPromptStateLines(internal);
       assertTest(internalResult.skipped === true && internal.chat[0].content === internalContent, '内部小总结材料被误剥离。');
-      return '普通字符串/多段文本的五类状态行已删除，内部小总结原文未变。';
+      return '普通字符串/多段文本只删除两个 changed 控制行，emotion/affection/candidate 均保留；内部小总结原文未变。';
     }],
   ];
 
