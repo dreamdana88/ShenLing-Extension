@@ -163,7 +163,7 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
         index,
         roleName: entry.roleName,
         value: entry.extraParts.join('|'),
-        message: 'AI 输出的 affection 第三段不可信，已忽略并由账本重算。',
+        message: 'AI 异常输出了 affection 第三段，已忽略并由账本重算。',
       });
     }
     return entry;
@@ -207,13 +207,12 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
     }
 
     if (first) {
-      return [{
-        ...item,
-        valueBeforeTenths: clampAffectionValueTenths(first.initialValueTenths - item.deltaTenths),
-        valueAfterTenths: first.initialValueTenths,
-        firstValueTenths: first.initialValueTenths,
-        isFirst: true,
-      }];
+      diagnostics.push({
+        code: 'first_suppresses_same_turn_change',
+        roleName: item.roleName,
+        message: `「${item.roleName}」本轮为首次建档，affection_first 已表示楼层结束后的初始好感；同角色 affection 已忽略。`,
+      });
+      return [];
     }
 
     const valueBeforeTenths = getProfileCurrentValueTenths(profile);
@@ -221,12 +220,15 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
       ...item,
       valueBeforeTenths,
       valueAfterTenths: clampAffectionValueTenths(valueBeforeTenths + item.deltaTenths),
-      isFirst: false,
     }];
   });
 
   const changed = changes.length > 0;
-  if (normalizedChanges.changed && !changed) {
+  if (
+    normalizedChanges.changed
+    && !changed
+    && !diagnostics.some(item => item.code === 'first_suppresses_same_turn_change')
+  ) {
     diagnostics.push({
       code: 'no_resolvable_change',
       message: '本轮没有可计算当前值的 affection，已规范化为无变化。',

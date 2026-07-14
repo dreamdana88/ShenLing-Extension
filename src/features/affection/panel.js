@@ -116,7 +116,7 @@ const DEFAULT_FIELD_MEMORY_INPUT = `<memory>
 [number:20]
 [emotion_changed:false]
 [affection_changed:true]
-[affection:沈青|0.2|99.9]
+[affection:沈青|0.2]
 [affection_first:阿蛮|35.0]
 [progress:main|推进|1|5]
 </memory>`;
@@ -860,6 +860,7 @@ function runAffectionFieldSuite() {
       assertTest(prompt.includes('[affection_changed:true/false]'), '提示词缺少 affection_changed。');
       assertTest(prompt.includes('[affection_first:'), '提示词缺少 affection_first。');
       assertTest(prompt.includes('AI 只输出两段 affection'), '提示词没有禁止 AI 计算第三段。');
+      assertTest(prompt.includes('同一角色输出 affection_first 时，禁止再输出该角色的 affection 行'), '提示词没有禁止同角色同时输出 first 与 affection。');
       assertTest(prompt.includes('【沈青】已建档'), '提示词没有带入已知正式档案。');
       assertTest(buildAffectionUpdatePromptSection({ ...activeSettings, enabled: false }, chatState) === '', '插件总开关关闭后仍追加提示词。');
       const summaryOff = cloneData(activeSettings);
@@ -870,7 +871,7 @@ function runAffectionFieldSuite() {
       assertTest(buildAffectionUpdatePromptSection(affectionOff, chatState) === '', '好感开关关闭后仍追加提示词。');
       return '三项依赖全部开启时才追加攻略判断，并列出已建档角色。';
     }),
-    runModelTest('AI 第三段被忽略并由正式账本重算', () => {
+    runModelTest('异常三段 affection 被忽略并由正式账本重算', () => {
       const analysis = parseAffectionUpdateFromMemory(`<memory>
 [affection_changed:true]
 [affection:沈青|0.2|99.9]
@@ -880,7 +881,7 @@ function runAffectionFieldSuite() {
       assertTest(analysis.normalizedMemory.includes('[affection:沈青|0.2|35.2]'), '未写回账本计算的三段 affection。');
       assertTest(!analysis.normalizedMemory.includes('99.9'), '错误的 AI 第三段仍被保留。');
       assertTest(analysis.diagnostics.some(item => item.code === 'ignored_ai_value_after'), '缺少忽略 AI 第三段诊断。');
-      return '35.0 + 0.2 由代码补全为 35.2，AI 的 99.9 被丢弃。';
+      return '异常输入中的 99.9 被丢弃；正常两段输入仍由代码按 35.0 + 0.2 补全为 35.2。';
     }),
     runModelTest('affection_first 独立于 gate 且可单独形成首次数据', () => {
       const analysis = parseAffectionUpdateFromMemory(`<memory>
@@ -892,17 +893,29 @@ function runAffectionFieldSuite() {
       assertTest(analysis.normalizedMemory.includes('[affection_first:苏暮香|85.0]'), '首次好感未保留。');
       return '无本轮变化时仍可独立记录未建档角色的 85.0 初值。';
     }),
-    runModelTest('首次楼层 delta 不在 affection_first 上重复累计', () => {
-      const analysis = parseAffectionUpdateFromMemory(`<memory>
+    runModelTest('first/affection 冲突按是否已建档分流', () => {
+      const unprofiled = parseAffectionUpdateFromMemory(`<memory>
 [affection_changed:true]
 [affection:阿蛮|0.2]
 [affection_first:阿蛮|35.0]
 </memory>`, { profiles: createExistingAffectionProfiles() });
-      const change = analysis.changes[0];
-      assertTest(change?.isFirst === true, '未标记为首次楼层变化。');
-      assertTest(change?.valueBeforeTenths === 348 && change?.valueAfterTenths === 350, '首次楼层前后值计算错误。');
-      assertTest(analysis.normalizedMemory.includes('[affection:阿蛮|0.2|35.0]'), '首次楼层没有使用 first 作为 valueAfter。');
-      return 'first=35.0 已含本轮 +0.2，三段写回保持当前值 35.0。';
+      assertTest(unprofiled.changed === false && unprofiled.changes.length === 0, '未建档角色的同轮 affection 没有被丢弃。');
+      assertTest(unprofiled.firsts[0]?.roleName === '阿蛮' && unprofiled.firsts[0]?.initialValueTenths === 350, '未建档角色的 first 没有保留。');
+      assertTest(!unprofiled.normalizedMemory.includes('[affection:阿蛮'), '未建档角色仍写回了 affection。');
+      assertTest(unprofiled.normalizedMemory.includes('[affection_first:阿蛮|35.0]'), '未建档角色没有写回 first。');
+      assertTest(unprofiled.diagnostics.some(item => item.code === 'first_suppresses_same_turn_change'), '缺少 first 优先诊断。');
+
+      const profiled = parseAffectionUpdateFromMemory(`<memory>
+[affection_changed:true]
+[affection:沈青|0.2]
+[affection_first:沈青|35.0]
+</memory>`, { profiles: createExistingAffectionProfiles() });
+      assertTest(profiled.changes[0]?.valueAfterTenths === 352, '已建档角色的 affection 没有按账本保留。');
+      assertTest(profiled.firsts.length === 0, '已建档角色的错误 first 没有被丢弃。');
+      assertTest(profiled.normalizedMemory.includes('[affection:沈青|0.2|35.2]'), '已建档角色没有写回三段 affection。');
+      assertTest(!profiled.normalizedMemory.includes('[affection_first:沈青'), '已建档角色仍写回了 first。');
+      assertTest(profiled.diagnostics.some(item => item.code === 'first_already_profiled'), '缺少已有档案 first 诊断。');
+      return '未建档：只保留 first；已建档：只保留 affection，并由正式账本补全当前值。';
     }),
     runModelTest('非法值、重复角色与已有档案 first 均留下诊断', () => {
       const analysis = parseAffectionUpdateFromMemory(`<memory>
@@ -951,12 +964,12 @@ function runAffectionFieldSuite() {
       const analysis = parseAffectionUpdateFromMemory(`<memory>
 [emotion_changed:false]
 [affection_changed:true]
-[affection:阿蛮|0.2]
+[affection:沈青|0.2]
 [affection_first:阿蛮|35.0]
 </memory>`, { profiles: createExistingAffectionProfiles() });
       const written = stripMemoryChangedControlLines(analysis.normalizedMemory);
       assertTest(!/\[(?:emotion_changed|affection_changed)\s*:/i.test(written), 'changed 控制行仍存在。');
-      assertTest(written.includes('[affection:阿蛮|0.2|35.0]'), '三段 affection 被误删。');
+      assertTest(written.includes('[affection:沈青|0.2|35.2]'), '三段 affection 被误删。');
       assertTest(written.includes('[affection_first:阿蛮|35.0]'), 'affection_first 被误删。');
       return '楼层只删除两个 changed，三段历史与首次初值完整保留。';
     }),
