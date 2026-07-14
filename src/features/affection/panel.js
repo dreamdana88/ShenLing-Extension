@@ -39,6 +39,12 @@ import {
   sanitizeChatCompletionPromptStateLines,
   stripInlineStateLinesForSendingText,
 } from '../../core/prompt-state-lines.js';
+import { stripMemoryChangedControlLines } from '../../core/summary.js';
+import {
+  buildAffectionUpdatePromptSection,
+  parseAffectionUpdateFromMemory,
+  storePendingAffectionUpdate,
+} from './workflow.js';
 
 const DEFAULT_CHANGE_LINES = [
   '沈青 |0.1',
@@ -106,6 +112,24 @@ const DEFAULT_STATE_LINE_INPUT = `<memory>
 [affection_first:阿蛮|25.0]
 </memory>`;
 
+const DEFAULT_FIELD_MEMORY_INPUT = `<memory>
+[number:20]
+[emotion_changed:false]
+[affection_changed:true]
+[affection:沈青|0.2|99.9]
+[affection_first:阿蛮|35.0]
+[progress:main|推进|1|5]
+</memory>`;
+
+const DEFAULT_FIELD_PROFILES_INPUT = JSON.stringify({
+  沈青: {
+    roleName: '沈青',
+    initialValueTenths: 350,
+    valueTenths: 350,
+    records: [],
+  },
+}, null, 2);
+
 let affectionPanelOptions = {
   refreshPanel: null,
 };
@@ -141,6 +165,15 @@ function createDefaultTestState() {
     stateLineStatus: 'idle',
     stateLineResult: null,
     stateLineError: '',
+    fieldSuiteStatus: 'idle',
+    fieldSuiteResults: [],
+    fieldMemoryInput: DEFAULT_FIELD_MEMORY_INPUT,
+    fieldProfilesInput: DEFAULT_FIELD_PROFILES_INPUT,
+    fieldSwipe: 'swipe-a',
+    fieldPendingByMessage: {},
+    fieldStatus: 'idle',
+    fieldResult: null,
+    fieldError: '',
     expandedSections: {
       suite: false,
       change: false,
@@ -150,6 +183,8 @@ function createDefaultTestState() {
       storageProbe: false,
       sharedCoreSuite: false,
       stateLines: false,
+      fieldSuite: false,
+      fieldSimulator: false,
     },
   };
 }
@@ -788,6 +823,199 @@ function runStateLineSimulator() {
   }
 }
 
+function createActiveAffectionTestSettings() {
+  return {
+    enabled: true,
+    modules: {
+      summary: { enabled: true },
+      affection: {
+        enabled: true,
+        mode: 'normal',
+        defaultBuildMode: 'custom',
+        profileBuildApiMode: 'secondary_api',
+      },
+    },
+  };
+}
+
+function createExistingAffectionProfiles() {
+  return {
+    沈青: {
+      roleName: '沈青',
+      initialValueTenths: 350,
+      valueTenths: 350,
+      records: [],
+    },
+  };
+}
+
+function runAffectionFieldSuite() {
+  const tests = [
+    runModelTest('攻略提示词受总开关、自动小总结和好感开关共同门控', () => {
+      const activeSettings = createActiveAffectionTestSettings();
+      const chatState = {
+        affectionSystem: { profiles: createExistingAffectionProfiles(), pendingByMessage: {}, buildTasks: {} },
+      };
+      const prompt = buildAffectionUpdatePromptSection(activeSettings, chatState);
+      assertTest(prompt.includes('[affection_changed:true/false]'), '提示词缺少 affection_changed。');
+      assertTest(prompt.includes('[affection_first:'), '提示词缺少 affection_first。');
+      assertTest(prompt.includes('AI 只输出两段 affection'), '提示词没有禁止 AI 计算第三段。');
+      assertTest(prompt.includes('【沈青】已建档'), '提示词没有带入已知正式档案。');
+      assertTest(buildAffectionUpdatePromptSection({ ...activeSettings, enabled: false }, chatState) === '', '插件总开关关闭后仍追加提示词。');
+      const summaryOff = cloneData(activeSettings);
+      summaryOff.modules.summary.enabled = false;
+      assertTest(buildAffectionUpdatePromptSection(summaryOff, chatState) === '', '自动小总结关闭后仍追加提示词。');
+      const affectionOff = cloneData(activeSettings);
+      affectionOff.modules.affection.enabled = false;
+      assertTest(buildAffectionUpdatePromptSection(affectionOff, chatState) === '', '好感开关关闭后仍追加提示词。');
+      return '三项依赖全部开启时才追加攻略判断，并列出已建档角色。';
+    }),
+    runModelTest('AI 第三段被忽略并由正式账本重算', () => {
+      const analysis = parseAffectionUpdateFromMemory(`<memory>
+[affection_changed:true]
+[affection:沈青|0.2|99.9]
+</memory>`, { profiles: createExistingAffectionProfiles() });
+      assertTest(analysis.changes[0]?.valueBeforeTenths === 350, '变化前值不是 35.0。');
+      assertTest(analysis.changes[0]?.valueAfterTenths === 352, '变化后值不是 35.2。');
+      assertTest(analysis.normalizedMemory.includes('[affection:沈青|0.2|35.2]'), '未写回账本计算的三段 affection。');
+      assertTest(!analysis.normalizedMemory.includes('99.9'), '错误的 AI 第三段仍被保留。');
+      assertTest(analysis.diagnostics.some(item => item.code === 'ignored_ai_value_after'), '缺少忽略 AI 第三段诊断。');
+      return '35.0 + 0.2 由代码补全为 35.2，AI 的 99.9 被丢弃。';
+    }),
+    runModelTest('affection_first 独立于 gate 且可单独形成首次数据', () => {
+      const analysis = parseAffectionUpdateFromMemory(`<memory>
+[affection_changed:false]
+[affection_first:苏暮香|85.0]
+</memory>`, { profiles: createExistingAffectionProfiles() });
+      assertTest(analysis.changed === false && analysis.changes.length === 0, 'gate=false 时仍产生变化。');
+      assertTest(analysis.firsts[0]?.roleName === '苏暮香' && analysis.firsts[0]?.initialValueTenths === 850, '首次好感未独立解析。');
+      assertTest(analysis.normalizedMemory.includes('[affection_first:苏暮香|85.0]'), '首次好感未保留。');
+      return '无本轮变化时仍可独立记录未建档角色的 85.0 初值。';
+    }),
+    runModelTest('首次楼层 delta 不在 affection_first 上重复累计', () => {
+      const analysis = parseAffectionUpdateFromMemory(`<memory>
+[affection_changed:true]
+[affection:阿蛮|0.2]
+[affection_first:阿蛮|35.0]
+</memory>`, { profiles: createExistingAffectionProfiles() });
+      const change = analysis.changes[0];
+      assertTest(change?.isFirst === true, '未标记为首次楼层变化。');
+      assertTest(change?.valueBeforeTenths === 348 && change?.valueAfterTenths === 350, '首次楼层前后值计算错误。');
+      assertTest(analysis.normalizedMemory.includes('[affection:阿蛮|0.2|35.0]'), '首次楼层没有使用 first 作为 valueAfter。');
+      return 'first=35.0 已含本轮 +0.2，三段写回保持当前值 35.0。';
+    }),
+    runModelTest('非法值、重复角色与已有档案 first 均留下诊断', () => {
+      const analysis = parseAffectionUpdateFromMemory(`<memory>
+[affection_changed:true]
+[affection:沈青|0]
+[affection:沈青|0.2]
+[affection_first:沈青|40.0]
+[affection_first:阿蛮|999]
+[affection_first:阿蛮|35.0]
+[affection_first:阿蛮|40.0]
+</memory>`, { profiles: createExistingAffectionProfiles() });
+      const codes = new Set(analysis.diagnostics.map(item => item.code));
+      assertTest(analysis.changes.length === 1 && analysis.changes[0].deltaTenths === 2, '合法变化没有保留。');
+      assertTest(analysis.firsts.length === 1 && analysis.firsts[0].initialValueTenths === 350, '合法 first 没有唯一保留。');
+      assertTest(codes.has('invalid_delta'), '缺少非法 delta 诊断。');
+      assertTest(codes.has('first_already_profiled'), '缺少已有档案 first 诊断。');
+      assertTest(codes.has('first_invalid_initial_value'), '缺少非法初值诊断。');
+      assertTest(codes.has('first_duplicate_role'), '缺少 first 重复角色诊断。');
+      return '非法行均被拒绝，合法变化和首次初值保留并附具体诊断。';
+    }),
+    runModelTest('未建档角色缺少 affection_first 时拒绝变化', () => {
+      const analysis = parseAffectionUpdateFromMemory(`<memory>
+[affection_changed:true]
+[affection:陌生路人|0.1]
+</memory>`, { profiles: createExistingAffectionProfiles() });
+      assertTest(analysis.changed === false && analysis.changes.length === 0, '无法确定当前值的变化仍被接受。');
+      assertTest(analysis.diagnostics.some(item => item.code === 'change_without_profile_or_first'), '缺少未建档且无 first 的诊断。');
+      assertTest(!analysis.normalizedMemory.includes('[affection:'), '无基准值的 affection 仍被写回楼层。');
+      return '没有正式档案或 first 时无法计算 valueAfter，因此拒绝该变化。';
+    }),
+    runModelTest('同 messageId 的不同 fingerprint 分别保存 pending', () => {
+      const profiles = createExistingAffectionProfiles();
+      const chatState = {
+        affectionSystem: { profiles, pendingByMessage: {}, buildTasks: {} },
+      };
+      const first = parseAffectionUpdateFromMemory('<memory>\n[affection_changed:true]\n[affection:沈青|0.1]\n</memory>', { profiles });
+      const second = parseAffectionUpdateFromMemory('<memory>\n[affection_changed:true]\n[affection:沈青|-0.2]\n</memory>', { profiles });
+      storePendingAffectionUpdate({ messageId: 20, fingerprint: 'swipe-a', analysis: first }, { chatState, persist: false });
+      storePendingAffectionUpdate({ messageId: 20, fingerprint: 'swipe-b', analysis: second }, { chatState, persist: false });
+      const items = chatState.affectionSystem.pendingByMessage['20'].items;
+      assertTest(sameValue(Object.keys(items), ['swipe-a', 'swipe-b']), `pending keys：${JSON.stringify(Object.keys(items))}`);
+      assertTest(items['swipe-a'].changes[0].deltaTenths === 1 && items['swipe-b'].changes[0].deltaTenths === -2, '两个 swipe 的变化互相覆盖。');
+      return 'swipe-a 与 swipe-b 在同一楼层下独立保存。';
+    }),
+    runModelTest('正式写回只剥离两个 changed 控制行', () => {
+      const analysis = parseAffectionUpdateFromMemory(`<memory>
+[emotion_changed:false]
+[affection_changed:true]
+[affection:阿蛮|0.2]
+[affection_first:阿蛮|35.0]
+</memory>`, { profiles: createExistingAffectionProfiles() });
+      const written = stripMemoryChangedControlLines(analysis.normalizedMemory);
+      assertTest(!/\[(?:emotion_changed|affection_changed)\s*:/i.test(written), 'changed 控制行仍存在。');
+      assertTest(written.includes('[affection:阿蛮|0.2|35.0]'), '三段 affection 被误删。');
+      assertTest(written.includes('[affection_first:阿蛮|35.0]'), 'affection_first 被误删。');
+      return '楼层只删除两个 changed，三段历史与首次初值完整保留。';
+    }),
+  ];
+
+  affectionTestState.fieldSuiteResults = tests;
+  affectionTestState.fieldSuiteStatus = tests.every(item => item.status === 'passed') ? 'passed' : 'failed';
+}
+
+function runAffectionFieldSimulator() {
+  try {
+    const profiles = JSON.parse(affectionTestState.fieldProfilesInput || '{}');
+    if (!profiles || Array.isArray(profiles) || typeof profiles !== 'object') {
+      throw new Error('模拟 profiles 必须是以角色名为 key 的 JSON 对象。');
+    }
+    const analysis = parseAffectionUpdateFromMemory(
+      affectionTestState.fieldMemoryInput,
+      { profiles },
+    );
+    if (!analysis) throw new Error('输入中没有 affection_changed、affection 或 affection_first。');
+
+    const chatState = {
+      affectionSystem: {
+        profiles,
+        pendingByMessage: cloneData(affectionTestState.fieldPendingByMessage),
+        buildTasks: {},
+      },
+    };
+    const fingerprint = `simulated:${affectionTestState.fieldSwipe}`;
+    const pending = storePendingAffectionUpdate(
+      { messageId: 20, fingerprint, analysis },
+      { chatState, persist: false },
+    );
+    affectionTestState.fieldPendingByMessage = cloneData(chatState.affectionSystem.pendingByMessage);
+    affectionTestState.fieldResult = {
+      selectedSwipe: affectionTestState.fieldSwipe,
+      fingerprint,
+      parsed: {
+        gatePresent: analysis.gatePresent,
+        changed: analysis.changed,
+        changes: analysis.changes,
+        firsts: analysis.firsts,
+        diagnostics: analysis.diagnostics,
+        raw: analysis.raw,
+      },
+      normalizedMemoryBeforeControlStrip: analysis.normalizedMemory,
+      writtenMemory: stripMemoryChangedControlLines(analysis.normalizedMemory),
+      pending,
+      pendingSnapshot: affectionTestState.fieldPendingByMessage,
+    };
+    affectionTestState.fieldStatus = 'passed';
+    affectionTestState.fieldError = '';
+  } catch (error) {
+    affectionTestState.fieldResult = null;
+    affectionTestState.fieldStatus = 'failed';
+    affectionTestState.fieldError = error?.message || String(error);
+  }
+}
+
 function renderJsonResult(result, error, emptyText) {
   if (error) return `<div class="slx-affection-test-error">${escapeHtml(error)}</div>`;
   if (!result) return `<div class="slx-affection-test-empty">${escapeHtml(emptyText)}</div>`;
@@ -834,6 +1062,13 @@ export function renderAffectionPanel() {
     affectionTestState.sharedCoreSuiteStatus,
     sharedCorePassedCount,
     sharedCoreTotalCount,
+  );
+  const fieldPassedCount = affectionTestState.fieldSuiteResults.filter(item => item.status === 'passed').length;
+  const fieldTotalCount = affectionTestState.fieldSuiteResults.length;
+  const fieldSuiteLabel = getTestStatusLabel(
+    affectionTestState.fieldSuiteStatus,
+    fieldPassedCount,
+    fieldTotalCount,
   );
 
   return `
@@ -1036,6 +1271,64 @@ export function renderAffectionPanel() {
           ${renderJsonResult(affectionTestState.stateLineResult, affectionTestState.stateLineError, '运行后显示剥离结果或内部任务保留结果。')}
         </div>
       </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="fieldSuite" ${affectionTestState.expandedSections.fieldSuite ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>开发期测试区</small>
+            <b>第 4 步 · 字段、提示词、解析与 swipe pending</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.fieldSuiteStatus)}">${escapeHtml(fieldSuiteLabel)}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>直接调用真实提示词、解析器、整数账本补全和 pending 存储函数。全部使用页面内存模拟数据，不写聊天、不改 metadata、不请求 API。</p>
+          <div class="slx-action-row">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-field-suite>运行第 4 步全部检查</button>
+          </div>
+          ${renderSuiteResults(affectionTestState.fieldSuiteResults)}
+        </div>
+      </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="fieldSimulator" ${affectionTestState.expandedSections.fieldSimulator ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>自定义模拟 E</small>
+            <b>完整 memory 解析、三段写回与多 swipe 快照</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.fieldStatus)}">${escapeHtml(getTestStatusLabel(affectionTestState.fieldStatus))}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>粘贴完整 &lt;memory&gt;，选择模拟 swipe 后运行。重复切换 swipe-a / swipe-b 可观察同一 messageId 下两个 fingerprint 的 pending 是否独立保存。</p>
+          <div class="slx-affection-test-grid">
+            <label class="slx-field">
+              <span>模拟当前 swipe</span>
+              <select data-slx-affection-field-swipe>
+                <option value="swipe-a" ${affectionTestState.fieldSwipe === 'swipe-a' ? 'selected' : ''}>swipe-a</option>
+                <option value="swipe-b" ${affectionTestState.fieldSwipe === 'swipe-b' ? 'selected' : ''}>swipe-b</option>
+              </select>
+            </label>
+            <label class="slx-field slx-affection-test-wide">
+              <span>模拟正式 profiles JSON</span>
+              <textarea data-slx-affection-field-profiles spellcheck="false">${escapeHtml(affectionTestState.fieldProfilesInput)}</textarea>
+            </label>
+            <label class="slx-field slx-affection-test-wide">
+              <span>完整 memory</span>
+              <textarea data-slx-affection-field-memory spellcheck="false">${escapeHtml(affectionTestState.fieldMemoryInput)}</textarea>
+            </label>
+          </div>
+          <div class="slx-action-row">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-field-simulator>解析并保存模拟 swipe</button>
+            <button class="slx-soft-btn" type="button" data-slx-affection-clear-field-pending>清空模拟 pending</button>
+          </div>
+          ${renderJsonResult(affectionTestState.fieldResult, affectionTestState.fieldError, '运行后显示原始解析、三段写回结果和多 swipe pending 快照。')}
+        </div>
+      </details>
     </div>
   `;
 }
@@ -1057,6 +1350,12 @@ function syncAffectionTestInputs(panelRoot) {
     || affectionTestState.stateLineMode;
   affectionTestState.stateLineInput = panelRoot.querySelector('[data-slx-affection-state-line-input]')?.value
     ?? affectionTestState.stateLineInput;
+  affectionTestState.fieldSwipe = panelRoot.querySelector('[data-slx-affection-field-swipe]')?.value
+    || affectionTestState.fieldSwipe;
+  affectionTestState.fieldProfilesInput = panelRoot.querySelector('[data-slx-affection-field-profiles]')?.value
+    ?? affectionTestState.fieldProfilesInput;
+  affectionTestState.fieldMemoryInput = panelRoot.querySelector('[data-slx-affection-field-memory]')?.value
+    ?? affectionTestState.fieldMemoryInput;
 }
 
 export function bindAffectionPanelEvents(panelRoot) {
@@ -1114,6 +1413,27 @@ export function bindAffectionPanelEvents(panelRoot) {
   panelRoot.querySelector('[data-slx-affection-run-state-lines]')?.addEventListener('click', () => {
     syncAffectionTestInputs(panelRoot);
     runStateLineSimulator();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-field-suite]')?.addEventListener('click', () => {
+    syncAffectionTestInputs(panelRoot);
+    runAffectionFieldSuite();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-field-simulator]')?.addEventListener('click', () => {
+    syncAffectionTestInputs(panelRoot);
+    runAffectionFieldSimulator();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-clear-field-pending]')?.addEventListener('click', () => {
+    syncAffectionTestInputs(panelRoot);
+    affectionTestState.fieldPendingByMessage = {};
+    affectionTestState.fieldResult = null;
+    affectionTestState.fieldStatus = 'idle';
+    affectionTestState.fieldError = '';
     refreshPanel();
   });
 

@@ -1,4 +1,4 @@
-import { replacePromptMessageMacros } from './core/macros.js';
+import { replacePromptMessageMacros } from "./core/macros.js";
 
 export const SUMMARY_GAZE_GUIDANCE = `##总结视角约束
 - 总结须遵循女性凝视与女本位叙事：尊重女性主体性、欲望与选择，不客体化、矮化弱化女性。
@@ -414,61 +414,61 @@ export const DEFAULT_MEMORY_PROMPT_TEMPLATE = [
 ].join("\n");
 
 export const DEFAULT_GRAND_MEMORY_TEMPLATE = [
-  '## 梦境大归档',
-  '',
-  '请把一组连续小总结整合为独立、可读、可追溯的大总结。',
-  '',
-  '必须输出 <grand_memory> 结构，并严格使用以下 [key:...] 行格式：',
-  '',
-  '<grand_memory>',
-  '[volume:${archiveFrom}-${archiveTo}]',
-  '[span:${起止时间，未知写未明}|${跨度概述，如 约一月}]',
-  '',
-  '[chronicle:${编号段，如 5-7}|${事件名称}|${时空，(时间与地点用 · 连接)}|${在场角色，逗号分隔}|${本段最关键台词，角色名»台词(可无)}]',
-  '[plot:${该事件经过，约100字，第三人称客观}]',
-  '[chronicle:${编号段}|${事件名称}|${时空}|${在场角色}|${关键台词}]',
-  '[plot:${该事件经过}]',
-  '',
-  '[arc:${角色名}|${起点：情感状态(编号)}|${转折：触发事件→情感变化(编号)}|${终点：当前状态(编号)}|${与{{user}}关系演变方向}]',
-  '[arc:${另一角色}|...]',
-  '',
-  '[db:${重要物品/概念/地点名称}|${作用/意义}]',
-  '[task:${当前主线目标与进展，一句话}]',
-  '[faction:${角色名}|${长期目标推进状态}|${当前处境}]',
-  '[next:${下一步可能展开的叙事线索，可多条}]',
-  '</grand_memory>',
-  '',
-  '字段规则：',
-  '- [volume:...] 必出，必须写为本次归档编号范围：${archiveFrom}-${archiveTo}。',
-  '- [span:...] 必出，pipe 2 段：起止时间 | 跨度概述；未知写「未明」。',
-  '- [chronicle:...] 可多条，按时间顺序。pipe 5 段：编号段 | 事件名 | 时空 | 在场角色 | 关键台词（可空）。',
-  '- 每条 [chronicle:...] 后必须立刻跟随 0 或 1 条 [plot:...]；不得连续输出多个 [plot:...]；不得把无关 [plot:...] 放到 [arc]/[db]/[task] 后面。',
-  '- [plot:...] 承载紧邻其上那条 [chronicle:...] 的事件经过，约 100 字，第三人称客观。',
-  '- [arc:...] 可多条，每条一个非 {{user}} 角色。pipe 5 段：角色 | 起点 | 转折 | 终点 | 关系方向。',
-  '- [db:...] 可多条。pipe 2 段：重要物品/概念/地点名称 | 作用/意义。',
-  '- [task:...] 必出，归纳当前主线进度。',
-  '- [faction:...] 可多条。pipe 3 段：角色 | 长期目标推进状态 | 当前处境。',
-  '- [next:...] 可多条，待发展方向。',
-  '- pipe 是字段分隔符 |；字段内容内部禁止再使用 |。需要连接时间、地点、说明时，使用 ·、，、； 等普通标点。',
-  '- 不要输出空字段；没有内容的可选字段整行省略。',
-  '',
-  '标准示例：',
-  '<grand_memory>',
-  '[volume:5-8]',
-  '[span:天宝十五年九月十三日 午后至戌时三刻|约半日]',
-  '',
-  '[chronicle:5-6|龙门客栈暗流初现|天宝十五年九月十三日 午后 · 龙门客栈大堂|{{user}}, 萧逸尘, 金镶玉|{{user}}»先看看他们想做什么]',
-  '[plot:各方势力陆续进入龙门客栈，表面投宿，实则互相试探。萧逸尘察觉商客伪装，开始主动戒备。]',
-  '[chronicle:7-8|天字房夜间警戒|戌时初至戌时三刻 · 二楼天字一号房|{{user}}, 萧逸尘|萧逸尘»门外有人]',
-  '[plot:夜间二楼出现轻功高手踪迹，萧逸尘判断其停在隔壁天字二号房，并将守护{{user}}安睡视为首要任务。]',
-  '',
-  '[arc:萧逸尘|谨慎守礼(5)|获得{{user}}认可→守护欲增强(7)|忠诚警戒(8)|师徒信任加深]',
-  '[db:天字二号房|天字一号房隔壁客房，有轻功高手停驻]',
-  '[task:查明龙门客栈内各方势力身份与目的]',
-  '[faction:金镶玉|维持客栈信息优势|观察各方来客]',
-  '[next:隔壁轻功高手身份待确认]',
-  '</grand_memory>',
-].join('\n');
+  "## 梦境大归档",
+  "",
+  "请把一组连续小总结整合为独立、可读、可追溯的大总结。",
+  "",
+  "必须输出 <grand_memory> 结构，并严格使用以下 [key:...] 行格式：",
+  "",
+  "<grand_memory>",
+  "[volume:${archiveFrom}-${archiveTo}]",
+  "[span:${起止时间，未知写未明}|${跨度概述，如 约一月}]",
+  "",
+  "[chronicle:${编号段，如 5-7}|${事件名称}|${时空，(时间与地点用 · 连接)}|${在场角色，逗号分隔}|${本段最关键台词，角色名»台词(可无)}]",
+  "[plot:${该事件经过，约100字，第三人称客观}]",
+  "[chronicle:${编号段}|${事件名称}|${时空}|${在场角色}|${关键台词}]",
+  "[plot:${该事件经过}]",
+  "",
+  "[arc:${角色名}|${起点：情感状态(编号)}|${转折：触发事件→情感变化(编号)}|${终点：当前状态(编号)}|${与{{user}}关系演变方向}]",
+  "[arc:${另一角色}|...]",
+  "",
+  "[db:${重要物品/概念/地点名称}|${作用/意义}]",
+  "[task:${当前主线目标与进展，一句话}]",
+  "[faction:${角色名}|${长期目标推进状态}|${当前处境}]",
+  "[next:${下一步可能展开的叙事线索，可多条}]",
+  "</grand_memory>",
+  "",
+  "字段规则：",
+  "- [volume:...] 必出，必须写为本次归档编号范围：${archiveFrom}-${archiveTo}。",
+  "- [span:...] 必出，pipe 2 段：起止时间 | 跨度概述；未知写「未明」。",
+  "- [chronicle:...] 可多条，按时间顺序。pipe 5 段：编号段 | 事件名 | 时空 | 在场角色 | 关键台词（可空）。",
+  "- 每条 [chronicle:...] 后必须立刻跟随 0 或 1 条 [plot:...]；不得连续输出多个 [plot:...]；不得把无关 [plot:...] 放到 [arc]/[db]/[task] 后面。",
+  "- [plot:...] 承载紧邻其上那条 [chronicle:...] 的事件经过，约 100 字，第三人称客观。",
+  "- [arc:...] 可多条，每条一个非 {{user}} 角色。pipe 5 段：角色 | 起点 | 转折 | 终点 | 关系方向。",
+  "- [db:...] 可多条。pipe 2 段：重要物品/概念/地点名称 | 作用/意义。",
+  "- [task:...] 必出，归纳当前主线进度。",
+  "- [faction:...] 可多条。pipe 3 段：角色 | 长期目标推进状态 | 当前处境。",
+  "- [next:...] 可多条，待发展方向。",
+  "- pipe 是字段分隔符 |；字段内容内部禁止再使用 |。需要连接时间、地点、说明时，使用 ·、，、； 等普通标点。",
+  "- 不要输出空字段；没有内容的可选字段整行省略。",
+  "",
+  "标准示例：",
+  "<grand_memory>",
+  "[volume:5-8]",
+  "[span:天宝十五年九月十三日 午后至戌时三刻|约半日]",
+  "",
+  "[chronicle:5-6|龙门客栈暗流初现|天宝十五年九月十三日 午后 · 龙门客栈大堂|{{user}}, 萧逸尘, 金镶玉|{{user}}»先看看他们想做什么]",
+  "[plot:各方势力陆续进入龙门客栈，表面投宿，实则互相试探。萧逸尘察觉商客伪装，开始主动戒备。]",
+  "[chronicle:7-8|天字房夜间警戒|戌时初至戌时三刻 · 二楼天字一号房|{{user}}, 萧逸尘|萧逸尘»门外有人]",
+  "[plot:夜间二楼出现轻功高手踪迹，萧逸尘判断其停在隔壁天字二号房，并将守护{{user}}安睡视为首要任务。]",
+  "",
+  "[arc:萧逸尘|谨慎守礼(5)|获得{{user}}认可→守护欲增强(7)|忠诚警戒(8)|师徒信任加深]",
+  "[db:天字二号房|天字一号房隔壁客房，有轻功高手停驻]",
+  "[task:查明龙门客栈内各方势力身份与目的]",
+  "[faction:金镶玉|维持客栈信息优势|观察各方来客]",
+  "[next:隔壁轻功高手身份待确认]",
+  "</grand_memory>",
+].join("\n");
 
 export const SUMMARY_SUPPORT_MESSAGES = Object.freeze([
   {
@@ -539,6 +539,37 @@ export function buildEmotionUpdatePromptSection({ knownProfilesText }) {
 ${String(knownProfilesText || "暂无。").trim() || "暂无。"}`;
 }
 
+export function buildAffectionUpdatePromptSection({ knownAffectionText }) {
+  return `## 攻略好感判断（仅攻略模式）
+
+请额外评估本轮 {{user}} 与可攻略角色互动带来的细微好感变化。好感变化比情感档案更细水长流：即使 [emotion_changed:false]，只要本轮互动会让角色对 {{user}} 的倾向产生可计量的微小变化，也可以输出好感变化。
+
+## 可攻略角色入选规则
+仅针对具备明确人设、预计会长期出场并与{{user}}存在持续互动关系的角色开启。
+如暂无法判断该角色是否为长期主要角色，默认不开启。
+
+请在 [emotion:...] 之后、[progress:...] 之前追加：
+[affection_changed:true/false]
+[affection:\${角色名}|\${非零好感变化值}]
+[affection_first:\${未建档角色名}|\${截至当前楼层结束后的初始好感}]
+
+要求：
+- [affection_changed:true/false] 必须输出。
+- 好感变化值只能是 -0.3 -0.2 -0.1 0.1 0.2 0.3 之一；无变化时不要输出 affection 行。
+- [affection_changed:false] 时禁止输出 [affection:...]。
+- [affection_changed:true] 时至少输出一条 [affection:...]。
+- 若本轮也有 [emotion:...]，角色名优先与 [emotion:...] 一致；若 [emotion_changed:false] 但好感有变化，角色名必须是本轮明确互动对象。
+- [affection_first:...] 独立于 affection_changed，只针对尚未建档且符合可攻略角色入选规则的角色输出一次；已建档角色禁止输出。
+- affection_first 的初始好感必须判断截至当前楼层结束后的既有关系程度，范围为 0-100，允许一位小数，不能固定从陌生阶段开始。
+- affection_first 不代表本轮变化，不能为了输出 affection_first 而把 affection_changed 写成 true，也不能伪造 delta=0 的 affection 行。
+- 避免因礼貌、重复问候、重复赞美、重复照顾、场景气氛浪漫或为了推进剧情而机械增加好感。
+- 同一角色本轮最多输出一条 affection 行。
+- 不要输出 JSON、Markdown、解释文字或额外 XML 标签。
+
+已知攻略状态：
+${String(knownAffectionText || "暂无已建档角色。").trim() || "暂无已建档角色。"}`;
+}
+
 export function buildLegacyArchiveEmotionUpdatePromptSection({
   knownProfilesText,
 }) {
@@ -581,21 +612,23 @@ ${String(knownProfilesText || "暂无。").trim() || "暂无。"}`;
 
 // 设定采集提示词：完整任务指令 → 参考材料 → 末尾简短强调。
 
-
 const TYPE_RULES = Object.freeze({
-  auto: '根据用户需求和材料自行判断每条应属于 npc、item、location 或 other；组织、事件和体系归入 other。',
-  npc: '只生成人物/NPC 设定；type 必须为 npc。',
-  item: '只生成物品设定；type 必须为 item。',
-  location: '只生成地点设定；type 必须为 location。',
-  other: '生成不属于人物、物品或地点的其他稳定设定；type 必须为 other。',
+  auto: "根据用户需求和材料自行判断每条应属于 npc、item、location 或 other；组织、事件和体系归入 other。",
+  npc: "只生成人物/NPC 设定；type 必须为 npc。",
+  item: "只生成物品设定；type 必须为 item。",
+  location: "只生成地点设定；type 必须为 location。",
+  other: "生成不属于人物、物品或地点的其他稳定设定；type 必须为 other。",
 });
 
 export function getCaptureTypeRule(requestedType) {
   return TYPE_RULES[requestedType] || TYPE_RULES.auto;
 }
 
-export function buildCaptureTaskInstruction({ request, requestedType = 'auto' } = {}) {
-  const userRequest = String(request || '').trim();
+export function buildCaptureTaskInstruction({
+  request,
+  requestedType = "auto",
+} = {}) {
+  const userRequest = String(request || "").trim();
   return `你正在执行一项独立的世界书资料整理任务，不是角色扮演续写。
 
 【任务边界】
@@ -669,27 +702,34 @@ ${getCaptureTypeRule(requestedType)}
 只输出合法 JSON。不要输出 Markdown 代码围栏、前言、解释、注释或额外字段。`;
 }
 
-export function buildCaptureReferenceMessage({ sourceMaterial, optionalMaterial } = {}) {
+export function buildCaptureReferenceMessage({
+  sourceMaterial,
+  optionalMaterial,
+} = {}) {
   const sections = [
-    `【参考材料｜主要剧情】\n${String(sourceMaterial || '').trim() || '（未提供主要剧情材料）'}`,
+    `【参考材料｜主要剧情】\n${String(sourceMaterial || "").trim() || "（未提供主要剧情材料）"}`,
   ];
-  const optional = String(optionalMaterial || '').trim();
-  if (optional) sections.push(`【参考材料｜用户明确选择的附加上下文】\n${optional}`);
+  const optional = String(optionalMaterial || "").trim();
+  if (optional)
+    sections.push(`【参考材料｜用户明确选择的附加上下文】\n${optional}`);
   sections.push(`【末尾强调】
 现在请严格按照前述任务要求与参考材料生成世界书条目草稿。
 只输出指定结构的合法 JSON；不要续写剧情，不要添加解释或其他格式。`);
-  return sections.join('\n\n');
+  return sections.join("\n\n");
 }
 
 export function buildCapturePromptMessages(input = {}, macroOverrides = {}) {
-  return replacePromptMessageMacros([
-    {
-      role: 'system',
-      content: buildCaptureTaskInstruction(input),
-    },
-    {
-      role: 'user',
-      content: buildCaptureReferenceMessage(input),
-    },
-  ], macroOverrides);
+  return replacePromptMessageMacros(
+    [
+      {
+        role: "system",
+        content: buildCaptureTaskInstruction(input),
+      },
+      {
+        role: "user",
+        content: buildCaptureReferenceMessage(input),
+      },
+    ],
+    macroOverrides,
+  );
 }

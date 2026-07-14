@@ -52,6 +52,13 @@ export function stripMemoryEmotionControlLines(content) {
     .trim();
 }
 
+export function stripMemoryChangedControlLines(content) {
+  return String(content || '')
+    .replace(/^\s*\[(?:emotion_changed|affection_changed)\s*:[^\r\n]*\]\s*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export function stripMemoryEmotionContextLines(content) {
   return stripMemoryEmotionControlLines(content)
     .replace(/^\s*\[emotion\s*:[^\r\n]*\]\s*$/gim, '')

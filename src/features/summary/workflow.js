@@ -41,6 +41,11 @@ import {
   processEmotionUpdateFromSummaryResult,
 } from '../emotion-profile/workflow.js';
 import {
+  buildAffectionUpdatePromptSection,
+  prepareAffectionUpdateFromSummaryResult,
+  processAffectionUpdateFromSummaryResult,
+} from '../affection/workflow.js';
+import {
   applyPlotOutlineProgressUpdate,
   buildPlotOutlineProgressPromptSection,
   parsePlotOutlineProgressLine,
@@ -68,6 +73,7 @@ import {
   normalizeMemoryBlock,
   parseMemoryNumber,
   stripListBlocks,
+  stripMemoryChangedControlLines,
   stripMemoryEmotionContextLines,
   stripMemoryEmotionControlLines,
   stripMemoryBlock,
@@ -1271,12 +1277,20 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
     const userContent = summary.includeUserInput ? getPreviousUserSummarySource(Number(messageId), summary) : '';
     const promptContent = buildSummaryPromptContent(replacedAiContent, userContent);
     const emotionPromptSection = buildEmotionUpdatePromptSection(settings);
+    const affectionPromptSection = buildAffectionUpdatePromptSection(settings, chatState);
     const plotOutlineProgressSection = buildPlotOutlineProgressPromptSection(chatState);
     const prompt = buildMemorySummaryPrompt(promptContent, priorMemories, summary, {
-      extraInstructions: joinSummaryExtraInstructions(emotionPromptSection, plotOutlineProgressSection),
+      extraInstructions: joinSummaryExtraInstructions(
+        emotionPromptSection,
+        affectionPromptSection,
+        plotOutlineProgressSection,
+      ),
     });
     const result = await generateSummaryMemory(prompt, { type: '自动小总结' });
-    const memory = stripMemoryEmotionControlLines(normalizeMemoryBlock(result));
+    const affectionAnalysis = prepareAffectionUpdateFromSummaryResult(result, { settings, chatState });
+    const memory = stripMemoryChangedControlLines(
+      affectionAnalysis?.normalizedMemory || normalizeMemoryBlock(result),
+    );
     const memoryReplacementResult = applyReplacementRulesByScope(memory, wordReplace);
     if (memoryReplacementResult.errors.length > 0) {
       throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
@@ -1302,6 +1316,12 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
     }
     saveChatState();
     notifySummary('success', `已为第 ${Number(messageId)} 楼写入小总结。`);
+    processAffectionUpdateFromSummaryResult(result, {
+      messageId: Number(messageId),
+      analysis: affectionAnalysis,
+      settings,
+      chatState,
+    });
     await processEmotionUpdateFromSummaryResult(result, { messageId: Number(messageId) });
     await processPlotOutlineProgressFromMemory(result, { messageId: Number(messageId) });
     await processAutoGrandMemory();
