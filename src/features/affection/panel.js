@@ -40,7 +40,12 @@ import {
   stripInlineStateLinesForSendingText,
 } from '../../core/prompt-state-lines.js';
 import { stripMemoryChangedControlLines } from '../../core/summary.js';
+import { MEMORY_FIELD_CONFIG } from '../chat-beautify/field-config.js';
+import { formatMemoryMultiRowParts } from '../chat-beautify/render-memory.js';
 import {
+  AFFECTION_STATE_INJECT_POSITION,
+  AFFECTION_STATE_PROMPT_ID,
+  buildAffectionInjection,
   buildAffectionUpdatePromptSection,
   commitSelectedPendingAffectionUpdates,
   createAffectionBuildTaskKey,
@@ -48,6 +53,7 @@ import {
   runAffectionProfileBuildApiPreview,
   startAffectionProfileBuildsForPending,
   storePendingAffectionUpdate,
+  syncAffectionInjection,
 } from './workflow.js';
 
 const DEFAULT_CHANGE_LINES = [
@@ -192,6 +198,12 @@ function createDefaultTestState() {
     commitStatus: 'idle',
     commitResult: null,
     commitError: '',
+    injectionSuiteStatus: 'idle',
+    injectionSuiteResults: [],
+    injectionMode: 'active',
+    injectionStatus: 'idle',
+    injectionResult: null,
+    injectionError: '',
     expandedSections: {
       suite: false,
       change: false,
@@ -206,6 +218,7 @@ function createDefaultTestState() {
       buildSuite: false,
       buildSimulator: false,
       commitSuite: false,
+      injectionSuite: false,
     },
   };
 }
@@ -1493,6 +1506,160 @@ async function runAffectionCommitSimulator() {
   }
 }
 
+function createInjectionTestChatState({ empty = false } = {}) {
+  const chatState = createBuildTestChatState();
+  if (!empty) {
+    chatState.affectionSystem.profiles.沈青 = createCommitTestProfile('沈青', 350);
+  }
+  return chatState;
+}
+
+function createSetExtensionPromptRecorder() {
+  const calls = [];
+  return {
+    calls,
+    setExtensionPrompt: async (...args) => {
+      calls.push(args);
+    },
+  };
+}
+
+export async function runAffectionInjectionSuite() {
+  const tests = [];
+  tests.push(await runAsyncTest('注入只包含正式当前值对应的单个阶段', async () => {
+    const content = buildAffectionInjection(createInjectionTestChatState());
+    assertTest(content.includes('沈青对{{user}}的好感度：35.0/100'), '没有注入正式账本当前值。');
+    assertTest(content.includes('阶段「测试阶段2」'), `35.0 未命中 S2：${content}`);
+    assertTest(content.includes('行为A；行为B；行为C') && content.includes('变化倾向：继续发展'), '缺少当前阶段行为或变化倾向。');
+    assertTest(!content.includes('测试阶段1') && !content.includes('测试阶段3'), '注入泄露了非当前阶段。');
+    assertTest(content.includes('不要播报数值或阶段名称'), '缺少禁止正文播报状态。');
+    return '35.0 只注入 S2 的名称、表现、趋势和边界，不暴露完整五阶段。';
+  }));
+  tests.push(await runAsyncTest('攻略 active 时写入独立 prompt id 与固定槽位', async () => {
+    const recorder = createSetExtensionPromptRecorder();
+    const settings = createBuildTestSettings('generic');
+    let latestChatState = createInjectionTestChatState();
+    const result = await syncAffectionInjection({
+      settings,
+      chatState: latestChatState,
+      setExtensionPrompt: recorder.setExtensionPrompt,
+      getLatestSettings: () => settings,
+      getLatestChatState: () => latestChatState,
+    });
+    const call = recorder.calls[0];
+    assertTest(result.action === 'set' && recorder.calls.length === 1, `写入结果：${JSON.stringify(result)}`);
+    assertTest(call[0] === AFFECTION_STATE_PROMPT_ID && call[0] !== 'shenling_assistant_emotion_profile_state', '未使用独立好感 prompt id。');
+    assertTest(call[2] === AFFECTION_STATE_INJECT_POSITION && call[3] === 0, `槽位错误：${JSON.stringify(call.slice(0, 4))}`);
+    assertTest(typeof call[6] === 'function' && call[6]() === true, '最新状态过滤函数未允许当前有效注入。');
+    settings.modules.summary.enabled = false;
+    assertTest(call[6]() === false, '过滤函数闭包了旧设置，关闭自动小总结后仍返回 true。');
+    settings.modules.summary.enabled = true;
+    latestChatState = createInjectionTestChatState({ empty: true });
+    assertTest(call[6]() === false, '过滤函数闭包了旧聊天，切到空档案聊天后仍返回 true。');
+    return '使用 shenling_assistant_affection_state / position=1 / depth=0，过滤器读取最新状态。';
+  }));
+  tests.push(await runAsyncTest('关闭依赖或内容为空时覆盖清空真实槽位', async () => {
+    for (const mode of ['summary_off', 'affection_off', 'empty']) {
+      const settings = createBuildTestSettings('generic');
+      if (mode === 'summary_off') settings.modules.summary.enabled = false;
+      if (mode === 'affection_off') settings.modules.affection.enabled = false;
+      const chatState = createInjectionTestChatState({ empty: mode === 'empty' });
+      const recorder = createSetExtensionPromptRecorder();
+      const result = await syncAffectionInjection({
+        settings,
+        chatState,
+        setExtensionPrompt: recorder.setExtensionPrompt,
+      });
+      assertTest(result.action === 'clear' && recorder.calls.length === 2, `${mode} 未执行双槽位清理。`);
+      assertTest(recorder.calls.some(call => call[2] === -1), `${mode} 缺少兼容清理。`);
+      assertTest(recorder.calls.some(call => call[2] === AFFECTION_STATE_INJECT_POSITION && call[3] === 0), `${mode} 没有覆盖清空真实槽位。`);
+      assertTest(recorder.calls.every(call => call[1] === '' && call[6]() === false), `${mode} 清理内容或过滤器错误。`);
+    }
+    return '自动小总结关闭、好感关闭和无正式档案均同时清理兼容槽位与 position=1 实际槽位。';
+  }));
+  tests.push(await runAsyncTest('affection 与 affection_first 使用专用楼层显示格式', async () => {
+    assertTest(sameValue(
+      formatMemoryMultiRowParts('affection', '沈青|0.2|35.2', 3),
+      ['沈青', '+0.2', '当前好感 35.2'],
+    ), '正向 affection 显示错误。');
+    assertTest(sameValue(
+      formatMemoryMultiRowParts('affection', '沈青|-0.1|35.1', 3),
+      ['沈青', '-0.1', '当前好感 35.1'],
+    ), '负向 affection 显示错误。');
+    assertTest(sameValue(
+      formatMemoryMultiRowParts('affection', '沈青|0|35.0', 3),
+      ['沈青', '0', '当前好感 35.0'],
+    ), '零变化 affection 显示错误。');
+    assertTest(sameValue(
+      formatMemoryMultiRowParts('affection_first', '阿蛮|35.0', 2),
+      ['阿蛮', '初始好感 35.0'],
+    ), 'affection_first 显示错误。');
+    assertTest(MEMORY_FIELD_CONFIG.affection?.enabled !== false && MEMORY_FIELD_CONFIG.affection?.pipe === 3, 'affection 字段尚未正式启用三段配置。');
+    assertTest(MEMORY_FIELD_CONFIG.affection_first?.pipe === 2, 'affection_first 两段配置缺失。');
+    return '正数补 +，负数/0 保留，并分别显示当前好感与初始好感。';
+  }));
+  tests.push(await runAsyncTest('写回剥离控制行但保留全部状态数据', async () => {
+    const input = `<memory>\n[emotion_changed:false]\n[affection_changed:true]\n[emotion:沈青|朋友|平静|保持信任]\n[affection:沈青|0.2|35.2]\n[affection_first:阿蛮|35.0]\n</memory>`;
+    const output = stripMemoryChangedControlLines(input);
+    assertTest(!/\[(?:emotion_changed|affection_changed)\s*:/i.test(output), 'changed 控制行未完全剥离。');
+    assertTest(output.includes('[emotion:沈青|朋友|平静|保持信任]'), 'emotion 数据被误删。');
+    assertTest(output.includes('[affection:沈青|0.2|35.2]'), '三段 affection 被误删。');
+    assertTest(output.includes('[affection_first:阿蛮|35.0]'), 'affection_first 被误删。');
+    return '只删除 emotion_changed 与旧 affection_changed，三类正式状态行完整保留。';
+  }));
+
+  affectionTestState.injectionSuiteResults = tests;
+  affectionTestState.injectionSuiteStatus = tests.every(item => item.status === 'passed') ? 'passed' : 'failed';
+  return cloneData(tests);
+}
+
+async function runAffectionInjectionSimulator() {
+  try {
+    const mode = affectionTestState.injectionMode;
+    const settings = createBuildTestSettings('generic');
+    if (mode === 'summary_off') settings.modules.summary.enabled = false;
+    if (mode === 'affection_off') settings.modules.affection.enabled = false;
+    const chatState = createInjectionTestChatState({ empty: mode === 'empty' });
+    const recorder = createSetExtensionPromptRecorder();
+    const result = await syncAffectionInjection({
+      settings,
+      chatState,
+      setExtensionPrompt: recorder.setExtensionPrompt,
+      getLatestSettings: () => settings,
+      getLatestChatState: () => chatState,
+    });
+    const stripInput = `<memory>\n[emotion_changed:false]\n[affection_changed:true]\n[emotion:沈青|朋友|平静|保持信任]\n[affection:沈青|0.2|35.2]\n[affection_first:阿蛮|35.0]\n</memory>`;
+    affectionTestState.injectionResult = {
+      mode,
+      action: result.action,
+      promptId: result.promptId,
+      injectionContent: result.content,
+      setExtensionPromptCalls: recorder.calls.map(call => ({
+        promptId: call[0],
+        content: call[1],
+        position: call[2],
+        depth: call[3],
+        filterResult: typeof call[6] === 'function' ? call[6]() : null,
+      })),
+      renderPreview: {
+        affectionPositive: formatMemoryMultiRowParts('affection', '沈青|0.2|35.2', 3),
+        affectionZero: formatMemoryMultiRowParts('affection', '沈青|0|35.0', 3),
+        affectionFirst: formatMemoryMultiRowParts('affection_first', '阿蛮|35.0', 2),
+      },
+      stripPreview: {
+        before: stripInput,
+        after: stripMemoryChangedControlLines(stripInput),
+      },
+    };
+    affectionTestState.injectionStatus = 'passed';
+    affectionTestState.injectionError = '';
+  } catch (error) {
+    affectionTestState.injectionResult = null;
+    affectionTestState.injectionStatus = 'failed';
+    affectionTestState.injectionError = error?.message || String(error);
+  }
+}
+
 function renderJsonResult(result, error, emptyText) {
   if (error) return `<div class="slx-affection-test-error">${escapeHtml(error)}</div>`;
   if (!result) return `<div class="slx-affection-test-empty">${escapeHtml(emptyText)}</div>`;
@@ -1561,6 +1728,13 @@ export function renderAffectionPanel() {
     affectionTestState.commitSuiteStatus,
     commitPassedCount,
     commitTotalCount,
+  );
+  const injectionPassedCount = affectionTestState.injectionSuiteResults.filter(item => item.status === 'passed').length;
+  const injectionTotalCount = affectionTestState.injectionSuiteResults.length;
+  const injectionSuiteLabel = getTestStatusLabel(
+    affectionTestState.injectionSuiteStatus,
+    injectionPassedCount,
+    injectionTotalCount,
   );
 
   return `
@@ -1908,6 +2082,42 @@ export function renderAffectionPanel() {
           </div>
         </div>
       </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="injectionSuite" ${affectionTestState.expandedSections.injectionSuite ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>开发期测试区</small>
+            <b>第 7 步 · 正文注入与楼层渲染</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.injectionSuiteStatus)}">${escapeHtml(injectionSuiteLabel)}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>使用页面内存和 mock setExtensionPrompt 调用真实注入、清理、显示格式与控制行剥离函数；不会修改酒馆 prompt、聊天或 metadata。</p>
+          <div class="slx-action-row">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-injection-suite>运行第 7 步全部检查</button>
+          </div>
+          ${renderSuiteResults(affectionTestState.injectionSuiteResults)}
+          <div class="slx-affection-test-subsection">
+            <p><b>自定义模拟 H：注入、清空、渲染与剥离预览</b></p>
+            <label class="slx-field">
+              <span>模拟运行状态</span>
+              <select data-slx-affection-injection-mode>
+                <option value="active" ${affectionTestState.injectionMode === 'active' ? 'selected' : ''}>攻略 active + 已建档</option>
+                <option value="summary_off" ${affectionTestState.injectionMode === 'summary_off' ? 'selected' : ''}>自动小总结关闭</option>
+                <option value="affection_off" ${affectionTestState.injectionMode === 'affection_off' ? 'selected' : ''}>好感度关闭</option>
+                <option value="empty" ${affectionTestState.injectionMode === 'empty' ? 'selected' : ''}>没有正式档案</option>
+              </select>
+            </label>
+            <div class="slx-action-row">
+              <button class="slx-soft-btn" type="button" data-slx-affection-run-injection-simulator>生成第 7 步预览</button>
+            </div>
+            ${renderJsonResult(affectionTestState.injectionResult, affectionTestState.injectionError, '运行后显示注入正文、真实槽位参数、显示分段和 changed 控制行剥离前后。')}
+          </div>
+        </div>
+      </details>
     </div>
   `;
 }
@@ -1941,6 +2151,8 @@ function syncAffectionTestInputs(panelRoot) {
     || affectionTestState.buildMode;
   affectionTestState.commitSelectedSwipe = panelRoot.querySelector('[data-slx-affection-commit-swipe]')?.value
     || affectionTestState.commitSelectedSwipe;
+  affectionTestState.injectionMode = panelRoot.querySelector('[data-slx-affection-injection-mode]')?.value
+    || affectionTestState.injectionMode;
 }
 
 export function bindAffectionPanelEvents(panelRoot) {
@@ -2048,6 +2260,18 @@ export function bindAffectionPanelEvents(panelRoot) {
   panelRoot.querySelector('[data-slx-affection-run-commit-simulator]')?.addEventListener('click', async () => {
     syncAffectionTestInputs(panelRoot);
     await runAffectionCommitSimulator();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-injection-suite]')?.addEventListener('click', async () => {
+    syncAffectionTestInputs(panelRoot);
+    await runAffectionInjectionSuite();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-injection-simulator]')?.addEventListener('click', async () => {
+    syncAffectionTestInputs(panelRoot);
+    await runAffectionInjectionSimulator();
     refreshPanel();
   });
 

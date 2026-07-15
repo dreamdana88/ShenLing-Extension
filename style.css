@@ -8225,6 +8225,13 @@ body.dark .slx-memory-wrap,
   color: var(--slx-mc-emotion-strong);
 }
 
+.slx-mc-list-block--affection .slx-mc-block-title,
+.slx-mc-list-block--affection .slx-mc-icon,
+.slx-mc-list-block--affection_first .slx-mc-block-title,
+.slx-mc-list-block--affection_first .slx-mc-icon {
+  color: var(--slx-mc-progress-strong);
+}
+
 .slx-mc-list-block--progress .slx-mc-block-title,
 .slx-mc-list-block--progress .slx-mc-icon {
   color: var(--slx-mc-progress-strong);
@@ -8349,6 +8356,16 @@ body.dark .slx-memory-wrap,
 
 .slx-mc-list-item--emotion .slx-mc-part-1 {
   color: var(--slx-mc-emotion-strong);
+}
+
+.slx-mc-list-item--affection .slx-mc-part,
+.slx-mc-list-item--affection_first .slx-mc-part {
+  background: var(--slx-mc-progress-bg);
+}
+
+.slx-mc-list-item--affection .slx-mc-part-1,
+.slx-mc-list-item--affection_first .slx-mc-part-1 {
+  color: var(--slx-mc-progress-strong);
 }
 
 .slx-mc-list-item--progress .slx-mc-part {

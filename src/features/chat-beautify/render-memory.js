@@ -92,6 +92,34 @@ function createBlockRow(key, config, value) {
   return block;
 }
 
+function formatAffectionDeltaForDisplay(value) {
+  const text = String(value || '').trim();
+  const number = Number(text);
+  if (!text || !Number.isFinite(number)) return text;
+  if (number > 0) return `+${text.replace(/^\+/, '')}`;
+  return number === 0 ? '0' : text;
+}
+
+export function formatMemoryMultiRowParts(key, value, pipe = 0) {
+  const parts = parsePipeFields(value, pipe || 0);
+  if (key === 'affection' && parts.length >= 3) {
+    return [
+      String(parts[0] || '').trim(),
+      formatAffectionDeltaForDisplay(parts[1]),
+      `当前好感 ${String(parts[2] || '').trim()}`,
+    ].filter(Boolean);
+  }
+  if (key === 'affection_first' && parts.length >= 2) {
+    return [
+      String(parts[0] || '').trim(),
+      `初始好感 ${String(parts[1] || '').trim()}`,
+    ].filter(Boolean);
+  }
+  return parts
+    .map((part, index) => (key === 'progress' && index === 1 && !part ? '本轮新增:无' : part))
+    .filter(part => part !== '');
+}
+
 function createMultiRow(key, config, values) {
   const block = createElement('section', `slx-mc-list-block slx-mc-list-block--${key}`);
   const title = createElement('div', 'slx-mc-block-title');
@@ -101,9 +129,7 @@ function createMultiRow(key, config, values) {
   const list = createElement('ul', `slx-mc-list slx-mc-list--${key}`);
   values.forEach((value, valueIndex) => {
     const item = createElement('li', `slx-mc-list-item slx-mc-list-item--${key} slx-mc-list-item-${valueIndex + 1}`);
-    const parts = parsePipeFields(value, config.pipe || 0)
-      .map((part, index) => (key === 'progress' && index === 1 && !part ? '本轮新增:无' : part))
-      .filter(part => part !== '');
+    const parts = formatMemoryMultiRowParts(key, value, config.pipe || 0);
     if (key === 'quote') {
       const speaker = String(parts[0] || '').trim();
       if (speaker === '{{user}}') {

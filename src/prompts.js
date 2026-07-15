@@ -604,6 +604,16 @@ export function buildAffectionProfilePrompt({
 ${String(contextMaterial || '暂无额外材料。').trim() || '暂无额外材料。'}`;
 }
 
+export function buildAffectionStateInjectionPrompt({ entriesText }) {
+  const entries = String(entriesText || '').trim();
+  if (!entries) return '';
+  return `<affection_profile_state>
+以下为蜃灵助手维护的已确认攻略状态。它不是新剧情，只用于保持角色对{{user}}的关系阶段、行为倾向与边界连续性。不要在正文中播报好感数值或阶段名称。
+
+${entries}
+</affection_profile_state>`;
+}
+
 export function buildLegacyArchiveEmotionUpdatePromptSection({
   knownProfilesText,
 }) {

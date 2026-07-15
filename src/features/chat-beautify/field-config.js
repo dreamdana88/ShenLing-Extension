@@ -8,8 +8,9 @@ export const MEMORY_FIELD_CONFIG = Object.freeze({
   quote: { icon: 'message-circle', label: '台词', mode: 'multi', slot: 'body', pipe: 2, order: 13 },
   db: { icon: 'archive', label: '档案', mode: 'multi', slot: 'body', pipe: 2, order: 14 },
   emotion: { icon: 'heart', label: '情感', mode: 'multi', slot: 'body', pipe: 4, order: 15 },
-  affection: { icon: 'trending-up', label: '好感', mode: 'multi', slot: 'body', pipe: 3, order: 16, enabled: false },
-  progress: { icon: 'route', label: '进度', mode: 'multi', slot: 'body', pipe: 4, order: 17 },
+  affection: { icon: 'trending-up', label: '好感', mode: 'multi', slot: 'body', pipe: 3, order: 16 },
+  affection_first: { icon: 'heart', label: '初始好感', mode: 'multi', slot: 'body', pipe: 2, order: 17 },
+  progress: { icon: 'route', label: '进度', mode: 'multi', slot: 'body', pipe: 4, order: 18 },
 });
 
 export const MEMORY_CONTROL_FIELDS = Object.freeze(new Set([
