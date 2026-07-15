@@ -5,6 +5,10 @@ import {
 } from "../../core/context-resolver.js";
 import { replacePromptMessageMacros } from "../../core/macros.js";
 import {
+  resolvePromptMessages,
+  resolvePromptText,
+} from "../../core/prompt-overrides.js";
+import {
   getContextInfo,
   getChatState,
   getGlobalSettings,
@@ -15,7 +19,7 @@ import {
 import { getOpenAiResponseContent } from "../../core/summary.js";
 import {
   buildMiniTheaterPrompt,
-  SUMMARY_SUPPORT_MESSAGES,
+  PROMPT_IDS,
 } from "../../prompts.js";
 import { escapeHtml, formatTimestamp } from "../../utils/text.js";
 import { applyWordReplacementToGeneratedContent } from "../word-replace/generated.js";
@@ -449,11 +453,17 @@ function renderMarkdownText(markdown) {
 }
 
 function buildMiniTheaterMessages({ userPrompt, styleContent, contextMaterial }) {
+  const settings = getGlobalSettings();
   return replacePromptMessageMacros([
-    ...SUMMARY_SUPPORT_MESSAGES.map((message) => ({ ...message })),
+    ...resolvePromptMessages(PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES, settings),
     {
       role: "user",
-      content: buildMiniTheaterPrompt({ userPrompt, styleContent, contextMaterial }),
+      content: buildMiniTheaterPrompt({
+        userPrompt,
+        styleContent,
+        contextMaterial,
+        template: resolvePromptText(PROMPT_IDS.THEATER_BUILD, settings),
+      }),
     },
   ]);
 }

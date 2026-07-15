@@ -5,6 +5,10 @@ import {
 } from '../../core/context-resolver.js';
 import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
+  resolvePromptMessages,
+  resolvePromptText,
+} from '../../core/prompt-overrides.js';
+import {
   getChatState,
   getContextInfo,
   getGlobalSettings,
@@ -16,7 +20,7 @@ import {
 import { getOpenAiResponseContent } from '../../core/summary.js';
 import {
   buildSchedulePrompt,
-  SUMMARY_SUPPORT_MESSAGES,
+  PROMPT_IDS,
 } from '../../prompts.js';
 import {
   formatTimestamp,
@@ -130,11 +134,17 @@ function applyWordReplacementToSchedule(schedule) {
 }
 
 function buildScheduleMessages({ userDirection, contextMaterial, outlineMaterial }) {
+  const settings = getGlobalSettings();
   return replacePromptMessageMacros([
-    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+    ...resolvePromptMessages(PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES, settings),
     {
       role: 'user',
-      content: buildSchedulePrompt({ userDirection, contextMaterial, outlineMaterial }),
+      content: buildSchedulePrompt({
+        userDirection,
+        contextMaterial,
+        outlineMaterial,
+        template: resolvePromptText(PROMPT_IDS.SCHEDULE_BUILD, settings),
+      }),
     },
   ]);
 }

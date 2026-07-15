@@ -1,7 +1,7 @@
 export const MODULE_NAME = 'shenling_assistant';
 export const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 export const STORAGE_VERSION = 1;
-export const PLUGIN_VERSION = '0.17.1';
+export const PLUGIN_VERSION = '0.17.2';
 export const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 export const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 export const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -22,5 +22,5 @@ export const MODULES = [
   { id: 'diary', icon: 'diary', shortTitle: '日记', title: '日记', desc: '普通日记、交换日记与角色日记本。' },
   { id: 'theater', icon: 'theater', shortTitle: '小剧场', title: '小剧场', desc: '番外侧幕、提示词收藏与 AI 即时生成。' },
   { id: 'replace', icon: 'replace', shortTitle: '替换', title: '词汇替换', desc: '用户词库、替换预览与当前楼层重新替换。' },
-  { id: 'settings', icon: 'settings', shortTitle: '设置', title: '设置', desc: '副 API、存储诊断与通讯日志。' },
+  { id: 'settings', icon: 'settings', shortTitle: '设置', title: '设置', desc: '副 API、提示词与运行诊断。' },
 ];

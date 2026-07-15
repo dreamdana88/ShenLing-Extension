@@ -6,6 +6,10 @@ import {
 } from '../../core/context-resolver.js';
 import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
+  resolvePromptMessages,
+  resolvePromptText,
+} from '../../core/prompt-overrides.js';
+import {
   getChatState,
   getContextInfo,
   getGlobalSettings,
@@ -17,7 +21,7 @@ import {
 import { getOpenAiResponseContent } from '../../core/summary.js';
 import {
   buildPlotOutlinePrompt,
-  SUMMARY_SUPPORT_MESSAGES,
+  PROMPT_IDS,
 } from '../../prompts.js';
 import {
   formatTimestamp,
@@ -590,11 +594,17 @@ function applyWordReplacementToDraft(draft) {
 }
 
 function buildPlotOutlineMessages({ userDirection, chapterCount, contextMaterial }) {
+  const settings = getGlobalSettings();
   return replacePromptMessageMacros([
-    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+    ...resolvePromptMessages(PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES, settings),
     {
       role: 'user',
-      content: buildPlotOutlinePrompt({ userDirection, chapterCount, contextMaterial }),
+      content: buildPlotOutlinePrompt({
+        userDirection,
+        chapterCount,
+        contextMaterial,
+        template: resolvePromptText(PROMPT_IDS.OUTLINE_BUILD, settings),
+      }),
     },
   ]);
 }

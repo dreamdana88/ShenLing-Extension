@@ -11,6 +11,11 @@ import {
   DEFAULT_MEMORY_PROMPT_TEMPLATE,
 } from '../prompts.js';
 import {
+  createDefaultPromptOverrides,
+  migrateLegacySummaryPromptSettings,
+  normalizePromptOverrideSettings,
+} from './prompt-overrides.js';
+import {
   cloneData,
   formatTimestamp,
   getSummarySourceTags,
@@ -194,6 +199,7 @@ export const defaultGlobalSettings = Object.freeze({
   enabled: true,
   theme: 'light',
   activeModule: 'summary',
+  promptOverrides: createDefaultPromptOverrides(),
   ui: {
     lastOpenedAt: '',
     sourceRulesCollapsed: true,
@@ -412,6 +418,14 @@ export function getGlobalSettings() {
   settings.schemaVersion = STORAGE_VERSION;
   if (isPlainObject(settings.modules)) delete settings.modules.parallel;
   if (settings.activeModule === 'parallel') settings.activeModule = 'summary';
+  normalizePromptOverrideSettings(settings);
+  const migratedPrompts = migrateLegacySummaryPromptSettings(settings, {
+    memoryDefault: DEFAULT_MEMORY_PROMPT_TEMPLATE,
+    grandDefault: DEFAULT_GRAND_MEMORY_TEMPLATE,
+  });
+  if (migratedPrompts) {
+    getContextSafe()?.saveSettingsDebounced?.();
+  }
 
   return settings;
 }

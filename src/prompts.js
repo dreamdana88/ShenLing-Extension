@@ -1,5 +1,11 @@
 import { replacePromptMessageMacros } from "./core/macros.js";
 
+export function fillRuntimePromptTemplate(template, values = {}) {
+  return String(template || '').replace(/\$\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, key) => (
+    Object.hasOwn(values, key) ? String(values[key] ?? '') : token
+  ));
+}
+
 export const SUMMARY_GAZE_GUIDANCE = `##总结视角约束
 - 总结须遵循女性凝视与女本位叙事：尊重女性主体性、欲望与选择，不客体化、矮化弱化女性。
 - 客观精准的档案生成式记录，极简主义、信息密集、零修辞。只记客观存在的角色行为、情节发展。
@@ -110,10 +116,22 @@ export function buildMiniTheaterPrompt({
   userPrompt,
   styleContent,
   contextMaterial,
+  template = null,
+  templateMode = false,
 }) {
-  const styleSection = String(styleContent || "").trim()
+  const cleanStyleContent = String(styleContent || "").trim();
+  const styleSection = templateMode
+    ? ["${styleSection}"]
+    : cleanStyleContent
     ? ["", `【文风要求】\n${String(styleContent || "").trim()}`]
     : [];
+  if (template !== null) {
+    return fillRuntimePromptTemplate(template, {
+      contextMaterial: contextMaterial || "（未读取到额外上下文）",
+      userPrompt,
+      styleSection: cleanStyleContent ? `\n\n【文风要求】\n${cleanStyleContent}` : '',
+    });
+  }
   return [
     "当前蜃灵已进入小剧场专属梦境，小剧场内容须严格尊重梦境素材中的角色设定、关系、世界信息、近期剧情与情感档案。",
     "请只输出小剧场正文或完整 HTML，不要解释你的创作过程，不要输出上下文分析，不要要求用户补充。",
@@ -169,18 +187,38 @@ export function buildMiniTheaterPrompt({
   ].join("\n");
 }
 
+export const MINI_THEATER_PROMPT_TEMPLATE = buildMiniTheaterPrompt({
+  userPrompt: '${userPrompt}',
+  styleContent: '',
+  contextMaterial: '${contextMaterial}',
+  templateMode: true,
+}).replace('\n${styleSection}\n', '${styleSection}\n');
+
 export function buildPlotOutlinePrompt({
   userDirection,
   chapterCount,
   contextMaterial,
+  template = null,
+  templateMode = false,
 }) {
-  const chapterCountText =
+  const chapterCountText = templateMode
+    ? '${chapterCountText}'
+    :
     chapterCount === "auto"
       ? "4 到 6 章（按故事规模自行决定）"
       : `${chapterCount} 章`;
-  const directionSection = String(userDirection || "").trim()
+  const directionSection = templateMode
+    ? '${directionSection}'
+    : String(userDirection || "").trim()
     ? `\n【用户期望的剧情方向】\n${String(userDirection).trim()}\n生成时必须把用户期望方向作为主线核心参考。\n`
     : "";
+  if (template !== null) {
+    return fillRuntimePromptTemplate(template, {
+      chapterCountText,
+      contextMaterial: contextMaterial || "（未读取到额外上下文）",
+      directionSection,
+    });
+  }
   return `当前蜃灵已进入剧情编织状态。
 
 请根据下方梦境上下文素材，为这个故事设计一份「完整主线章节蓝图」，作为剧情发展的仪表盘。
@@ -238,17 +276,37 @@ ${directionSection}
 - 末章 exitChapterId 填空字符串。`;
 }
 
+export const PLOT_OUTLINE_PROMPT_TEMPLATE = buildPlotOutlinePrompt({
+  userDirection: '',
+  chapterCount: 'auto',
+  contextMaterial: '${contextMaterial}',
+  templateMode: true,
+});
+
 export function buildSchedulePrompt({
   userDirection,
   contextMaterial,
   outlineMaterial,
+  template = null,
+  templateMode = false,
 }) {
-  const directionSection = String(userDirection || "").trim()
+  const directionSection = templateMode
+    ? '${directionSection}'
+    : String(userDirection || "").trim()
     ? `\n【用户期望的短期推进方向】\n${String(userDirection).trim()}\n生成日程表时必须参考。\n`
     : "";
-  const outlineSection = String(outlineMaterial || "").trim()
+  const outlineSection = templateMode
+    ? '${outlineSection}'
+    : String(outlineMaterial || "").trim()
     ? `\n【当前剧情大纲参考】\n${String(outlineMaterial).trim()}\n`
     : "";
+  if (template !== null) {
+    return fillRuntimePromptTemplate(template, {
+      contextMaterial: contextMaterial || "（未读取到额外上下文）",
+      outlineSection,
+      directionSection,
+    });
+  }
   return `当前蜃灵已进入日程表编织状态。
 
 请根据下方梦境上下文素材，为当前故事生成一份「七日剧情」。作为未来七天的剧情清单。
@@ -310,13 +368,33 @@ ${outlineSection}${directionSection}
 - characterMovements.summary：保持第三人称场外客观视角，描述该角色此刻在做什么。`;
 }
 
+export const SCHEDULE_PROMPT_TEMPLATE = buildSchedulePrompt({
+  userDirection: '',
+  contextMaterial: '${contextMaterial}',
+  outlineMaterial: '',
+  templateMode: true,
+});
+
 export function buildMemoirExtractPrompt({
   grandMemoryMaterial,
   emotionMaterial,
   recordedList,
+  template = null,
+  templateMode = false,
 }) {
-  const emotionSection = String(emotionMaterial || "").trim() || "（无）";
-  const recordedSection = String(recordedList || "").trim() || "（暂无）";
+  const emotionSection = templateMode
+    ? '${emotionSection}'
+    : String(emotionMaterial || "").trim() || "（无）";
+  const recordedSection = templateMode
+    ? '${recordedSection}'
+    : String(recordedList || "").trim() || "（暂无）";
+  if (template !== null) {
+    return fillRuntimePromptTemplate(template, {
+      grandMemoryMaterial: grandMemoryMaterial || "（未读取到大总结素材）",
+      emotionSection,
+      recordedSection,
+    });
+  }
   return `当前蜃灵已进入回忆沉淀状态，对既往梦境进行梳理归档。
 
 蜃灵不记录正在发生的事，只把已经发生完、已经有意义的旧事，沉成未来剧情能自然唤起的回忆。
@@ -387,6 +465,13 @@ ${recordedSection}
 - storyTime 为剧情世界内的时间。
 - 没有任何已完成事件可提炼时，输出 {"overview": [], "memories": []}。`;
 }
+
+export const MEMOIR_EXTRACT_PROMPT_TEMPLATE = buildMemoirExtractPrompt({
+  grandMemoryMaterial: '${grandMemoryMaterial}',
+  emotionMaterial: '',
+  recordedList: '',
+  templateMode: true,
+});
 
 export const DEFAULT_MEMORY_PROMPT_TEMPLATE = [
   "##浓缩梦境",
@@ -504,7 +589,16 @@ I, Shen Ling, accept these covenants. I shall dissolve entirely into the dreamsc
   },
 ]);
 
-export function buildEmotionUpdatePromptSection({ knownProfilesText }) {
+export function buildEmotionUpdatePromptSection({
+  knownProfilesText,
+  template = null,
+  templateMode = false,
+}) {
+  if (template !== null) {
+    return fillRuntimePromptTemplate(template, {
+      knownProfilesText: String(knownProfilesText || "暂无。").trim() || "暂无。",
+    });
+  }
   return `## 情感档案更新判断
 
 请在生成 <memory> 时，额外判断本轮剧情是否出现“显著情感变化”。
@@ -536,10 +630,24 @@ export function buildEmotionUpdatePromptSection({ knownProfilesText }) {
 - 不要输出 JSON、Markdown、解释文字或额外 XML 标签。
 
 已知最新情感档案：
-${String(knownProfilesText || "暂无。").trim() || "暂无。"}`;
+${templateMode ? '${knownProfilesText}' : String(knownProfilesText || "暂无。").trim() || "暂无。"}`;
 }
 
-export function buildAffectionUpdatePromptSection({ knownAffectionText }) {
+export const EMOTION_UPDATE_PROMPT_TEMPLATE = buildEmotionUpdatePromptSection({
+  knownProfilesText: '',
+  templateMode: true,
+});
+
+export function buildAffectionUpdatePromptSection({
+  knownAffectionText,
+  template = null,
+  templateMode = false,
+}) {
+  if (template !== null) {
+    return fillRuntimePromptTemplate(template, {
+      knownAffectionText: String(knownAffectionText || "暂无已建档角色。").trim() || "暂无已建档角色。",
+    });
+  }
   return `## 攻略好感判断（仅攻略模式）
 
 请额外评估本轮 {{user}} 与可攻略角色互动带来的细微好感变化。好感变化比情感档案更细水长流：即使 [emotion_changed:false]，只要本轮互动会让角色对 {{user}} 的倾向产生可计量的微小变化，也可以输出好感变化。
@@ -565,21 +673,52 @@ export function buildAffectionUpdatePromptSection({ knownAffectionText }) {
 - 不要输出 JSON、Markdown、解释文字或额外 XML 标签，也不要在正文中播报好感数值。
 
 已知攻略状态：
-${String(knownAffectionText || "暂无已建档角色。").trim() || "暂无已建档角色。"}`;
+${templateMode ? '${knownAffectionText}' : String(knownAffectionText || "暂无已建档角色。").trim() || "暂无已建档角色。"}`;
 }
+
+export const AFFECTION_UPDATE_PROMPT_TEMPLATE = buildAffectionUpdatePromptSection({
+  knownAffectionText: '',
+  templateMode: true,
+});
 
 export function buildAffectionProfilePrompt({
   roleName,
   initialAffection,
   userRequirement = '',
   contextMaterial,
+  template = null,
+  templateMode = false,
 }) {
-  const cleanRoleName = String(roleName || '').trim();
-  const cleanInitialAffection = String(initialAffection || '').trim();
+  const cleanRoleName = templateMode ? '${roleName}' : String(roleName || '').trim();
+  const cleanInitialAffection = templateMode ? '${initialAffection}' : String(initialAffection || '').trim();
   const cleanUserRequirement = String(userRequirement || '').trim();
-  const requirementBlock = cleanUserRequirement
+  const requirementBlock = templateMode
+    ? '${requirementBlock}'
+    : cleanUserRequirement
     ? `\n## 用户专属需求（本次定制最高优先级）\n${cleanUserRequirement}\n\n在不改变固定五阶段范围、正式初值与角色核心身份的前提下，阶段关系走向、表达偏好和边界必须优先满足以上用户需求。\n`
     : '';
+  const requirementReminder = templateMode
+    ? '${requirementReminder}'
+    : cleanUserRequirement
+      ? '生成结果必须再次优先核对用户专属需求。'
+      : '请依据角色与既有关系生成专属内容。';
+  const cleanContextMaterial = templateMode
+    ? '${contextMaterial}'
+    : String(contextMaterial || '暂无额外材料。').trim() || '暂无额外材料。';
+  if (template !== null) {
+    const actualRequirementBlock = cleanUserRequirement
+      ? `\n## 用户专属需求（本次定制最高优先级）\n${cleanUserRequirement}\n\n在不改变固定五阶段范围、正式初值与角色核心身份的前提下，阶段关系走向、表达偏好和边界必须优先满足以上用户需求。\n`
+      : '';
+    return fillRuntimePromptTemplate(template, {
+      roleName: String(roleName || '').trim(),
+      initialAffection: String(initialAffection || '').trim(),
+      requirementBlock: actualRequirementBlock,
+      contextMaterial: String(contextMaterial || '暂无额外材料。').trim() || '暂无额外材料。',
+      requirementReminder: cleanUserRequirement
+        ? '生成结果必须再次优先核对用户专属需求。'
+        : '请依据角色与既有关系生成专属内容。',
+    });
+  }
   return `## 攻略角色专属阶段表建档
 
 请只为角色「${cleanRoleName}」生成一套从 0 到 100 的五阶段攻略关系表。
@@ -608,25 +747,52 @@ export function buildAffectionProfilePrompt({
 ${requirementBlock}
 
 以下材料只用于理解角色和既有关系：
-${String(contextMaterial || '暂无额外材料。').trim() || '暂无额外材料。'}
+${cleanContextMaterial}
 
-${cleanUserRequirement ? '生成结果必须再次优先核对用户专属需求。' : '请依据角色与既有关系生成专属内容。'}
+${requirementReminder}
 不得在 JSON 外输出任何内容。`;
 }
 
-export function buildAffectionStateInjectionPrompt({ entriesText }) {
+export const AFFECTION_PROFILE_PROMPT_TEMPLATE = buildAffectionProfilePrompt({
+  roleName: '',
+  initialAffection: '',
+  userRequirement: '',
+  contextMaterial: '',
+  templateMode: true,
+});
+
+export function buildAffectionStateInjectionPrompt({
+  entriesText,
+  template = null,
+  templateMode = false,
+}) {
   const entries = String(entriesText || '').trim();
-  if (!entries) return '';
+  if (!entries && !templateMode) return '';
+  if (template !== null) {
+    return fillRuntimePromptTemplate(template, { entriesText: entries });
+  }
   return `<affection_profile_state>
 以下为蜃灵助手维护的已确认攻略状态。它不是新剧情，只用于保持角色对{{user}}的关系阶段、行为倾向与边界连续性。不要在正文中播报好感数值或阶段名称。
 
-${entries}
+${templateMode ? '${entriesText}' : entries}
 </affection_profile_state>`;
 }
 
+export const AFFECTION_STATE_INJECTION_PROMPT_TEMPLATE = buildAffectionStateInjectionPrompt({
+  entriesText: '',
+  templateMode: true,
+});
+
 export function buildLegacyArchiveEmotionUpdatePromptSection({
   knownProfilesText,
+  template = null,
+  templateMode = false,
 }) {
+  if (template !== null) {
+    return fillRuntimePromptTemplate(template, {
+      knownProfilesText: String(knownProfilesText || "暂无。").trim() || "暂无。",
+    });
+  }
   return `## 旧聊天情感档案补全
 
 请在生成 <grand_memory> 后，根据本次大总结中的 [arc:...] 行整理当前角色情感档案。
@@ -659,8 +825,13 @@ export function buildLegacyArchiveEmotionUpdatePromptSection({
 - 不要输出 JSON、Markdown、解释文字或额外 XML 标签。
 
 已知最新情感档案：
-${String(knownProfilesText || "暂无。").trim() || "暂无。"}`;
+${templateMode ? '${knownProfilesText}' : String(knownProfilesText || "暂无。").trim() || "暂无。"}`;
 }
+
+export const LEGACY_EMOTION_UPDATE_PROMPT_TEMPLATE = buildLegacyArchiveEmotionUpdatePromptSection({
+  knownProfilesText: '',
+  templateMode: true,
+});
 
 // ── 世界书设定采集 ──────────────────────────────────────────────────
 
@@ -681,8 +852,17 @@ export function getCaptureTypeRule(requestedType) {
 export function buildCaptureTaskInstruction({
   request,
   requestedType = "auto",
+  template = null,
+  templateMode = false,
 } = {}) {
-  const userRequest = String(request || "").trim();
+  const userRequest = templateMode ? '${userRequest}' : String(request || "").trim();
+  const typeRule = templateMode ? '${typeRule}' : getCaptureTypeRule(requestedType);
+  if (template !== null) {
+    return fillRuntimePromptTemplate(template, {
+      userRequest: String(request || "").trim(),
+      typeRule: getCaptureTypeRule(requestedType),
+    });
+  }
   return `你正在执行一项独立的世界书资料整理任务，不是角色扮演续写。
 
 【任务边界】
@@ -696,7 +876,7 @@ export function buildCaptureTaskInstruction({
 ${userRequest}
 
 【条目类型】
-${getCaptureTypeRule(requestedType)}
+${typeRule}
 
 【适用范围】
 - 每条草稿聚焦一个单一地点、组织、物品、NPC、事件或体系，不把多个无关实体拼成一条。
@@ -756,34 +936,356 @@ ${getCaptureTypeRule(requestedType)}
 只输出合法 JSON。不要输出 Markdown 代码围栏、前言、解释、注释或额外字段。`;
 }
 
+export const CAPTURE_TASK_PROMPT_TEMPLATE = buildCaptureTaskInstruction({
+  request: '',
+  requestedType: 'auto',
+  templateMode: true,
+});
+
 export function buildCaptureReferenceMessage({
   sourceMaterial,
   optionalMaterial,
+  template = null,
+  templateMode = false,
 } = {}) {
-  const sections = [
-    `【参考材料｜主要剧情】\n${String(sourceMaterial || "").trim() || "（未提供主要剧情材料）"}`,
-  ];
   const optional = String(optionalMaterial || "").trim();
-  if (optional)
-    sections.push(`【参考材料｜用户明确选择的附加上下文】\n${optional}`);
-  sections.push(`【末尾强调】
+  const optionalSection = templateMode
+    ? '${optionalSection}'
+    : optional
+      ? `\n\n【参考材料｜用户明确选择的附加上下文】\n${optional}`
+      : '';
+  if (template !== null) {
+    return fillRuntimePromptTemplate(template, {
+      sourceMaterial: String(sourceMaterial || "").trim() || "（未提供主要剧情材料）",
+      optionalSection: optional
+        ? `\n\n【参考材料｜用户明确选择的附加上下文】\n${optional}`
+        : '',
+    });
+  }
+  return `【参考材料｜主要剧情】
+${templateMode ? '${sourceMaterial}' : String(sourceMaterial || "").trim() || "（未提供主要剧情材料）"}${optionalSection}
+
+【末尾强调】
 现在请严格按照前述任务要求与参考材料生成世界书条目草稿。
-只输出指定结构的合法 JSON；不要续写剧情，不要添加解释或其他格式。`);
-  return sections.join("\n\n");
+只输出指定结构的合法 JSON；不要续写剧情，不要添加解释或其他格式。`;
 }
 
-export function buildCapturePromptMessages(input = {}, macroOverrides = {}) {
+export const CAPTURE_REFERENCE_PROMPT_TEMPLATE = buildCaptureReferenceMessage({
+  sourceMaterial: '',
+  optionalMaterial: '',
+  templateMode: true,
+});
+
+export function buildCapturePromptMessages(input = {}, macroOverrides = {}, templates = {}) {
+  const messageTemplates = Array.isArray(templates.messages) ? templates.messages : [];
+  const taskMessage = messageTemplates[0];
+  const referenceMessage = messageTemplates[1];
   return replacePromptMessageMacros(
     [
       {
-        role: "system",
-        content: buildCaptureTaskInstruction(input),
+        role: taskMessage?.role || "system",
+        content: buildCaptureTaskInstruction({
+          ...input,
+          template: taskMessage?.content ?? templates.taskTemplate ?? null,
+        }),
       },
       {
-        role: "user",
-        content: buildCaptureReferenceMessage(input),
+        role: referenceMessage?.role || "user",
+        content: buildCaptureReferenceMessage({
+          ...input,
+          template: referenceMessage?.content ?? templates.referenceTemplate ?? null,
+        }),
       },
     ],
     macroOverrides,
   );
 }
+
+export const PROMPT_IDS = Object.freeze({
+  SUMMARY_MEMORY: 'summary.memory_template',
+  SUMMARY_GRAND: 'summary.grand_memory_template',
+  SUMMARY_GAZE: 'summary.gaze_guidance',
+  SUMMARY_MEMORY_CHECKLIST: 'summary.memory_checklist',
+  SUMMARY_GRAND_CHECKLIST: 'summary.grand_checklist',
+  SUMMARY_LEGACY_CHECKLIST: 'summary.legacy_checklist',
+  SUMMARY_SUPPORT_MESSAGES: 'summary.support_messages',
+  EMOTION_UPDATE: 'emotion.update',
+  EMOTION_LEGACY_UPDATE: 'emotion.legacy_update',
+  AFFECTION_UPDATE: 'affection.update',
+  AFFECTION_PROFILE: 'affection.profile_build',
+  AFFECTION_INJECTION: 'affection.state_injection',
+  OUTLINE_BUILD: 'outline.build',
+  SCHEDULE_BUILD: 'schedule.build',
+  MEMOIR_EXTRACT: 'memoir.extract',
+  CAPTURE_MESSAGES: 'capture.messages',
+  DIARY_ROLE: 'diary.role',
+  DIARY_EXCHANGE: 'diary.exchange',
+  THEATER_BUILD: 'theater.build',
+});
+
+const promptVariable = (token, label) => Object.freeze({ token, label });
+const USER_MACRO_VARIABLE = promptVariable('{{user}}', '当前用户名称');
+
+export const PROMPT_CATALOG = Object.freeze([
+  {
+    id: PROMPT_IDS.SUMMARY_MEMORY,
+    moduleId: 'summary',
+    moduleLabel: '自动总结',
+    label: '小总结主体',
+    description: '生成 <memory> 的主体结构与字段规则。',
+    kind: 'text',
+    defaultValue: DEFAULT_MEMORY_PROMPT_TEMPLATE,
+    variables: [USER_MACRO_VARIABLE],
+    requiredTokens: ['<memory>', '</memory>', '[number:', '[plot:'],
+  },
+  {
+    id: PROMPT_IDS.SUMMARY_GRAND,
+    moduleId: 'summary',
+    moduleLabel: '自动总结',
+    label: '大总结主体',
+    description: '生成 <grand_memory> 的主体结构与归档字段。',
+    kind: 'text',
+    defaultValue: DEFAULT_GRAND_MEMORY_TEMPLATE,
+    variables: [
+      USER_MACRO_VARIABLE,
+      promptVariable('${archiveFrom}', '归档起始编号'),
+      promptVariable('${archiveTo}', '归档结束编号'),
+    ],
+    requiredTokens: ['<grand_memory>', '</grand_memory>', '[volume:', '[chronicle:', '[arc:', '[task:'],
+  },
+  {
+    id: PROMPT_IDS.SUMMARY_GAZE,
+    moduleId: 'summary',
+    moduleLabel: '自动总结',
+    label: '总结视角约束',
+    description: '小总结、大总结共用的叙事与记录视角。',
+    kind: 'text',
+    defaultValue: SUMMARY_GAZE_GUIDANCE,
+    variables: [],
+    requiredTokens: [],
+  },
+  {
+    id: PROMPT_IDS.SUMMARY_MEMORY_CHECKLIST,
+    moduleId: 'summary',
+    moduleLabel: '自动总结',
+    label: '小总结内部工序',
+    description: '小总结生成前的内部检查清单。',
+    kind: 'text',
+    defaultValue: SUMMARY_INTERNAL_CHECKLIST,
+    variables: [],
+    requiredTokens: ['<memory>', '</memory>'],
+  },
+  {
+    id: PROMPT_IDS.SUMMARY_GRAND_CHECKLIST,
+    moduleId: 'summary',
+    moduleLabel: '自动总结',
+    label: '大总结内部工序',
+    description: '大总结生成前的内部归档检查。',
+    kind: 'text',
+    defaultValue: GRAND_SUMMARY_INTERNAL_CHECKLIST,
+    variables: [],
+    requiredTokens: ['<grand_memory>', '</grand_memory>'],
+  },
+  {
+    id: PROMPT_IDS.SUMMARY_LEGACY_CHECKLIST,
+    moduleId: 'summary',
+    moduleLabel: '自动总结',
+    label: '旧聊天压缩工序',
+    description: '旧聊天分批归档时使用的内部规则。',
+    kind: 'text',
+    defaultValue: LEGACY_ARCHIVE_INTERNAL_CHECKLIST,
+    variables: [],
+    requiredTokens: [],
+  },
+  {
+    id: PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES,
+    moduleId: 'summary',
+    moduleLabel: '自动总结',
+    label: '共用支持消息',
+    description: '总结及创作模块请求前置的多消息提示词。',
+    kind: 'message_list',
+    defaultValue: SUMMARY_SUPPORT_MESSAGES,
+    variables: [],
+    requiredTokens: [],
+  },
+  {
+    id: PROMPT_IDS.EMOTION_UPDATE,
+    moduleId: 'emotion',
+    moduleLabel: '情感档案',
+    label: '情感变化判断',
+    description: '自动小总结中的情感变化判断与字段协议。',
+    kind: 'text',
+    defaultValue: EMOTION_UPDATE_PROMPT_TEMPLATE,
+    variables: [USER_MACRO_VARIABLE, promptVariable('${knownProfilesText}', '已知最新情感档案')],
+    requiredTokens: ['${knownProfilesText}', '[emotion_changed:', '[emotion:'],
+  },
+  {
+    id: PROMPT_IDS.EMOTION_LEGACY_UPDATE,
+    moduleId: 'emotion',
+    moduleLabel: '情感档案',
+    label: '旧聊天情感补全',
+    description: '旧聊天归档后的情感档案补全协议。',
+    kind: 'text',
+    defaultValue: LEGACY_EMOTION_UPDATE_PROMPT_TEMPLATE,
+    variables: [USER_MACRO_VARIABLE, promptVariable('${knownProfilesText}', '已知最新情感档案')],
+    requiredTokens: ['${knownProfilesText}', '[emotion_changed:', '[emotion:'],
+  },
+  {
+    id: PROMPT_IDS.AFFECTION_UPDATE,
+    moduleId: 'affection',
+    moduleLabel: '好感度',
+    label: '好感变化判断',
+    description: '自动小总结中的好感变化与首次建档字段协议。',
+    kind: 'text',
+    defaultValue: AFFECTION_UPDATE_PROMPT_TEMPLATE,
+    variables: [USER_MACRO_VARIABLE, promptVariable('${knownAffectionText}', '已知攻略状态')],
+    requiredTokens: ['${knownAffectionText}', '[affection:', '[affection_first:'],
+  },
+  {
+    id: PROMPT_IDS.AFFECTION_PROFILE,
+    moduleId: 'affection',
+    moduleLabel: '好感度',
+    label: '专属阶段建档',
+    description: '首次建档与按需求重新生成五阶段时使用。',
+    kind: 'text',
+    defaultValue: AFFECTION_PROFILE_PROMPT_TEMPLATE,
+    variables: [
+      USER_MACRO_VARIABLE,
+      promptVariable('${roleName}', '角色名'),
+      promptVariable('${initialAffection}', '正式初始好感'),
+      promptVariable('${requirementBlock}', '用户专属需求段'),
+      promptVariable('${contextMaterial}', '角色与剧情材料'),
+      promptVariable('${requirementReminder}', '需求优先级提醒'),
+    ],
+    requiredTokens: ['${roleName}', '${initialAffection}', '${contextMaterial}', '"stages"', '"range"'],
+  },
+  {
+    id: PROMPT_IDS.AFFECTION_INJECTION,
+    moduleId: 'affection',
+    moduleLabel: '好感度',
+    label: '正文状态注入',
+    description: '把已确认攻略状态注入下一轮正文。',
+    kind: 'text',
+    defaultValue: AFFECTION_STATE_INJECTION_PROMPT_TEMPLATE,
+    variables: [USER_MACRO_VARIABLE, promptVariable('${entriesText}', '当前角色阶段状态')],
+    requiredTokens: ['<affection_profile_state>', '</affection_profile_state>', '${entriesText}'],
+  },
+  {
+    id: PROMPT_IDS.OUTLINE_BUILD,
+    moduleId: 'outline',
+    moduleLabel: '剧情大纲',
+    label: '剧情大纲生成',
+    description: '章节蓝图、推进条件与 JSON 输出规则。',
+    kind: 'text',
+    defaultValue: PLOT_OUTLINE_PROMPT_TEMPLATE,
+    variables: [
+      USER_MACRO_VARIABLE,
+      promptVariable('${contextMaterial}', '梦境上下文'),
+      promptVariable('${directionSection}', '用户期望方向段'),
+      promptVariable('${chapterCountText}', '章节数量说明'),
+    ],
+    requiredTokens: ['${contextMaterial}', '${directionSection}', '${chapterCountText}', '"storyCore"', '"chapters"'],
+  },
+  {
+    id: PROMPT_IDS.SCHEDULE_BUILD,
+    moduleId: 'schedule',
+    moduleLabel: '日程表',
+    label: '七日日程生成',
+    description: '七日剧情机会、介入入口与角色动向协议。',
+    kind: 'text',
+    defaultValue: SCHEDULE_PROMPT_TEMPLATE,
+    variables: [
+      USER_MACRO_VARIABLE,
+      promptVariable('${contextMaterial}', '梦境上下文'),
+      promptVariable('${outlineSection}', '当前剧情大纲段'),
+      promptVariable('${directionSection}', '用户期望方向段'),
+    ],
+    requiredTokens: ['${contextMaterial}', '${outlineSection}', '${directionSection}', '"days"', '"entryOptions"'],
+  },
+  {
+    id: PROMPT_IDS.MEMOIR_EXTRACT,
+    moduleId: 'memoir',
+    moduleLabel: '回忆录与设定采集',
+    label: '关键回忆提炼',
+    description: '从大总结中提炼回忆录候选。',
+    kind: 'text',
+    defaultValue: MEMOIR_EXTRACT_PROMPT_TEMPLATE,
+    variables: [
+      USER_MACRO_VARIABLE,
+      promptVariable('${grandMemoryMaterial}', '本次大总结'),
+      promptVariable('${emotionSection}', '情感档案'),
+      promptVariable('${recordedSection}', '已记录回忆简表'),
+    ],
+    requiredTokens: ['${grandMemoryMaterial}', '${emotionSection}', '${recordedSection}', '"overview"', '"memories"'],
+  },
+  {
+    id: PROMPT_IDS.CAPTURE_MESSAGES,
+    moduleId: 'memoir',
+    moduleLabel: '回忆录与设定采集',
+    label: '设定采集消息组',
+    description: '设定采集的系统任务与用户参考消息，保留 role 和顺序。',
+    kind: 'message_list',
+    defaultValue: Object.freeze([
+      Object.freeze({ role: 'system', content: CAPTURE_TASK_PROMPT_TEMPLATE }),
+      Object.freeze({ role: 'user', content: CAPTURE_REFERENCE_PROMPT_TEMPLATE }),
+    ]),
+    variables: [
+      promptVariable('${userRequest}', '用户采集需求'),
+      promptVariable('${typeRule}', '本次条目类型规则'),
+      promptVariable('${sourceMaterial}', '主要剧情材料'),
+      promptVariable('${optionalSection}', '用户勾选的附加材料段'),
+    ],
+    requiredTokens: ['${userRequest}', '${typeRule}', '${sourceMaterial}', '${optionalSection}', '"entries"', '"content"'],
+  },
+  {
+    id: PROMPT_IDS.DIARY_ROLE,
+    moduleId: 'diary',
+    moduleLabel: '日记',
+    label: '角色日记',
+    description: '角色第一人称私人日记模板。',
+    kind: 'text',
+    defaultValue: ROLE_DIARY_PROMPT_TEMPLATE,
+    variables: [
+      promptVariable('${targetRoleName}', '目标角色名'),
+      promptVariable('${diaryDate}', '日记日期'),
+      promptVariable('${diaryContextMaterial}', '日记上下文材料'),
+    ],
+    requiredTokens: ['${targetRoleName}', '${diaryDate}', '${diaryContextMaterial}', '"title"', '"content"'],
+  },
+  {
+    id: PROMPT_IDS.DIARY_EXCHANGE,
+    moduleId: 'diary',
+    moduleLabel: '日记',
+    label: '交换日记',
+    description: '角色回应 {{user}} 日记内容的模板。',
+    kind: 'text',
+    defaultValue: EXCHANGE_DIARY_PROMPT_TEMPLATE,
+    variables: [
+      USER_MACRO_VARIABLE,
+      promptVariable('${targetRoleName}', '目标角色名'),
+      promptVariable('${diaryDate}', '日记日期'),
+      promptVariable('${diaryContextMaterial}', '日记上下文材料'),
+      promptVariable('${userDiaryContent}', '用户已写日记'),
+    ],
+    requiredTokens: ['${targetRoleName}', '${diaryDate}', '${diaryContextMaterial}', '${userDiaryContent}', '"title"', '"content"'],
+  },
+  {
+    id: PROMPT_IDS.THEATER_BUILD,
+    moduleId: 'theater',
+    moduleLabel: '小剧场',
+    label: '小剧场构筑',
+    description: '小剧场正文或 HTML 生成的固定构筑规则。',
+    kind: 'text',
+    defaultValue: MINI_THEATER_PROMPT_TEMPLATE,
+    variables: [
+      promptVariable('${contextMaterial}', '梦境上下文'),
+      promptVariable('${userPrompt}', '用户小剧场要求'),
+      promptVariable('${styleSection}', '可选文风要求段'),
+    ],
+    requiredTokens: ['${contextMaterial}', '${userPrompt}', '${styleSection}'],
+  },
+].map(item => Object.freeze({
+  ...item,
+  variables: Object.freeze([...(item.variables || [])]),
+  requiredTokens: Object.freeze([...(item.requiredTokens || [])]),
+})));

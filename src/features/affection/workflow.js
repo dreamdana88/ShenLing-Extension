@@ -25,6 +25,10 @@ import {
 } from '../../core/summary.js';
 import { getMessageContentFingerprint } from '../../core/message-fingerprint.js';
 import { registerPendingCommitHandler } from '../../core/pending-commit.js';
+import {
+  resolvePromptMessages,
+  resolvePromptText,
+} from '../../core/prompt-overrides.js';
 import { getContextSafe } from '../../core/chat.js';
 import {
   getTavernEventsSafe,
@@ -34,7 +38,7 @@ import {
   buildAffectionProfilePrompt,
   buildAffectionStateInjectionPrompt,
   buildAffectionUpdatePromptSection as buildAffectionUpdatePromptSectionText,
-  SUMMARY_SUPPORT_MESSAGES,
+  PROMPT_IDS,
 } from '../../prompts.js';
 import {
   AFFECTION_ALLOWED_DELTA_TENTHS,
@@ -200,7 +204,10 @@ export function buildAffectionInjection(chatState = getChatState()) {
       ].join('\n');
     })
     .filter(Boolean);
-  return buildAffectionStateInjectionPrompt({ entriesText: entries.join('\n\n') });
+  return buildAffectionStateInjectionPrompt({
+    entriesText: entries.join('\n\n'),
+    template: resolvePromptText(PROMPT_IDS.AFFECTION_INJECTION, getGlobalSettings()),
+  });
 }
 
 const GENERIC_AFFECTION_STAGE_CONTENT = Object.freeze([
@@ -344,8 +351,9 @@ function buildAffectionProfileMessages({
   userRequirement = '',
   contextMaterial,
 }) {
+  const settings = getGlobalSettings();
   return replacePromptMessageMacros([
-    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+    ...resolvePromptMessages(PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES, settings),
     {
       role: 'user',
       content: buildAffectionProfilePrompt({
@@ -353,6 +361,7 @@ function buildAffectionProfileMessages({
         initialAffection: formatAffectionValueTenths(initialValueTenths),
         userRequirement,
         contextMaterial,
+        template: resolvePromptText(PROMPT_IDS.AFFECTION_PROFILE, settings),
       }),
     },
   ]);
@@ -1264,6 +1273,7 @@ export function buildAffectionUpdatePromptSection(
   const store = getAffectionSystemState(chatState);
   return buildAffectionUpdatePromptSectionText({
     knownAffectionText: buildKnownAffectionText(store.profiles),
+    template: resolvePromptText(PROMPT_IDS.AFFECTION_UPDATE, settings),
   });
 }
 

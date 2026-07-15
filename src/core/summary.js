@@ -4,13 +4,13 @@ import {
   MEMORY_BLOCK_RE,
 } from '../constants.js';
 import {
-  DEFAULT_GRAND_MEMORY_TEMPLATE,
-  GRAND_SUMMARY_INTERNAL_CHECKLIST,
-  LEGACY_ARCHIVE_INTERNAL_CHECKLIST,
-  SUMMARY_GAZE_GUIDANCE,
-  SUMMARY_INTERNAL_CHECKLIST,
-  SUMMARY_SUPPORT_MESSAGES,
+  PROMPT_IDS,
 } from '../prompts.js';
+import { getGlobalSettings } from './settings.js';
+import {
+  resolvePromptMessages,
+  resolvePromptText,
+} from './prompt-overrides.js';
 
 const PROMPT_BUNDLE_MARKER = '__shenlingPromptBundle';
 
@@ -153,7 +153,7 @@ export function isGrandMemoryOnly(content) {
 }
 
 export function getGrandMemoryPromptTemplate(summary = {}) {
-  return String(summary.grandPromptTemplate || DEFAULT_GRAND_MEMORY_TEMPLATE);
+  return resolvePromptText(PROMPT_IDS.SUMMARY_GRAND, getGlobalSettings());
 }
 
 export function fillGrandMemoryTemplate(template, archiveFrom, archiveTo) {
@@ -163,6 +163,7 @@ export function fillGrandMemoryTemplate(template, archiveFrom, archiveTo) {
 }
 
 export function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMaterial, { regenerate = false, summary = {}, extraInstructions = '' } = {}) {
+  const settings = getGlobalSettings();
   const grandMemoryTemplate = fillGrandMemoryTemplate(getGrandMemoryPromptTemplate(summary), memoryFrom, memoryTo);
   const verb = regenerate ? '重新生成' : '生成';
   const cleanExtraInstructions = String(extraInstructions || '').trim();
@@ -173,8 +174,8 @@ export function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMate
     '蜃灵处于梦境档案编制状态。',
     '现在是梦境大归档模块，只负责把给定小总结素材压缩为可追溯的大总结，不续写剧情。',
     grandMemoryTemplate,
-    SUMMARY_GAZE_GUIDANCE,
-    GRAND_SUMMARY_INTERNAL_CHECKLIST,
+    resolvePromptText(PROMPT_IDS.SUMMARY_GAZE, settings),
+    resolvePromptText(PROMPT_IDS.SUMMARY_GRAND_CHECKLIST, settings),
     cleanExtraInstructions,
     `现在请根据用户提供的梦境记忆${verb}本轮归档大总结。`,
     '请只依据素材内容归纳，不要续写剧情。',
@@ -185,13 +186,14 @@ export function buildGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMate
 }
 
 export function buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiveMaterial, { summary = {} } = {}) {
+  const settings = getGlobalSettings();
   const grandMemoryTemplate = fillGrandMemoryTemplate(getGrandMemoryPromptTemplate(summary), memoryFrom, memoryTo);
   const systemContent = [
     '蜃灵处于梦境档案编制状态。',
     '你是蜃灵助手的总档案压缩模块，只负责把多个已有大总结合并为一个更高层梦境总档案，不续写剧情。',
     grandMemoryTemplate,
-    SUMMARY_GAZE_GUIDANCE,
-    GRAND_SUMMARY_INTERNAL_CHECKLIST,
+    resolvePromptText(PROMPT_IDS.SUMMARY_GAZE, settings),
+    resolvePromptText(PROMPT_IDS.SUMMARY_GRAND_CHECKLIST, settings),
     '现在请根据用户提供的多个已有大总结，生成一份覆盖完整范围的全新完整大总结。',
     '请按剧情发展重新整合精炼，不要机械拼接旧大总结。',
     '请只依据素材内容归纳，不要续写剧情。',
@@ -202,6 +204,7 @@ export function buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, archiv
 }
 
 export function buildMemorySummaryPrompt(content, priorMemories = [], summary = {}, options = {}) {
+  const settings = getGlobalSettings();
   const priorSection = priorMemories.length > 0
     ? `【过往梦境档案】\n${priorMemories.join('\n\n')}`
     : '';
@@ -213,9 +216,9 @@ export function buildMemorySummaryPrompt(content, priorMemories = [], summary = 
   const systemContent = [
     '蜃灵处于梦境档案编制状态。',
     '现在是梦境小总结模块，只需把用户提供的本轮素材压缩为剧情档案。',
-    summary.promptTemplate || '',
-    SUMMARY_GAZE_GUIDANCE,
-    SUMMARY_INTERNAL_CHECKLIST,
+    resolvePromptText(PROMPT_IDS.SUMMARY_MEMORY, settings),
+    resolvePromptText(PROMPT_IDS.SUMMARY_GAZE, settings),
+    resolvePromptText(PROMPT_IDS.SUMMARY_MEMORY_CHECKLIST, settings),
     materialInstructions,
     `请不要续写剧情，不要输出 <content>，${outputRule}`,
     extraInstructions,
@@ -238,16 +241,20 @@ export function buildOpeningSummaryPromptContent(openingContent, characterFounda
 }
 
 export function buildMemorySummaryMessages(prompt) {
+  const supportMessages = resolvePromptMessages(
+    PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES,
+    getGlobalSettings(),
+  );
   if (isPromptBundle(prompt)) {
     return [
-      ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+      ...supportMessages,
       { role: 'system', content: prompt.systemContent },
       { role: 'user', content: prompt.userContent },
     ];
   }
 
   return [
-    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+    ...supportMessages,
     { role: 'user', content: String(prompt || '') },
   ];
 }
@@ -307,6 +314,7 @@ export function buildLegacyArchiveBatchMaterial(batch) {
 }
 
 export function buildLegacyArchiveBatchPrompt(batch, batchIndex, batchTotal) {
+  const settings = getGlobalSettings();
   const firstId = batch[0]?.messageId ?? '?';
   const lastId = batch.at(-1)?.messageId ?? '?';
   const systemContent = [
@@ -320,7 +328,7 @@ export function buildLegacyArchiveBatchPrompt(batch, batchIndex, batchTotal) {
     '3. 不要续写剧情，不要输出 <content>、<memory> 或 <grand_memory>。',
     '4. 输出独立可读的纯文本批次摘要。',
     '',
-    LEGACY_ARCHIVE_INTERNAL_CHECKLIST,
+    resolvePromptText(PROMPT_IDS.SUMMARY_LEGACY_CHECKLIST, settings),
   ].join('\n');
   const userContent = [
     '【旧聊天片段】',

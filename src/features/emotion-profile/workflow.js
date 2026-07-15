@@ -20,6 +20,7 @@ import {
   getMessageContentFingerprint,
 } from '../../core/message-fingerprint.js';
 import { registerPendingCommitHandler } from '../../core/pending-commit.js';
+import { resolvePromptText } from '../../core/prompt-overrides.js';
 import {
   getTavernEventsSafe,
   registerTavernEvent,
@@ -27,6 +28,7 @@ import {
 import {
   buildEmotionUpdatePromptSection as buildEmotionUpdatePromptSectionText,
   buildLegacyArchiveEmotionUpdatePromptSection as buildLegacyArchiveEmotionUpdatePromptSectionText,
+  PROMPT_IDS,
 } from '../../prompts.js';
 
 const EMOTION_PROFILE_PROMPT_ID = 'shenling_assistant_emotion_profile_state';
@@ -304,6 +306,7 @@ export function buildEmotionUpdatePromptSection(settings = getGlobalSettings()) 
   const store = getEmotionProfileStore();
   return buildEmotionUpdatePromptSectionText({
     knownProfilesText: buildKnownProfilesSection(store),
+    template: resolvePromptText(PROMPT_IDS.EMOTION_UPDATE, settings),
   });
 }
 
@@ -312,6 +315,7 @@ export function buildLegacyArchiveEmotionUpdatePromptSection(settings = getGloba
   const store = getEmotionProfileStore();
   return buildLegacyArchiveEmotionUpdatePromptSectionText({
     knownProfilesText: buildKnownProfilesSection(store),
+    template: resolvePromptText(PROMPT_IDS.EMOTION_LEGACY_UPDATE, settings),
   });
 }
 

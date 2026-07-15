@@ -8,6 +8,10 @@ import { GRAND_MEMORY_BLOCK_RE, LIST_BLOCK_RE, MEMORY_BLOCK_RE } from '../../con
 import { buildApiUrl } from '../../core/api.js';
 import { getChatMessagesSafe, getContextSafe } from '../../core/chat.js';
 import { getOpenAiResponseContent } from '../../core/summary.js';
+import {
+  resolvePromptMessages,
+  resolvePromptText,
+} from '../../core/prompt-overrides.js';
 import { extractSummarySourceContent, formatTimestamp, isPlainObject } from '../../utils/text.js';
 import {
   CAPTURE_SOURCE_MODES,
@@ -35,7 +39,11 @@ import {
   getResolvedCharacterCard,
   getUserPersona,
 } from '../../core/context-resolver.js';
-import { buildCapturePromptMessages, buildMemoirExtractPrompt } from '../../prompts.js';
+import {
+  buildCapturePromptMessages,
+  buildMemoirExtractPrompt,
+  PROMPT_IDS,
+} from '../../prompts.js';
 import { getWorldbookApi, getWorldbookReadApi } from './worldbook-api.js';
 import {
   buildMemoirBlueContent,
@@ -155,10 +163,12 @@ export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate
     return { skipped: 'no_material', sourceKey, overview: [], memories: [] };
   }
 
+  const settings = getGlobalSettings();
   const prompt = buildMemoirExtractPrompt({
     grandMemoryMaterial,
     emotionMaterial: buildEmotionMaterial(),
     recordedList: buildRecordedList(memoir),
+    template: resolvePromptText(PROMPT_IDS.MEMOIR_EXTRACT, settings),
   });
 
   const raw = await generate(prompt, { type: '回忆录提炼', apiMode: memoirSettings.apiMode });
@@ -1218,12 +1228,15 @@ export async function prepareCaptureGeneration({
   );
   if (!optionalResult.ok) errors.push(...optionalResult.errors);
 
+  const settings = getGlobalSettings();
   const messages = errors.length ? [] : buildCapturePromptMessages({
     request: capture.request,
     requestedType: capture.requestedType,
     sourceMaterial: sourceResult.material,
     optionalMaterial: optionalResult.material,
-  }, macroOverrides);
+  }, macroOverrides, {
+    messages: resolvePromptMessages(PROMPT_IDS.CAPTURE_MESSAGES, settings),
+  });
   return {
     ok: errors.length === 0,
     capture,

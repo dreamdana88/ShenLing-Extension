@@ -25,9 +25,11 @@ import {
   getOpenAiResponseContent,
 } from '../../core/summary.js';
 import {
-  EXCHANGE_DIARY_PROMPT_TEMPLATE,
-  ROLE_DIARY_PROMPT_TEMPLATE,
-  SUMMARY_SUPPORT_MESSAGES,
+  resolvePromptMessages,
+  resolvePromptText,
+} from '../../core/prompt-overrides.js';
+import {
+  PROMPT_IDS,
 } from '../../prompts.js';
 import {
   applyWordReplacementToGeneratedContent,
@@ -147,7 +149,8 @@ function fillTemplate(template, values = {}) {
 
 function buildRoleDiaryPrompt({ targetRoleName, diaryDate, diaryContextMaterial }) {
   const promptDiaryDate = String(diaryDate || '').trim() || DIARY_DATE_FALLBACK_LABEL;
-  return replacePromptMacros(fillTemplate(ROLE_DIARY_PROMPT_TEMPLATE, {
+  const template = resolvePromptText(PROMPT_IDS.DIARY_ROLE, getGlobalSettings());
+  return replacePromptMacros(fillTemplate(template, {
     targetRoleName,
     diaryDate: promptDiaryDate,
     diaryContextMaterial,
@@ -156,7 +159,8 @@ function buildRoleDiaryPrompt({ targetRoleName, diaryDate, diaryContextMaterial 
 
 function buildExchangeDiaryPrompt({ targetRoleName, diaryDate, diaryContextMaterial, userDiaryContent }) {
   const promptDiaryDate = String(diaryDate || '').trim() || DIARY_DATE_FALLBACK_LABEL;
-  return replacePromptMacros(fillTemplate(EXCHANGE_DIARY_PROMPT_TEMPLATE, {
+  const template = resolvePromptText(PROMPT_IDS.DIARY_EXCHANGE, getGlobalSettings());
+  return replacePromptMacros(fillTemplate(template, {
     targetRoleName,
     diaryDate: promptDiaryDate,
     diaryContextMaterial,
@@ -1128,6 +1132,7 @@ function getDiaryContextOptions(roleName) {
 }
 
 async function generateRoleDiary({ roleName, date }) {
+  const settings = getGlobalSettings();
   const fallbackDate = String(date || '').trim() || DIARY_DATE_FALLBACK_LABEL;
   const context = await resolveDiaryContext(getDiaryContextOptions(roleName));
   const prompt = buildRoleDiaryPrompt({
@@ -1136,7 +1141,7 @@ async function generateRoleDiary({ roleName, date }) {
     diaryContextMaterial: context.material,
   });
   const messages = replacePromptMessageMacros([
-    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+    ...resolvePromptMessages(PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES, settings),
     { role: 'user', content: prompt },
   ]);
 
@@ -1148,6 +1153,7 @@ async function generateRoleDiary({ roleName, date }) {
 }
 
 async function generateExchangeDiary({ roleName, date, userDiaryContent }) {
+  const settings = getGlobalSettings();
   const fallbackDate = String(date || '').trim() || DIARY_DATE_FALLBACK_LABEL;
   const context = await resolveDiaryContext(getDiaryContextOptions(roleName));
   const prompt = buildExchangeDiaryPrompt({
@@ -1157,7 +1163,7 @@ async function generateExchangeDiary({ roleName, date, userDiaryContent }) {
     userDiaryContent,
   });
   const messages = replacePromptMessageMacros([
-    ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
+    ...resolvePromptMessages(PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES, settings),
     { role: 'user', content: prompt },
   ]);
 

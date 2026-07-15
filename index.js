@@ -128,10 +128,17 @@ import {
   configureAffectionWorkflow,
   registerAffectionWorkflowEvents,
 } from './src/features/affection/workflow.js';
+import {
+  bindPromptEditorPanelEvents,
+  closePromptEditorOverlays,
+  isPromptEditorOverlayOpen,
+  renderPromptEditorPanel,
+} from './src/features/prompt-editor/panel.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
 let floatingButtonIgnoreClick = false;
+let settingsModuleTab = 'basic';
 
 const FLOATING_BUTTON_DRAG_THRESHOLD = 6;
 
@@ -698,38 +705,47 @@ function renderModuleDetail(module, settings) {
 
   if (module.id === 'settings') {
     return `
-
-      ${renderApiSettingsPanel(settings)}
-      <div class="slx-detail-card">
-        <div class="slx-detail-title">存储检查</div>
-        <p>确认全局设置与当前聊天状态可以正常保存。</p>
-        <div class="slx-action-row">
-          <button class="slx-soft-btn" type="button" data-slx-write-global>写入全局</button>
-          <button class="slx-soft-btn" type="button" data-slx-write-chat>写入聊天</button>
+      <div class="slx-settings-module-root">
+        <div class="slx-settings-tabs" role="tablist" aria-label="设置页面">
+          <button id="slx-settings-tab-basic" type="button" role="tab" aria-controls="slx-settings-tab-panel" aria-selected="${settingsModuleTab === 'basic'}" tabindex="${settingsModuleTab === 'basic' ? '0' : '-1'}" class="${settingsModuleTab === 'basic' ? 'is-active' : ''}" data-slx-settings-tab="basic">基础设置</button>
+          <button id="slx-settings-tab-prompts" type="button" role="tab" aria-controls="slx-settings-tab-panel" aria-selected="${settingsModuleTab === 'prompts'}" tabindex="${settingsModuleTab === 'prompts' ? '0' : '-1'}" class="${settingsModuleTab === 'prompts' ? 'is-active' : ''}" data-slx-settings-tab="prompts">提示词</button>
         </div>
-      </div>
-      <div class="slx-detail-card slx-muted-card">
-        <div class="slx-detail-title">当前环境</div>
-        ${renderDiagnosticLine('角色', info.characterName)}
-        ${renderDiagnosticLine('角色 ID', info.characterId || '未读取')}
-        ${renderDiagnosticLine('聊天', info.chatName)}
-        ${renderDiagnosticLine('聊天 ID', info.chatId || '未读取')}
-        ${renderDiagnosticLine('版本', PLUGIN_VERSION)}
-      </div>
-      <div class="slx-detail-card slx-muted-card">
-        <div class="slx-detail-title">状态诊断</div>
-        ${renderDiagnosticLine('全局设置键', diagnostics.globalKey)}
-        ${renderDiagnosticLine('聊天状态键', diagnostics.chatKey)}
-        ${renderDiagnosticLine('扩展设置可用', diagnostics.hasExtensionSettings ? '是' : '否')}
-        ${renderDiagnosticLine('聊天 metadata 可用', diagnostics.hasChatMetadata ? '是' : '否')}
-        ${renderDiagnosticLine('全局保存函数', diagnostics.canSaveGlobal ? '可用' : '未发现')}
-        ${renderDiagnosticLine('聊天保存函数', diagnostics.canSaveChat ? '可用' : '未发现，暂用设置保存兜底')}
-        ${renderDiagnosticLine('全局测试值', diagnostics.globalProbe)}
-        ${renderDiagnosticLine('聊天测试值', diagnostics.chatProbe)}
-        ${renderDiagnosticLine('通讯日志数', getCommunicationLogs(settings).length)}
-        ${renderContextDiagnostics()}
-        ${renderDiagnosticLine('全局最近保存', diagnostics.globalLastSavedAt)}
-        ${renderDiagnosticLine('聊天最近保存', diagnostics.chatLastSavedAt)}
+        <div id="slx-settings-tab-panel" class="slx-settings-tab-panel" role="tabpanel" aria-labelledby="slx-settings-tab-${settingsModuleTab}">
+          ${settingsModuleTab === 'prompts' ? renderPromptEditorPanel(settings) : `
+            ${renderApiSettingsPanel(settings)}
+            <div class="slx-detail-card">
+              <div class="slx-detail-title">存储检查</div>
+              <p>确认全局设置与当前聊天状态可以正常保存。</p>
+              <div class="slx-action-row">
+                <button class="slx-soft-btn" type="button" data-slx-write-global>写入全局</button>
+                <button class="slx-soft-btn" type="button" data-slx-write-chat>写入聊天</button>
+              </div>
+            </div>
+            <div class="slx-detail-card slx-muted-card">
+              <div class="slx-detail-title">当前环境</div>
+              ${renderDiagnosticLine('角色', info.characterName)}
+              ${renderDiagnosticLine('角色 ID', info.characterId || '未读取')}
+              ${renderDiagnosticLine('聊天', info.chatName)}
+              ${renderDiagnosticLine('聊天 ID', info.chatId || '未读取')}
+              ${renderDiagnosticLine('版本', PLUGIN_VERSION)}
+            </div>
+            <div class="slx-detail-card slx-muted-card">
+              <div class="slx-detail-title">状态诊断</div>
+              ${renderDiagnosticLine('全局设置键', diagnostics.globalKey)}
+              ${renderDiagnosticLine('聊天状态键', diagnostics.chatKey)}
+              ${renderDiagnosticLine('扩展设置可用', diagnostics.hasExtensionSettings ? '是' : '否')}
+              ${renderDiagnosticLine('聊天 metadata 可用', diagnostics.hasChatMetadata ? '是' : '否')}
+              ${renderDiagnosticLine('全局保存函数', diagnostics.canSaveGlobal ? '可用' : '未发现')}
+              ${renderDiagnosticLine('聊天保存函数', diagnostics.canSaveChat ? '可用' : '未发现，暂用设置保存兜底')}
+              ${renderDiagnosticLine('全局测试值', diagnostics.globalProbe)}
+              ${renderDiagnosticLine('聊天测试值', diagnostics.chatProbe)}
+              ${renderDiagnosticLine('通讯日志数', getCommunicationLogs(settings).length)}
+              ${renderContextDiagnostics()}
+              ${renderDiagnosticLine('全局最近保存', diagnostics.globalLastSavedAt)}
+              ${renderDiagnosticLine('聊天最近保存', diagnostics.chatLastSavedAt)}
+            </div>
+          `}
+        </div>
       </div>
     `;
   }
@@ -767,6 +783,7 @@ function renderFloatingPanel(options = {}) {
     activeModule.id === 'theater' && isMiniTheaterOverlayOpen() ? 'slx-panel-theater-preview-only' : '',
     activeModule.id === 'outline' && isPlotOutlineEditorOpen() ? 'slx-panel-outline-editor-only' : '',
     activeModule.id === 'memoir' && isCaptureWorldbookModalOpen() ? 'slx-panel-capture-wb-only' : '',
+    activeModule.id === 'settings' && isPromptEditorOverlayOpen() ? 'slx-panel-prompt-editor-only' : '',
   ].filter(Boolean).join(' ');
 
   panelRoot.innerHTML = `
@@ -949,6 +966,28 @@ function renderFloatingPanel(options = {}) {
   bindPlotOutlinePanelEvents(panelRoot);
   bindSchedulePanelEvents(panelRoot);
   bindAffectionPanelEvents(panelRoot);
+  bindPromptEditorPanelEvents(panelRoot, settings, {
+    refresh: () => renderFloatingPanel({
+      moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0,
+      detailScrollTop: panelRoot.querySelector('.slx-detail')?.scrollTop ?? 0,
+    }),
+  });
+
+  panelRoot.querySelectorAll('[data-slx-settings-tab]').forEach(button => {
+    button.addEventListener('click', () => {
+      settingsModuleTab = button.dataset.slxSettingsTab === 'prompts' ? 'prompts' : 'basic';
+      closePromptEditorOverlays();
+      renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+    });
+    button.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      settingsModuleTab = event.key === 'ArrowLeft' || event.key === 'Home' ? 'basic' : 'prompts';
+      closePromptEditorOverlays();
+      renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
+      panelRoot.querySelector(`[data-slx-settings-tab="${settingsModuleTab}"]`)?.focus();
+    });
+  });
 
   panelRoot.querySelectorAll('.slx-module-btn').forEach(button => {
     button.addEventListener('click', () => {
@@ -1005,6 +1044,7 @@ function openFloatingPanel() {
 
 function closeFloatingPanel() {
   closeMiniTheaterPreview({ refresh: false });
+  closePromptEditorOverlays();
   panelRoot?.classList.remove('slx-panel-open');
   document.body.classList.remove('slx-panel-open-lock');
   communicationLogOpen = false;
