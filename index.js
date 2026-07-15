@@ -121,6 +121,7 @@ import {
 import {
   bindAffectionPanelEvents,
   configureAffectionPanel,
+  isAffectionEditorOpen,
   renderAffectionPanel,
 } from './src/features/affection/panel.js';
 import {
@@ -766,6 +767,7 @@ function renderFloatingPanel(options = {}) {
     'slx-panel',
     communicationLogOpen ? 'slx-panel-log-only' : '',
     activeModule.id === 'profile' && isEmotionProfileEditorOpen() ? 'slx-panel-emotion-editor-only' : '',
+    activeModule.id === 'pursuit' && isAffectionEditorOpen() ? 'slx-panel-affection-editor-only' : '',
     activeModule.id === 'diary' && isDiaryNotebookOpen() ? 'slx-panel-diary-book-only' : '',
     activeModule.id === 'theater' && isMiniTheaterOverlayOpen() ? 'slx-panel-theater-preview-only' : '',
     activeModule.id === 'outline' && isPlotOutlineEditorOpen() ? 'slx-panel-outline-editor-only' : '',

@@ -1,6 +1,7 @@
 import {
   AFFECTION_ALLOWED_DELTA_TENTHS,
   createManualAffectionAdjustmentRecord,
+  formatAffectionDeltaTenths,
   formatAffectionValueTenths,
   getStageForValueTenths,
   normalizeAffectionChanges,
@@ -14,18 +15,25 @@ import {
 import {
   cloneData,
   escapeHtml,
+  isPlainObject,
 } from '../../utils/text.js';
 import {
   getAffectionProfileKey,
   getAffectionSettings,
   getAffectionSystemState,
   getChatState,
+  getContextInfo,
   getGlobalSettings,
   getStorageDiagnostics,
+  getSummarySettings,
   saveChatState,
   saveGlobalSettings,
 } from '../../core/settings.js';
-import { createMessageContentFingerprint } from '../../core/message-fingerprint.js';
+import {
+  createMessageContentFingerprint,
+  getMessageContentFingerprint,
+} from '../../core/message-fingerprint.js';
+import { slxIcon } from '../../icons.js';
 import {
   getPendingCommitHandlerIds,
   isPendingCommitEventRegistered,
@@ -45,15 +53,25 @@ import { formatMemoryMultiRowParts } from '../chat-beautify/render-memory.js';
 import {
   AFFECTION_STATE_INJECT_POSITION,
   AFFECTION_STATE_PROMPT_ID,
+  adjustAffectionProfileValue,
+  applyAffectionProfileStages,
   buildAffectionInjection,
   buildAffectionUpdatePromptSection,
   commitSelectedPendingAffectionUpdates,
   createAffectionBuildTaskKey,
+  createGenericAffectionStages,
+  deleteAffectionProfile,
+  discardPendingAffectionItem,
   parseAffectionUpdateFromMemory,
+  regenerateAffectionProfileStages,
+  retryAffectionBuildTask,
   runAffectionProfileBuildApiPreview,
   startAffectionProfileBuildsForPending,
   storePendingAffectionUpdate,
   syncAffectionInjection,
+  updateAffectionBuildTaskInitialValue,
+  updatePendingAffectionDelta,
+  useGenericAffectionBuildTask,
 } from './workflow.js';
 
 const DEFAULT_CHANGE_LINES = [
@@ -142,6 +160,19 @@ let affectionPanelOptions = {
   refreshPanel: null,
 };
 
+let affectionPanelState = {
+  view: 'main', // main | detail | stages
+  roleName: '',
+  settingsOpen: false,
+  fullStagesOpen: false,
+  regenerateOpen: false,
+  notice: '',
+  error: '',
+  focusSelector: '',
+  focusRoleName: '',
+  editor: null,
+};
+
 let affectionTestState = createDefaultTestState();
 
 function createDefaultTestState() {
@@ -200,10 +231,13 @@ function createDefaultTestState() {
     commitError: '',
     injectionSuiteStatus: 'idle',
     injectionSuiteResults: [],
+    uiSuiteStatus: 'idle',
+    uiSuiteResults: [],
     injectionMode: 'active',
     injectionStatus: 'idle',
     injectionResult: null,
     injectionError: '',
+    diagnosticsOpen: false,
     expandedSections: {
       suite: false,
       change: false,
@@ -219,6 +253,7 @@ function createDefaultTestState() {
       buildSimulator: false,
       commitSuite: false,
       injectionSuite: false,
+      uiSuite: false,
     },
   };
 }
@@ -234,6 +269,515 @@ function refreshPanel() {
   if (typeof affectionPanelOptions.refreshPanel === 'function') {
     affectionPanelOptions.refreshPanel();
   }
+}
+
+function setAffectionPanelFeedback({ notice = '', error = '' } = {}) {
+  affectionPanelState.notice = String(notice || '');
+  affectionPanelState.error = String(error || '');
+}
+
+function getCurrentAffectionChatId() {
+  return String(getContextInfo()?.chatId || '');
+}
+
+function normalizeAffectionPanelView(store) {
+  const currentChatId = getCurrentAffectionChatId();
+  if (affectionPanelState.editor?.chatId && affectionPanelState.editor.chatId !== currentChatId) {
+    affectionPanelState.editor = null;
+    affectionPanelState.view = 'main';
+    affectionPanelState.roleName = '';
+  }
+  if (
+    affectionPanelState.view !== 'main'
+    && !isPlainObject(store.profiles?.[affectionPanelState.roleName])
+  ) {
+    affectionPanelState.view = 'main';
+    affectionPanelState.roleName = '';
+    affectionPanelState.editor = null;
+  }
+}
+
+export function isAffectionEditorOpen() {
+  return affectionPanelState.view === 'detail' || affectionPanelState.view === 'stages';
+}
+
+function getSelectedPendingEntries(settings, store) {
+  return Object.entries(store.pendingByMessage || {})
+    .map(([messageKey, bucket]) => {
+      const messageId = Number(messageKey);
+      if (!Number.isInteger(messageId) || !isPlainObject(bucket?.items)) return null;
+      const fingerprint = getMessageContentFingerprint(messageId, settings);
+      const pending = isPlainObject(bucket.items[fingerprint]) ? bucket.items[fingerprint] : null;
+      if (!pending) return null;
+      const tasks = Object.values(store.buildTasks || {}).filter(task => (
+        isPlainObject(task)
+        && Number(task.messageId) === messageId
+        && String(task.fingerprint || '') === String(fingerprint || '')
+      ));
+      return {
+        messageId,
+        fingerprint,
+        pending,
+        tasks,
+        otherSwipeCount: Math.max(0, Object.keys(bucket.items).length - 1),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.messageId - left.messageId);
+}
+
+function getBuildTaskForRole(entry, roleName) {
+  const cleanRoleName = normalizeAffectionRoleName(roleName);
+  return entry.tasks.find(task => normalizeAffectionRoleName(task?.roleName) === cleanRoleName) || null;
+}
+
+function getBuildStatusLabel(task) {
+  if (!task) return '等待生成';
+  if (task.buildStatus === 'building') return '专属阶段生成中';
+  if (task.buildStatus === 'ready') return task.confirmed ? '正在转为正式档案' : '待发送确认';
+  if (task.buildStatus === 'needs_initial_value') return '需要补充初始好感';
+  if (task.buildStatus === 'stale') return '建档任务已失效';
+  if (task.buildStatus === 'error') return '专属阶段生成失败';
+  return String(task.buildStatus || '等待处理');
+}
+
+function renderAffectionFeedback() {
+  return `
+    ${affectionPanelState.notice ? `<div class="slx-affection-feedback is-success" role="status">${slxIcon('check')}<span>${escapeHtml(affectionPanelState.notice)}</span></div>` : ''}
+    ${affectionPanelState.error ? `<div class="slx-affection-feedback is-error" role="alert">${slxIcon('alert')}<span>${escapeHtml(affectionPanelState.error)}</span></div>` : ''}
+  `;
+}
+
+function renderAffectionSettings(settings) {
+  const affection = getAffectionSettings(settings);
+  const summary = getSummarySettings(settings);
+  const active = settings.enabled === true && summary.enabled === true && affection.enabled === true;
+  const buildModeLabel = affection.defaultBuildMode === 'generic' ? '通用阶段' : '专属阶段';
+  const apiLabel = affection.profileBuildApiMode === 'main_api' ? '主 API' : '副 API';
+  return `
+    <section class="slx-detail-card slx-affection-status-strip" aria-label="好感度运行状态">
+      <label class="slx-setting-toggle-row" for="slx-affection-enabled">
+        <span>
+          <b>攻略追踪</b>
+          <small>${active ? '正在记录角色对 {{user}} 的好感变化。' : affection.enabled ? '已开启，但当前依赖条件未满足。' : '关闭后保留档案，但停止判断与注入。'}</small>
+        </span>
+        <input id="slx-affection-enabled" type="checkbox" data-slx-affection-enabled ${affection.enabled ? 'checked' : ''} />
+      </label>
+      <div class="slx-affection-status-meta">
+        <span class="slx-affection-status-pill ${summary.enabled ? 'is-ready' : 'is-paused'}">自动小总结：${summary.enabled ? '可用' : '已关闭'}</span>
+        <span class="slx-affection-status-pill ${active ? 'is-ready' : 'is-paused'}">${active ? '攻略运行中' : '攻略已暂停'}</span>
+      </div>
+      ${summary.enabled ? '' : `
+        <div class="slx-affection-dependency-note">
+          ${slxIcon('alert')}
+          <span>攻略判断与正文注入已暂停；已有档案仍可查看和手动调整。请先在自动总结中开启自动小总结。</span>
+        </div>
+      `}
+    </section>
+
+    <details class="slx-detail-card slx-affection-settings-fold" data-slx-affection-settings ${affectionPanelState.settingsOpen ? 'open' : ''}>
+      <summary>
+        <span>${slxIcon('settings')}<b>建档设置</b></span>
+        <small>${escapeHtml(buildModeLabel)} · ${escapeHtml(apiLabel)}</small>
+        ${slxIcon('chevronDown')}
+      </summary>
+      <div class="slx-affection-settings-body">
+        <div class="slx-affection-control-group">
+          <span class="slx-affection-control-label">新角色默认建档方式</span>
+          <div class="slx-affection-segment" role="group" aria-label="新角色默认建档方式">
+            <button type="button" data-slx-affection-build-mode="custom" class="${affection.defaultBuildMode === 'custom' ? 'is-active' : ''}" aria-pressed="${affection.defaultBuildMode === 'custom'}">专属阶段</button>
+            <button type="button" data-slx-affection-build-mode="generic" class="${affection.defaultBuildMode === 'generic' ? 'is-active' : ''}" aria-pressed="${affection.defaultBuildMode === 'generic'}">通用阶段</button>
+          </div>
+        </div>
+        ${affection.defaultBuildMode === 'custom' ? `
+          <div class="slx-affection-control-group">
+            <span class="slx-affection-control-label">首次专属阶段生成 API</span>
+            <div class="slx-schedule-api-toggle slx-affection-api-toggle" role="group" aria-label="首次专属阶段生成 API">
+              <button type="button" data-slx-affection-build-api="main_api" class="${affection.profileBuildApiMode === 'main_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'main_api'}">主 API</button>
+              <button type="button" data-slx-affection-build-api="secondary_api" class="${affection.profileBuildApiMode === 'secondary_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'secondary_api'}">副 API</button>
+            </div>
+            <small>新角色首次建档时额外生成一次，之后不会每轮调用。</small>
+          </div>
+        ` : '<p>通用阶段不额外调用建档 API，初始好感仍采用 affection_first。</p>'}
+      </div>
+    </details>
+  `;
+}
+
+function renderPendingChangeRow(entry, change) {
+  const roleName = normalizeAffectionRoleName(change?.roleName);
+  const deltaTenths = Number(change?.deltaTenths);
+  const deltaIndex = AFFECTION_ALLOWED_DELTA_TENTHS.indexOf(deltaTenths);
+  const canDecrease = deltaIndex > 0;
+  const canIncrease = deltaIndex >= 0 && deltaIndex < AFFECTION_ALLOWED_DELTA_TENTHS.length - 1;
+  return `
+    <div class="slx-affection-pending-row">
+      <div class="slx-affection-pending-person">
+        <b>${escapeHtml(roleName)}</b>
+        <small>本轮变化 · 变化后 ${escapeHtml(formatAffectionValueTenths(change.valueAfterTenths))}</small>
+      </div>
+      <div class="slx-affection-delta-stepper" aria-label="${escapeHtml(roleName)}本轮好感变化">
+        <button type="button" data-slx-affection-delta-step="-1" data-message-id="${entry.messageId}" data-fingerprint="${escapeHtml(entry.fingerprint)}" data-role-name="${escapeHtml(roleName)}" aria-label="降低${escapeHtml(roleName)}本轮好感变化" ${canDecrease ? '' : 'disabled'}>${slxIcon('minus')}</button>
+        <output>${deltaTenths === 0 ? '无变化' : escapeHtml(formatAffectionDeltaTenths(deltaTenths))}</output>
+        <button type="button" data-slx-affection-delta-step="1" data-message-id="${entry.messageId}" data-fingerprint="${escapeHtml(entry.fingerprint)}" data-role-name="${escapeHtml(roleName)}" aria-label="提高${escapeHtml(roleName)}本轮好感变化" ${canIncrease ? '' : 'disabled'}>${slxIcon('plus')}</button>
+      </div>
+      <button class="slx-affection-text-action is-danger" type="button" data-slx-affection-discard-pending data-message-id="${entry.messageId}" data-fingerprint="${escapeHtml(entry.fingerprint)}" data-role-name="${escapeHtml(roleName)}">放弃此项</button>
+    </div>
+  `;
+}
+
+function renderPendingFirstRow(entry, first, task) {
+  const roleName = normalizeAffectionRoleName(first?.roleName || task?.roleName);
+  const initialValueTenths = first?.initialValueTenths ?? task?.initialValueTenths;
+  const needsValue = task?.buildStatus === 'needs_initial_value' || !Number.isInteger(Number(initialValueTenths));
+  const canRetry = ['error', 'stale'].includes(task?.buildStatus);
+  const canUseGeneric = task && Number.isInteger(Number(task.initialValueTenths));
+  return `
+    <div class="slx-affection-pending-row is-first">
+      <div class="slx-affection-pending-person">
+        <b>${escapeHtml(roleName)}</b>
+        <small>${needsValue ? '首次建档需要合法初值' : `初始好感 ${escapeHtml(formatAffectionValueTenths(initialValueTenths))}`}</small>
+      </div>
+      <div class="slx-affection-build-state is-${escapeHtml(task?.buildStatus || 'idle')}">
+        <span>${escapeHtml(getBuildStatusLabel(task))}</span>
+        ${task?.error ? `<small>${escapeHtml(task.error)}</small>` : ''}
+      </div>
+      ${needsValue && task ? `
+        <label class="slx-affection-initial-fix">
+          <span>初始好感</span>
+          <input type="number" min="0" max="100" step="0.1" inputmode="decimal" data-slx-affection-task-initial="${escapeHtml(task.taskKey)}" value="" />
+        </label>
+      ` : ''}
+      <div class="slx-affection-pending-actions">
+        ${needsValue && task ? `<button class="slx-soft-btn" type="button" data-slx-affection-resolve-task="custom" data-task-key="${escapeHtml(task.taskKey)}">生成专属</button>` : ''}
+        ${canRetry ? `<button class="slx-soft-btn" type="button" data-slx-affection-retry-task data-task-key="${escapeHtml(task.taskKey)}">重试</button>` : ''}
+        ${(canUseGeneric || needsValue) && task ? `<button class="slx-soft-btn" type="button" data-slx-affection-resolve-task="generic" data-task-key="${escapeHtml(task.taskKey)}">使用通用</button>` : ''}
+        <button class="slx-affection-text-action is-danger" type="button" data-slx-affection-discard-pending data-message-id="${entry.messageId}" data-fingerprint="${escapeHtml(entry.fingerprint)}" data-role-name="${escapeHtml(roleName)}">放弃此项</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderAffectionPending(settings, store) {
+  const entries = getSelectedPendingEntries(settings, store);
+  if (!entries.length) {
+    return `
+      <section class="slx-detail-card slx-affection-pending-card is-empty">
+        <div class="slx-affection-section-head"><b>当前回复待确认</b><small>暂无</small></div>
+        <p>当前回复没有待确认的好感变化。</p>
+      </section>
+    `;
+  }
+  return entries.map(entry => {
+    const renderedRoles = new Set();
+    const changeRows = (Array.isArray(entry.pending.changes) ? entry.pending.changes : []).map(change => {
+      renderedRoles.add(normalizeAffectionRoleName(change?.roleName));
+      return renderPendingChangeRow(entry, change);
+    });
+    const firstRows = (Array.isArray(entry.pending.firsts) ? entry.pending.firsts : []).map(first => {
+      const roleName = normalizeAffectionRoleName(first?.roleName);
+      renderedRoles.add(roleName);
+      return renderPendingFirstRow(entry, first, getBuildTaskForRole(entry, roleName));
+    });
+    const taskRows = entry.tasks
+      .filter(task => !renderedRoles.has(normalizeAffectionRoleName(task?.roleName)))
+      .map(task => renderPendingFirstRow(entry, null, task));
+    return `
+      <section class="slx-detail-card slx-affection-pending-card">
+        <div class="slx-affection-section-head">
+          <div><b>当前回复待确认</b><small>第 ${entry.messageId} 楼 · 当前选中回复</small></div>
+          ${entry.otherSwipeCount ? `<span>另有 ${entry.otherSwipeCount} 个未选回复暂存</span>` : ''}
+        </div>
+        <div class="slx-affection-pending-list">${[...changeRows, ...firstRows, ...taskRows].join('')}</div>
+        <p>发送下一条消息时，只有当前选中回复会写入正式账本。</p>
+      </section>
+    `;
+  }).join('');
+}
+
+function getStageNumber(stage) {
+  const matched = String(stage?.stageId || '').match(/(\d+)/);
+  return Number(matched?.[1]) || 1;
+}
+
+function renderAffectionStageRail(roleName, valueTenths, stages) {
+  const safeStages = Array.isArray(stages) && stages.length ? stages : createGenericAffectionStages();
+  const current = getStageForValueTenths(valueTenths, safeStages);
+  const currentNumber = getStageNumber(current);
+  return `
+    <div class="slx-affection-stage-rail" role="img" aria-label="${escapeHtml(roleName)}当前好感 ${escapeHtml(formatAffectionValueTenths(valueTenths))}，位于第 ${currentNumber} 阶段「${escapeHtml(current.name || '未命名')}」">
+      ${safeStages.map((stage, index) => `<span class="slx-affection-stage-segment ${index + 1 === currentNumber ? 'is-current' : ''}"></span>`).join('')}
+      <i style="--slx-affection-position:${Math.max(0, Math.min(100, Number(valueTenths) / 10))}%"></i>
+    </div>
+  `;
+}
+
+function renderAffectionProfileCard(storedRoleName, profile) {
+  const roleName = normalizeAffectionRoleName(profile?.roleName || storedRoleName);
+  const ledger = recalculateAffectionLedger(profile.initialValueTenths, profile.records);
+  const stage = getStageForValueTenths(ledger.valueTenths, profile.stages);
+  const recent = [...ledger.records].reverse().find(record => Number(record?.deltaTenths) !== 0);
+  const recentText = recent
+    ? `${recent.sourceMessageId === null ? '手动调整' : `第${recent.sourceMessageId}楼`} ${formatAffectionDeltaTenths(recent.deltaTenths)}`
+    : '以初始好感建档';
+  const buildStatusLabel = {
+    ready: '就绪',
+    building: '生成中',
+    error: '失败',
+    stale: '已失效',
+  }[profile.buildStatus] || '就绪';
+  return `
+    <article class="slx-detail-card slx-affection-profile-card">
+      <header>
+        <b>${escapeHtml(roleName)}</b>
+        <span class="slx-affection-card-badges">
+          <small>${profile.buildMode === 'generic' ? '通用' : '专属'}</small>
+          <small>${escapeHtml(buildStatusLabel)}</small>
+        </span>
+      </header>
+      <div class="slx-affection-value-line">
+        <strong>${escapeHtml(formatAffectionValueTenths(ledger.valueTenths))}<small>/100</small></strong>
+        <span>「${escapeHtml(stage.name || '未命名阶段')}」</span>
+      </div>
+      ${renderAffectionStageRail(roleName, ledger.valueTenths, profile.stages)}
+      <div class="slx-affection-stage-caption">当前位于第 ${getStageNumber(stage)} 阶段</div>
+      <p class="slx-affection-stage-meaning">${escapeHtml(stage.meaning || '尚未填写阶段含义。')}</p>
+      <footer>
+        <small>最近：${escapeHtml(recentText)}</small>
+        <button class="slx-soft-btn" type="button" data-slx-affection-open-detail="${escapeHtml(roleName)}">${slxIcon('edit')}<span>查看调整</span></button>
+      </footer>
+    </article>
+  `;
+}
+
+function renderAffectionProfiles(store) {
+  const profiles = Object.entries(store.profiles || {}).filter(([, profile]) => isPlainObject(profile));
+  return `
+    <section class="slx-affection-profile-section">
+      <div class="slx-affection-section-head"><b>角色档案</b><small>已建档 ${profiles.length} 人</small></div>
+      ${profiles.length ? `<div class="slx-affection-profile-grid">${profiles.map(([roleName, profile]) => renderAffectionProfileCard(roleName, profile)).join('')}</div>` : `
+        <div class="slx-detail-card slx-affection-empty-state">
+          ${slxIcon('pursuit')}
+          <b>还没有正式好感档案</b>
+          <p>攻略模式会在自动小总结识别到长期可攻略角色后，根据 affection_first 自动建档。</p>
+        </div>
+      `}
+    </section>
+  `;
+}
+
+function renderFullStageDetails(profile, currentStage) {
+  return `
+    <details class="slx-affection-stage-details" data-slx-affection-full-stages ${affectionPanelState.fullStagesOpen ? 'open' : ''}>
+      <summary><span>查看全部五阶段</span>${slxIcon('chevronDown')}</summary>
+      <div>
+        ${(Array.isArray(profile.stages) ? profile.stages : []).map(stage => `
+          <article class="${stage.stageId === currentStage.stageId ? 'is-current' : ''}">
+            <header><b>${escapeHtml(stage.name || '未命名')}</b><small>${escapeHtml(formatAffectionValueTenths(stage.minTenths))}—${escapeHtml(formatAffectionValueTenths(stage.maxTenths))}</small></header>
+            <p>${escapeHtml(stage.meaning || '')}</p>
+            <ul>${(stage.behaviors || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+            <p><b>变化倾向：</b>${escapeHtml(stage.trend || '')}</p>
+            <p><b>阶段边界：</b>${escapeHtml(stage.boundary || '')}</p>
+          </article>
+        `).join('')}
+      </div>
+    </details>
+  `;
+}
+
+function renderAffectionRecordList(records) {
+  const items = [...records].reverse().slice(0, 8);
+  if (!items.length) return '<p>暂无正式变化记录。</p>';
+  return `<ol class="slx-affection-record-list">${items.map(record => `
+    <li>
+      <span>${record.sourceMessageId === null ? '手动调整' : `第 ${escapeHtml(record.sourceMessageId)} 楼`}</span>
+      <b>${escapeHtml(formatAffectionDeltaTenths(record.deltaTenths))}</b>
+      <small>${escapeHtml(formatAffectionValueTenths(record.valueBeforeTenths))} → ${escapeHtml(formatAffectionValueTenths(record.valueAfterTenths))}</small>
+    </li>
+  `).join('')}</ol>`;
+}
+
+function renderAffectionDetailOverlay(store) {
+  if (affectionPanelState.view !== 'detail') return '';
+  const profile = store.profiles?.[affectionPanelState.roleName];
+  if (!isPlainObject(profile)) return '';
+  const ledger = recalculateAffectionLedger(profile.initialValueTenths, profile.records);
+  const stage = getStageForValueTenths(ledger.valueTenths, profile.stages);
+  return `
+    <div class="slx-affection-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="slx-affection-detail-title">
+      <section class="slx-affection-editor">
+        <header class="slx-affection-editor-head">
+          <div><b id="slx-affection-detail-title">${escapeHtml(affectionPanelState.roleName)} · 好感档案</b><small>${escapeHtml(formatAffectionValueTenths(ledger.valueTenths))}/100 · 「${escapeHtml(stage.name || '未命名阶段')}」</small></div>
+          <button type="button" data-slx-affection-close-overlay aria-label="返回好感度主面板">${slxIcon('close')}</button>
+        </header>
+        <div class="slx-affection-editor-body">
+          ${renderAffectionFeedback()}
+          <section class="slx-affection-detail-hero">
+            <strong>${escapeHtml(formatAffectionValueTenths(ledger.valueTenths))}<small>/100</small></strong>
+            <div><b>「${escapeHtml(stage.name || '未命名阶段')}」</b><p>${escapeHtml(stage.meaning || '')}</p></div>
+          </section>
+          ${renderAffectionStageRail(affectionPanelState.roleName, ledger.valueTenths, profile.stages)}
+
+          <section class="slx-detail-card slx-affection-adjust-card">
+            <div class="slx-affection-section-head"><b>当前值校准</b><small>生成一条 manual_adjustment 记录</small></div>
+            <div class="slx-affection-adjust-row">
+              <label><span>当前好感</span><input type="number" min="0" max="100" step="0.1" inputmode="decimal" data-slx-affection-adjust-value value="${escapeHtml(formatAffectionValueTenths(ledger.valueTenths))}" /></label>
+              <button class="slx-soft-btn" type="button" data-slx-affection-apply-adjust>应用调整</button>
+            </div>
+          </section>
+
+          <section class="slx-detail-card slx-affection-current-stage">
+            <div class="slx-affection-section-head"><b>当前阶段</b><small>第 ${getStageNumber(stage)} 阶段</small></div>
+            <p><b>关系含义：</b>${escapeHtml(stage.meaning || '')}</p>
+            <ul>${(stage.behaviors || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+            <p><b>变化倾向：</b>${escapeHtml(stage.trend || '')}</p>
+            <p><b>阶段边界：</b>${escapeHtml(stage.boundary || '')}</p>
+            ${renderFullStageDetails(profile, stage)}
+          </section>
+
+          <section class="slx-detail-card slx-affection-build-mode-card">
+            <div class="slx-affection-section-head"><b>建档方式</b><small>${profile.buildMode === 'generic' ? '通用阶段' : '专属阶段'}</small></div>
+            <div class="slx-affection-segment" role="group" aria-label="${escapeHtml(affectionPanelState.roleName)}建档方式">
+              <button type="button" data-slx-affection-profile-mode="custom" class="${profile.buildMode === 'custom' ? 'is-active' : ''}" aria-pressed="${profile.buildMode === 'custom'}">专属阶段</button>
+              <button type="button" data-slx-affection-profile-mode="generic" class="${profile.buildMode === 'generic' ? 'is-active' : ''}" aria-pressed="${profile.buildMode === 'generic'}">通用阶段</button>
+            </div>
+            <button class="slx-soft-btn" type="button" data-slx-affection-open-stage-editor>${slxIcon(profile.buildMode === 'custom' ? 'edit' : 'sparkles')}<span>${profile.buildMode === 'custom' ? '编辑专属阶段内容' : '创建专属阶段内容'}</span></button>
+          </section>
+
+          <section class="slx-detail-card">
+            <div class="slx-affection-section-head"><b>最近变化</b><small>只读</small></div>
+            ${renderAffectionRecordList(ledger.records)}
+          </section>
+
+          <button class="slx-affection-delete-profile" type="button" data-slx-affection-delete-profile>${slxIcon('trash')}<span>删除此角色档案</span></button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function createAffectionStageEditor(profile, roleName) {
+  const ledger = recalculateAffectionLedger(profile.initialValueTenths, profile.records);
+  const currentStage = getStageForValueTenths(ledger.valueTenths, profile.stages);
+  const stages = cloneData(profile.stages || []);
+  return {
+    chatId: getCurrentAffectionChatId(),
+    roleName,
+    stages,
+    originalStages: cloneData(stages),
+    sourceBuildMode: profile.buildMode === 'generic' ? 'generic' : 'custom',
+    userRequirement: '',
+    regenerateApiMode: getAffectionSettings(getGlobalSettings()).profileBuildApiMode,
+    expandedStageId: currentStage.stageId || stages[0]?.stageId || 'S1',
+    dirty: false,
+    modifiedStageIds: [],
+    generationStatus: 'idle',
+    error: '',
+    fieldErrors: {},
+  };
+}
+
+function getStageEditorErrors(stages) {
+  const errors = {};
+  (Array.isArray(stages) ? stages : []).forEach((stage, index) => {
+    const stageId = stage?.stageId || `S${index + 1}`;
+    const fields = [];
+    if (!String(stage?.name || '').trim()) fields.push('阶段名');
+    if (!String(stage?.meaning || '').trim()) fields.push('关系含义');
+    if (!String(stage?.trend || '').trim()) fields.push('变化倾向');
+    if (!String(stage?.boundary || '').trim()) fields.push('阶段边界');
+    (Array.isArray(stage?.behaviors) ? stage.behaviors : []).forEach((item, behaviorIndex) => {
+      if (!String(item || '').trim()) fields.push(`行为 ${behaviorIndex + 1}`);
+    });
+    if (!Array.isArray(stage?.behaviors) || stage.behaviors.length !== 3) fields.push('三条行为');
+    if (fields.length) errors[stageId] = fields;
+  });
+  return errors;
+}
+
+function renderAffectionStageFields(stage, index, expanded, stageErrors, currentStageId = '') {
+  const stageId = stage.stageId || `S${index + 1}`;
+  const errorText = stageErrors?.length ? `请补全：${stageErrors.join('、')}` : '';
+  return `
+    <article class="slx-affection-stage-draft-card ${expanded ? 'is-open' : ''} ${errorText ? 'has-error' : ''}">
+      <button class="slx-affection-stage-toggle" type="button" data-slx-affection-toggle-stage="${escapeHtml(stageId)}" aria-expanded="${expanded}" aria-controls="slx-affection-stage-fields-${index}">
+        <span><small>${index + 1}</small><b>${escapeHtml(formatAffectionValueTenths(stage.minTenths))}—${escapeHtml(formatAffectionValueTenths(stage.maxTenths))}</b><em>「${escapeHtml(stage.name || '未命名')}」</em></span>
+        <span class="slx-affection-stage-tags">
+          ${stageId === currentStageId ? '<small class="is-current">当前阶段</small>' : ''}
+          ${affectionPanelState.editor?.modifiedStageIds?.includes(stageId) ? '<small>已修改</small>' : ''}
+          ${errorText ? '<small class="is-error">有错误</small>' : ''}
+          ${slxIcon('chevronDown')}
+        </span>
+      </button>
+      <div class="slx-affection-stage-fields" id="slx-affection-stage-fields-${index}" ${expanded ? '' : 'hidden'}>
+        ${errorText ? `<div class="slx-affection-field-error" role="alert">${escapeHtml(errorText)}</div>` : ''}
+        <label><span>阶段名</span><input type="text" maxlength="24" data-slx-affection-stage-field="name" data-stage-index="${index}" value="${escapeHtml(stage.name || '')}" /></label>
+        <label><span>关系含义</span><textarea rows="2" maxlength="120" data-slx-affection-stage-field="meaning" data-stage-index="${index}">${escapeHtml(stage.meaning || '')}</textarea></label>
+        ${(stage.behaviors || ['', '', '']).map((item, behaviorIndex) => `<label><span>行为 ${behaviorIndex + 1}</span><textarea rows="2" maxlength="100" data-slx-affection-stage-behavior="${behaviorIndex}" data-stage-index="${index}">${escapeHtml(item || '')}</textarea></label>`).join('')}
+        <label><span>变化倾向</span><textarea rows="2" maxlength="120" data-slx-affection-stage-field="trend" data-stage-index="${index}">${escapeHtml(stage.trend || '')}</textarea></label>
+        <label><span>阶段边界</span><textarea rows="2" maxlength="120" data-slx-affection-stage-field="boundary" data-stage-index="${index}">${escapeHtml(stage.boundary || '')}</textarea></label>
+      </div>
+    </article>
+  `;
+}
+
+function renderAffectionStageEditorOverlay(store) {
+  if (affectionPanelState.view !== 'stages' || !affectionPanelState.editor) return '';
+  const editor = affectionPanelState.editor;
+  const profile = store.profiles?.[editor.roleName];
+  if (!isPlainObject(profile)) return '';
+  const ledger = recalculateAffectionLedger(profile.initialValueTenths, profile.records);
+  const currentStage = getStageForValueTenths(ledger.valueTenths, profile.stages);
+  const isRunning = editor.generationStatus === 'running';
+  const canEditStages = editor.sourceBuildMode !== 'generic' || editor.generationStatus === 'success';
+  const fieldErrors = editor.fieldErrors || {};
+  const errorCount = Object.keys(fieldErrors).length;
+  return `
+    <div class="slx-affection-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="slx-affection-stage-editor-title">
+      <section class="slx-affection-editor">
+        <header class="slx-affection-editor-head">
+          <button type="button" data-slx-affection-back-detail aria-label="返回${escapeHtml(editor.roleName)}好感档案">${slxIcon('chevronLeft')}</button>
+          <div><b id="slx-affection-stage-editor-title">${escapeHtml(editor.roleName)} · 编辑专属好感阶段</b><small>当前好感 ${escapeHtml(formatAffectionValueTenths(ledger.valueTenths))} · 正式阶段仍在使用中</small></div>
+        </header>
+        <div class="slx-affection-editor-body">
+          ${renderAffectionFeedback()}
+          <details class="slx-detail-card slx-affection-regenerate-fold" data-slx-affection-regenerate-fold ${affectionPanelState.regenerateOpen ? 'open' : ''}>
+            <summary><span>${slxIcon('sparkles')}<b>按需求重新生成</b></span>${slxIcon('chevronDown')}</summary>
+            <div>
+              <label class="slx-affection-requirement"><span>重新生成需求（可选）</span><textarea rows="4" maxlength="2000" data-slx-affection-requirement placeholder="例如：前期戒备更重；确认关系后仍不擅长直白表达……" ${isRunning ? 'disabled' : ''}>${escapeHtml(editor.userRequirement)}</textarea><small>填写后，关系走向、表达偏好和边界以你的需求为主。</small></label>
+              <div class="slx-affection-regenerate-actions">
+                <div class="slx-schedule-api-toggle slx-affection-api-toggle" role="group" aria-label="本次重新生成 API">
+                  <button type="button" data-slx-affection-regenerate-api="main_api" class="${editor.regenerateApiMode === 'main_api' ? 'is-active' : ''}" aria-pressed="${editor.regenerateApiMode === 'main_api'}" ${isRunning ? 'disabled' : ''}>主 API</button>
+                  <button type="button" data-slx-affection-regenerate-api="secondary_api" class="${editor.regenerateApiMode === 'secondary_api' ? 'is-active' : ''}" aria-pressed="${editor.regenerateApiMode === 'secondary_api'}" ${isRunning ? 'disabled' : ''}>副 API</button>
+                </div>
+                <button class="slx-soft-btn" type="button" data-slx-affection-regenerate ${isRunning ? 'disabled' : ''}>${slxIcon('refresh')}<span>${isRunning ? '正在生成…' : '重新生成五阶段'}</span></button>
+              </div>
+              ${editor.error ? `<div class="slx-affection-feedback is-error" role="alert">${slxIcon('alert')}<span>${escapeHtml(editor.error)}</span></div>` : ''}
+              ${editor.generationStatus === 'success' ? '<div class="slx-affection-editor-status" role="status">新五阶段已载入编辑副本，尚未覆盖正式阶段。</div>' : ''}
+            </div>
+          </details>
+
+          <section class="slx-affection-stage-accordion" aria-label="五阶段编辑副本">
+            <div class="slx-affection-section-head"><b>当前编辑副本</b><small>${editor.dirty ? '尚未应用' : '与正式阶段一致'}</small></div>
+            ${canEditStages ? '' : '<div class="slx-affection-editor-status" role="status">当前仍在使用通用阶段。请先按需求重新生成一份专属五阶段草稿，再进行编辑和确认覆盖。</div>'}
+            ${errorCount ? `<div class="slx-affection-editor-errors" role="alert">尚有 ${errorCount} 个阶段未通过校验，请展开标记为“有错误”的阶段。</div>` : ''}
+            ${canEditStages ? editor.stages.map((stage, index) => renderAffectionStageFields(
+              stage,
+              index,
+              editor.expandedStageId === stage.stageId,
+              fieldErrors[stage.stageId],
+              currentStage.stageId,
+            )).join('') : ''}
+          </section>
+
+          <footer class="slx-affection-editor-footer">
+            <button class="slx-soft-btn" type="button" data-slx-affection-cancel-stage-edit ${isRunning ? 'disabled' : ''}>取消修改</button>
+            <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-affection-confirm-stages ${editor.dirty && canEditStages && !isRunning ? '' : 'disabled'}>${slxIcon('check')}<span>确认覆盖</span></button>
+          </footer>
+        </div>
+      </section>
+    </div>
+  `;
 }
 
 function assertTest(condition, message) {
@@ -1107,7 +1651,7 @@ function createBuildTestOptions(chatState, settings, overrides = {}) {
   };
 }
 
-async function runAffectionBuildSuite() {
+export async function runAffectionBuildSuite() {
   const tests = [];
   tests.push(await runAsyncTest('generic 使用 first 初值且不请求 API', async () => {
     const chatState = createBuildTestChatState();
@@ -1207,6 +1751,7 @@ async function runAffectionBuildSuite() {
 
   affectionTestState.buildSuiteResults = tests;
   affectionTestState.buildSuiteStatus = tests.every(item => item.status === 'passed') ? 'passed' : 'failed';
+  return tests;
 }
 
 async function runAffectionBuildSimulator() {
@@ -1613,6 +2158,171 @@ export async function runAffectionInjectionSuite() {
   return cloneData(tests);
 }
 
+function createUiTestChatState() {
+  return {
+    affectionSystem: {
+      profiles: {
+        沈青: {
+          roleName: '沈青',
+          initialValueTenths: 350,
+          valueTenths: 352,
+          buildMode: 'custom',
+          buildStatus: 'ready',
+          stages: createGenericCommitTestStages(),
+          records: [{
+            recordId: 'affection:auto:18:test',
+            sourceMessageId: 18,
+            sourceFingerprint: 'swipe-old',
+            deltaTenths: 2,
+            sourceType: 'auto',
+            createdAt: '2026/7/15 10:00:00',
+            valueBeforeTenths: 350,
+            valueAfterTenths: 352,
+          }],
+        },
+      },
+      pendingByMessage: {
+        20: {
+          messageId: 20,
+          items: {
+            'swipe-a': {
+              messageId: 20,
+              fingerprint: 'swipe-a',
+              changed: true,
+              changes: [{
+                roleName: '沈青',
+                deltaTenths: 2,
+                valueBeforeTenths: 352,
+                valueAfterTenths: 354,
+              }],
+              firsts: [{ roleName: '阿蛮', initialValueTenths: 350 }],
+            },
+          },
+        },
+      },
+      buildTasks: {
+        'task-aman': {
+          taskKey: 'task-aman',
+          chatId: 'ui-test-chat',
+          messageId: 20,
+          fingerprint: 'swipe-a',
+          roleName: '阿蛮',
+          initialValueTenths: 350,
+          buildStatus: 'error',
+        },
+      },
+    },
+  };
+}
+
+export async function runAffectionUiSuite() {
+  affectionTestState.uiSuiteStatus = 'running';
+  affectionTestState.uiSuiteResults = [];
+  refreshPanel();
+  const settings = createBuildTestSettings('custom');
+  const results = [];
+
+  results.push(await runAsyncTest('pending stepper 只改当前 fingerprint，并重算变化后值', async () => {
+    const chatState = createUiTestChatState();
+    const updated = updatePendingAffectionDelta({
+      messageId: 20,
+      fingerprint: 'swipe-a',
+      roleName: '沈青',
+      deltaTenths: 0,
+    }, { chatState, persist: false });
+    assertTest(updated.deltaTenths === 0 && updated.valueAfterTenths === 352, '0 变化没有按正式账本重算。');
+    assertTest(chatState.affectionSystem.profiles.沈青.records.length === 1, 'pending 编辑污染了正式 records。');
+    return 'deltaTenths=0 保留在 pending；正式 records 未变。';
+  }));
+
+  results.push(await runAsyncTest('放弃单项同时清理同角色首次建档任务', async () => {
+    const chatState = createUiTestChatState();
+    const removed = discardPendingAffectionItem({
+      messageId: 20,
+      fingerprint: 'swipe-a',
+      roleName: '阿蛮',
+    }, { chatState, persist: false });
+    assertTest(removed, '未删除首次角色 pending。');
+    assertTest(chatState.affectionSystem.pendingByMessage['20'].items['swipe-a'].firsts.length === 0, '首次角色仍残留。');
+    assertTest(!chatState.affectionSystem.buildTasks['task-aman'], '同角色 buildTask 未清理。');
+    const taskOnlyState = createUiTestChatState();
+    taskOnlyState.affectionSystem.pendingByMessage['20'].items['swipe-a'].firsts = [];
+    const taskOnlyRemoved = discardPendingAffectionItem({
+      messageId: 20,
+      fingerprint: 'swipe-a',
+      roleName: '阿蛮',
+    }, { chatState: taskOnlyState, persist: false });
+    assertTest(taskOnlyRemoved && !taskOnlyState.affectionSystem.buildTasks['task-aman'], 'task-only 异常态无法放弃。');
+    return 'pending first、task-only 异常态与绑定 buildTask 均可同步清理。';
+  }));
+
+  results.push(await runAsyncTest('手动校准只追加 manual_adjustment，不改初值和旧记录', async () => {
+    const chatState = createUiTestChatState();
+    const result = await adjustAffectionProfileValue({
+      roleName: '沈青',
+      targetValueTenths: 400,
+    }, { settings, chatState, persist: false });
+    const profile = chatState.affectionSystem.profiles.沈青;
+    assertTest(result.changed && profile.valueTenths === 400, '当前值未校准到 40.0。');
+    assertTest(profile.initialValueTenths === 350, '手动校准修改了 initialValueTenths。');
+    assertTest(profile.records.length === 2 && profile.records.some(record => record.sourceType === 'manual_adjustment'), '未追加 manual_adjustment。');
+    return '35.2 → 40.0，旧自动记录与初值均保留。';
+  }));
+
+  results.push(await runAsyncTest('确认专属阶段只替换 stages，不改账本', async () => {
+    const chatState = createUiTestChatState();
+    const beforeRecords = JSON.stringify(chatState.affectionSystem.profiles.沈青.records);
+    const customStages = createGenericCommitTestStages().map(stage => ({ ...stage, name: `专属${stage.stageId}` }));
+    await applyAffectionProfileStages({ roleName: '沈青', stages: customStages, buildMode: 'custom' }, {
+      settings,
+      chatState,
+      persist: false,
+    });
+    const profile = chatState.affectionSystem.profiles.沈青;
+    assertTest(profile.stages[1].name === '专属S2', '新阶段未覆盖。');
+    assertTest(profile.valueTenths === 352 && JSON.stringify(profile.records) === beforeRecords, '阶段覆盖污染了正式账本。');
+    return '五阶段已替换；valueTenths、initialValueTenths、records 未变。';
+  }));
+
+  results.push(await runAsyncTest('按需求重新生成只返回草稿，正式阶段继续生效', async () => {
+    const chatState = createUiTestChatState();
+    const beforeStages = JSON.stringify(chatState.affectionSystem.profiles.沈青.stages);
+    let promptText = '';
+    const result = await regenerateAffectionProfileStages({
+      roleName: '沈青',
+      userRequirement: '前期戒备更重，确认关系后仍不直白表达。',
+      apiMode: 'main_api',
+    }, {
+      settings,
+      chatState,
+      log: false,
+      resolveContextMaterial: async () => '角色核心身份：测试角色。',
+      requestCustomProfile: async ({ messages }) => {
+        promptText = messages.map(message => message.content || '').join('\n');
+        return createMockCustomStages();
+      },
+    });
+    assertTest(result.stages.length === 5, '未返回合法五阶段草稿。');
+    assertTest(promptText.includes('前期戒备更重，确认关系后仍不直白表达'), '用户需求未进入生成提示词。');
+    assertTest(JSON.stringify(chatState.affectionSystem.profiles.沈青.stages) === beforeStages, '重新生成直接覆盖了正式阶段。');
+    return '需求已进入请求；API 结果仅作为编辑草稿返回。';
+  }));
+
+  results.push(await runAsyncTest('阶段手风琴与档案刻度包含可访问文本', async () => {
+    const stage = createGenericCommitTestStages()[1];
+    const markup = renderAffectionStageFields(stage, 1, true, [], 'S2');
+    const rail = renderAffectionStageRail('沈青', 352, createGenericCommitTestStages());
+    assertTest(markup.includes('aria-expanded="true"') && markup.includes('aria-controls='), '手风琴缺少展开状态或控制目标。');
+    assertTest(markup.includes('当前阶段') && markup.includes('阶段名') && markup.includes('关系含义'), '当前阶段状态或可见 label 缺失。');
+    assertTest(rail.includes('aria-label="沈青当前好感 35.2'), '只读刻度缺少可读状态。');
+    return '手风琴、字段标签与只读刻度均提供文字状态。';
+  }));
+
+  affectionTestState.uiSuiteResults = results;
+  affectionTestState.uiSuiteStatus = results.every(item => item.status === 'passed') ? 'passed' : 'failed';
+  return results;
+}
+
 async function runAffectionInjectionSimulator() {
   try {
     const mode = affectionTestState.injectionMode;
@@ -1690,7 +2400,7 @@ function getTestStatusLabel(status, passedCount = 0, totalCount = 0) {
   return '等待测试';
 }
 
-export function renderAffectionPanel() {
+function renderAffectionDiagnostics() {
   const passedCount = affectionTestState.suiteResults.filter(item => item.status === 'passed').length;
   const totalCount = affectionTestState.suiteResults.length;
   const suiteLabel = getTestStatusLabel(affectionTestState.suiteStatus, passedCount, totalCount);
@@ -1736,9 +2446,29 @@ export function renderAffectionPanel() {
     injectionPassedCount,
     injectionTotalCount,
   );
+  const uiPassedCount = affectionTestState.uiSuiteResults.filter(item => item.status === 'passed').length;
+  const uiTotalCount = affectionTestState.uiSuiteResults.length;
+  const uiSuiteLabel = getTestStatusLabel(
+    affectionTestState.uiSuiteStatus,
+    uiPassedCount,
+    uiTotalCount,
+  );
 
   return `
-    <div class="slx-affection-test-root">
+    <div class="slx-affection-panel-prep">
+      <details class="slx-detail-card slx-affection-diagnostics" data-slx-affection-diagnostics ${affectionTestState.diagnosticsOpen ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>开发诊断</small>
+            <b>第 1—8 步测试与模拟</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-idle">按需展开</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-diagnostics-body">
+          <div class="slx-affection-test-root">
       <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="suite" ${affectionTestState.expandedSections.suite ? 'open' : ''}>
         <summary class="slx-affection-test-heading">
           <span class="slx-affection-test-title">
@@ -2118,6 +2848,72 @@ export function renderAffectionPanel() {
           </div>
         </div>
       </details>
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="uiSuite" ${affectionTestState.expandedSections.uiSuite ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>开发期测试区</small>
+            <b>第 8 步 · 面板操作、编辑副本与可访问结构</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.uiSuiteStatus)}">${escapeHtml(uiSuiteLabel)}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>使用页面内存与 mock API 调用正式 pending 编辑、手动校准、阶段覆盖和按需求重新生成函数；不写聊天、不改 metadata、不请求真实 API。</p>
+          <div class="slx-action-row">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-ui-suite>运行第 8 步全部检查</button>
+          </div>
+          ${renderSuiteResults(affectionTestState.uiSuiteResults)}
+        </div>
+      </details>
+          </div>
+        </div>
+      </details>
+    </div>
+  `;
+}
+
+export function renderAffectionPanel() {
+  const settings = getGlobalSettings();
+  const chatState = getChatState();
+  const store = getAffectionSystemState(chatState);
+  normalizeAffectionPanelView(store);
+  const selectedPending = getSelectedPendingEntries(settings, store);
+  const pendingItemCount = selectedPending.reduce((count, entry) => (
+    count
+    + (Array.isArray(entry.pending?.changes) ? entry.pending.changes.length : 0)
+    + (Array.isArray(entry.pending?.firsts) ? entry.pending.firsts.length : 0)
+    + (Array.isArray(entry.tasks) ? entry.tasks.filter(task => (
+      !(entry.pending?.firsts || []).some(first => (
+        normalizeAffectionRoleName(first?.roleName) === normalizeAffectionRoleName(task?.roleName)
+      ))
+    )).length : 0)
+  ), 0);
+  const profileCount = Object.values(store.profiles || {}).filter(isPlainObject).length;
+
+  return `
+    <div class="slx-affection-root">
+      <div class="slx-affection-main">
+        <header class="slx-affection-page-head">
+          <div>
+            <small>攻略模式</small>
+            <h3>角色对 {{user}} 的好感档案</h3>
+            <p>变化先随当前回复暂存，发送下一条消息时才写入正式账本。</p>
+          </div>
+          <div class="slx-affection-page-counts" aria-label="好感度档案概况">
+            <span><b>${profileCount}</b> 人已建档</span>
+            <span><b>${pendingItemCount}</b> 项待确认</span>
+          </div>
+        </header>
+        ${renderAffectionFeedback()}
+        ${renderAffectionSettings(settings)}
+        ${renderAffectionPending(settings, store)}
+        ${renderAffectionProfiles(store)}
+        ${renderAffectionDiagnostics()}
+      </div>
+      ${renderAffectionDetailOverlay(store)}
+      ${renderAffectionStageEditorOverlay(store)}
     </div>
   `;
 }
@@ -2155,7 +2951,402 @@ function syncAffectionTestInputs(panelRoot) {
     || affectionTestState.injectionMode;
 }
 
+function restoreAffectionPanelFocus(panelRoot) {
+  if (affectionPanelState.focusRoleName) {
+    const roleName = affectionPanelState.focusRoleName;
+    affectionPanelState.focusRoleName = '';
+    requestAnimationFrame(() => [...panelRoot.querySelectorAll('[data-slx-affection-open-detail]')]
+      .find(button => button.dataset.slxAffectionOpenDetail === roleName)?.focus());
+    return;
+  }
+  const selector = affectionPanelState.focusSelector;
+  if (!selector) return;
+  affectionPanelState.focusSelector = '';
+  requestAnimationFrame(() => panelRoot.querySelector(selector)?.focus());
+}
+
+function getTaskInitialInputValue(panelRoot, taskKey) {
+  const input = [...panelRoot.querySelectorAll('[data-slx-affection-task-initial]')]
+    .find(item => item.dataset.slxAffectionTaskInitial === taskKey);
+  return input?.value ?? '';
+}
+
+function updateStageEditorField(input) {
+  const editor = affectionPanelState.editor;
+  const stageIndex = Number(input.dataset.stageIndex);
+  const stage = editor?.stages?.[stageIndex];
+  if (!stage) return;
+  if (input.dataset.slxAffectionStageField) {
+    stage[input.dataset.slxAffectionStageField] = input.value;
+  } else if (input.dataset.slxAffectionStageBehavior !== undefined) {
+    const behaviorIndex = Number(input.dataset.slxAffectionStageBehavior);
+    const behaviors = Array.isArray(stage.behaviors) ? [...stage.behaviors] : ['', '', ''];
+    behaviors[behaviorIndex] = input.value;
+    stage.behaviors = behaviors;
+  }
+  const stageId = stage.stageId || `S${stageIndex + 1}`;
+  editor.dirty = true;
+  if (!editor.modifiedStageIds.includes(stageId)) editor.modifiedStageIds.push(stageId);
+  delete editor.fieldErrors[stageId];
+  panelRootEditorStatus(input.closest('.slx-affection-editor'));
+}
+
+function panelRootEditorStatus(editorRoot) {
+  const editor = affectionPanelState.editor;
+  if (!editorRoot || !editor) return;
+  const copyStatus = editorRoot.querySelector('.slx-affection-stage-accordion .slx-affection-section-head small');
+  if (copyStatus) copyStatus.textContent = editor.dirty ? '尚未应用' : '与正式阶段一致';
+  const confirmButton = editorRoot.querySelector('[data-slx-affection-confirm-stages]');
+  if (confirmButton) confirmButton.disabled = !editor.dirty
+    || editor.generationStatus === 'running'
+    || (editor.sourceBuildMode === 'generic' && editor.generationStatus !== 'success');
+}
+
+function trapAffectionOverlayFocus(event, overlay) {
+  if (event.key !== 'Tab') return;
+  const focusable = [...overlay.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])')]
+    .filter(item => item.offsetParent !== null);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function bindAffectionFormalEvents(panelRoot) {
+  restoreAffectionPanelFocus(panelRoot);
+
+  panelRoot.querySelector('[data-slx-affection-settings]')?.addEventListener('toggle', event => {
+    affectionPanelState.settingsOpen = event.currentTarget.open;
+  });
+  panelRoot.querySelector('[data-slx-affection-full-stages]')?.addEventListener('toggle', event => {
+    affectionPanelState.fullStagesOpen = event.currentTarget.open;
+  });
+  panelRoot.querySelector('[data-slx-affection-regenerate-fold]')?.addEventListener('toggle', event => {
+    affectionPanelState.regenerateOpen = event.currentTarget.open;
+  });
+
+  panelRoot.querySelector('[data-slx-affection-enabled]')?.addEventListener('change', async event => {
+    const settings = getGlobalSettings();
+    getAffectionSettings(settings).enabled = event.currentTarget.checked;
+    saveGlobalSettings();
+    await syncAffectionInjection({ settings, chatState: getChatState() });
+    setAffectionPanelFeedback({ notice: event.currentTarget.checked ? '好感度追踪已开启。' : '好感度追踪与正文注入已停用。' });
+    refreshPanel();
+  });
+  panelRoot.querySelectorAll('[data-slx-affection-build-mode]').forEach(button => {
+    button.addEventListener('click', () => {
+      const settings = getGlobalSettings();
+      getAffectionSettings(settings).defaultBuildMode = button.dataset.slxAffectionBuildMode;
+      saveGlobalSettings();
+      setAffectionPanelFeedback({ notice: `新角色将默认使用${button.dataset.slxAffectionBuildMode === 'generic' ? '通用阶段' : '专属阶段'}建档。` });
+      refreshPanel();
+    });
+  });
+  panelRoot.querySelectorAll('[data-slx-affection-build-api]').forEach(button => {
+    button.addEventListener('click', () => {
+      const settings = getGlobalSettings();
+      getAffectionSettings(settings).profileBuildApiMode = button.dataset.slxAffectionBuildApi;
+      saveGlobalSettings();
+      setAffectionPanelFeedback({ notice: `首次专属建档改用${button.dataset.slxAffectionBuildApi === 'main_api' ? '主 API' : '副 API'}。` });
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-affection-delta-step]').forEach(button => {
+    button.addEventListener('click', () => {
+      try {
+        const settings = getGlobalSettings();
+        const store = getAffectionSystemState(getChatState());
+        const messageId = Number(button.dataset.messageId);
+        const fingerprint = button.dataset.fingerprint || '';
+        const roleName = button.dataset.roleName || '';
+        const pending = store.pendingByMessage?.[String(messageId)]?.items?.[fingerprint];
+        const change = pending?.changes?.find(item => normalizeAffectionRoleName(item?.roleName) === normalizeAffectionRoleName(roleName));
+        const currentIndex = AFFECTION_ALLOWED_DELTA_TENTHS.indexOf(Number(change?.deltaTenths));
+        const nextIndex = currentIndex + Number(button.dataset.slxAffectionDeltaStep);
+        const nextDelta = AFFECTION_ALLOWED_DELTA_TENTHS[nextIndex];
+        if (!Number.isInteger(nextDelta)) return;
+        updatePendingAffectionDelta({ messageId, fingerprint, roleName, deltaTenths: nextDelta }, { settings, chatState: getChatState() });
+        setAffectionPanelFeedback({ notice: `已把「${roleName}」本轮变化调整为 ${formatAffectionDeltaTenths(nextDelta)}。` });
+      } catch (error) {
+        setAffectionPanelFeedback({ error: error?.message || String(error) });
+      }
+      refreshPanel();
+    });
+  });
+  panelRoot.querySelectorAll('[data-slx-affection-discard-pending]').forEach(button => {
+    button.addEventListener('click', () => {
+      const roleName = button.dataset.roleName || '';
+      const removed = discardPendingAffectionItem({
+        messageId: Number(button.dataset.messageId),
+        fingerprint: button.dataset.fingerprint || '',
+        roleName,
+      });
+      setAffectionPanelFeedback(removed
+        ? { notice: `已放弃「${roleName}」的这项待确认内容。` }
+        : { error: '待确认内容已不存在。' });
+      refreshPanel();
+    });
+  });
+  panelRoot.querySelectorAll('[data-slx-affection-retry-task]').forEach(button => {
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        await retryAffectionBuildTask({ taskKey: button.dataset.taskKey });
+        setAffectionPanelFeedback({ notice: '已重新发起专属阶段生成。' });
+      } catch (error) {
+        setAffectionPanelFeedback({ error: error?.message || String(error) });
+      }
+      refreshPanel();
+    });
+  });
+  panelRoot.querySelectorAll('[data-slx-affection-resolve-task]').forEach(button => {
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      const taskKey = button.dataset.taskKey || '';
+      try {
+        const rawInitial = getTaskInitialInputValue(panelRoot, taskKey);
+        if (rawInitial !== '') {
+          const initialValueTenths = parseAffectionValueTenths(rawInitial);
+          if (!Number.isInteger(initialValueTenths)) throw new Error('请填写 0—100、最多一位小数的初始好感。');
+          updateAffectionBuildTaskInitialValue({ taskKey, initialValueTenths });
+        }
+        if (button.dataset.slxAffectionResolveTask === 'generic') {
+          await useGenericAffectionBuildTask({ taskKey });
+          setAffectionPanelFeedback({ notice: '该角色将使用通用五阶段完成建档。' });
+        } else {
+          await retryAffectionBuildTask({ taskKey });
+          setAffectionPanelFeedback({ notice: '已按补充初值开始生成专属阶段。' });
+        }
+      } catch (error) {
+        setAffectionPanelFeedback({ error: error?.message || String(error) });
+      }
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-affection-open-detail]').forEach(button => {
+    button.addEventListener('click', () => {
+      affectionPanelState.view = 'detail';
+      affectionPanelState.roleName = button.dataset.slxAffectionOpenDetail || '';
+      affectionPanelState.fullStagesOpen = false;
+      affectionPanelState.focusSelector = '[data-slx-affection-close-overlay]';
+      setAffectionPanelFeedback();
+      refreshPanel();
+    });
+  });
+  panelRoot.querySelector('[data-slx-affection-close-overlay]')?.addEventListener('click', () => {
+    affectionPanelState.view = 'main';
+    affectionPanelState.focusRoleName = affectionPanelState.roleName;
+    refreshPanel();
+  });
+  panelRoot.querySelector('[data-slx-affection-apply-adjust]')?.addEventListener('click', async event => {
+    const targetValueTenths = parseAffectionValueTenths(panelRoot.querySelector('[data-slx-affection-adjust-value]')?.value);
+    if (!Number.isInteger(targetValueTenths)) {
+      setAffectionPanelFeedback({ error: '当前好感必须是 0—100、最多一位小数。' });
+      refreshPanel();
+      return;
+    }
+    event.currentTarget.disabled = true;
+    try {
+      const result = await adjustAffectionProfileValue({ roleName: affectionPanelState.roleName, targetValueTenths });
+      setAffectionPanelFeedback({ notice: result.changed ? '当前好感已写入一条手动调整记录。' : '当前好感没有变化。' });
+    } catch (error) {
+      setAffectionPanelFeedback({ error: error?.message || String(error) });
+    }
+    refreshPanel();
+  });
+  panelRoot.querySelectorAll('[data-slx-affection-profile-mode]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const mode = button.dataset.slxAffectionProfileMode;
+      if (mode === 'custom') {
+        const profile = getAffectionSystemState(getChatState()).profiles?.[affectionPanelState.roleName];
+        affectionPanelState.editor = createAffectionStageEditor(profile, affectionPanelState.roleName);
+        affectionPanelState.regenerateOpen = profile?.buildMode === 'generic';
+        affectionPanelState.view = 'stages';
+        affectionPanelState.focusSelector = '[data-slx-affection-back-detail]';
+        refreshPanel();
+        return;
+      }
+      try {
+        await applyAffectionProfileStages({
+          roleName: affectionPanelState.roleName,
+          stages: createGenericAffectionStages(),
+          buildMode: 'generic',
+        });
+        affectionPanelState.editor = null;
+        setAffectionPanelFeedback({ notice: '已切换为通用五阶段。' });
+      } catch (error) {
+        setAffectionPanelFeedback({ error: error?.message || String(error) });
+      }
+      refreshPanel();
+    });
+  });
+  panelRoot.querySelector('[data-slx-affection-open-stage-editor]')?.addEventListener('click', () => {
+    const profile = getAffectionSystemState(getChatState()).profiles?.[affectionPanelState.roleName];
+    if (!affectionPanelState.editor || affectionPanelState.editor.roleName !== affectionPanelState.roleName) {
+      affectionPanelState.editor = createAffectionStageEditor(profile, affectionPanelState.roleName);
+    }
+    affectionPanelState.regenerateOpen = profile?.buildMode === 'generic' || affectionPanelState.regenerateOpen;
+    affectionPanelState.view = 'stages';
+    affectionPanelState.focusSelector = '[data-slx-affection-back-detail]';
+    setAffectionPanelFeedback();
+    refreshPanel();
+  });
+  panelRoot.querySelector('[data-slx-affection-delete-profile]')?.addEventListener('click', async event => {
+    event.currentTarget.disabled = true;
+    try {
+      await deleteAffectionProfile({ roleName: affectionPanelState.roleName });
+      affectionPanelState.view = 'main';
+      affectionPanelState.roleName = '';
+      affectionPanelState.editor = null;
+      setAffectionPanelFeedback({ notice: '角色好感档案已删除。' });
+    } catch (error) {
+      setAffectionPanelFeedback({ error: error?.message || String(error) });
+    }
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-back-detail]')?.addEventListener('click', () => {
+    affectionPanelState.view = 'detail';
+    affectionPanelState.focusSelector = '[data-slx-affection-open-stage-editor]';
+    refreshPanel();
+  });
+  panelRoot.querySelectorAll('[data-slx-affection-regenerate-api]').forEach(button => {
+    button.addEventListener('click', () => {
+      affectionPanelState.editor.regenerateApiMode = button.dataset.slxAffectionRegenerateApi;
+      panelRoot.querySelectorAll('[data-slx-affection-regenerate-api]').forEach(item => {
+        const active = item === button;
+        item.classList.toggle('is-active', active);
+        item.setAttribute('aria-pressed', String(active));
+      });
+    });
+  });
+  panelRoot.querySelector('[data-slx-affection-requirement]')?.addEventListener('input', event => {
+    affectionPanelState.editor.userRequirement = event.currentTarget.value;
+  });
+  panelRoot.querySelectorAll('[data-slx-affection-toggle-stage]').forEach(button => {
+    button.addEventListener('click', () => {
+      const stageId = button.dataset.slxAffectionToggleStage;
+      const card = button.closest('.slx-affection-stage-draft-card');
+      const fields = card?.querySelector('.slx-affection-stage-fields');
+      const willOpen = !card?.classList.contains('is-open');
+      affectionPanelState.editor.expandedStageId = willOpen ? stageId : '';
+      panelRoot.querySelectorAll('.slx-affection-stage-draft-card').forEach(item => item.classList.remove('is-open'));
+      panelRoot.querySelectorAll('[data-slx-affection-toggle-stage]').forEach(item => item.setAttribute('aria-expanded', 'false'));
+      panelRoot.querySelectorAll('.slx-affection-stage-fields').forEach(item => { item.hidden = true; });
+      if (willOpen && card && fields) {
+        card.classList.add('is-open');
+        button.setAttribute('aria-expanded', 'true');
+        fields.hidden = false;
+      }
+    });
+  });
+  panelRoot.querySelectorAll('[data-slx-affection-stage-field], [data-slx-affection-stage-behavior]').forEach(input => {
+    input.addEventListener('input', () => updateStageEditorField(input));
+  });
+  panelRoot.querySelector('[data-slx-affection-regenerate]')?.addEventListener('click', async event => {
+    const editor = affectionPanelState.editor;
+    editor.generationStatus = 'running';
+    editor.error = '';
+    event.currentTarget.disabled = true;
+    refreshPanel();
+    try {
+      const result = await regenerateAffectionProfileStages({
+        roleName: editor.roleName,
+        userRequirement: editor.userRequirement,
+        apiMode: editor.regenerateApiMode,
+      });
+      if (affectionPanelState.editor !== editor || editor.chatId !== getCurrentAffectionChatId()) return;
+      editor.stages = cloneData(result.stages);
+      editor.dirty = true;
+      editor.modifiedStageIds = editor.stages.map((stage, index) => stage.stageId || `S${index + 1}`);
+      editor.fieldErrors = {};
+      editor.generationStatus = 'success';
+      editor.expandedStageId = getStageForValueTenths(
+        recalculateAffectionLedger(
+          getAffectionSystemState(getChatState()).profiles[editor.roleName].initialValueTenths,
+          getAffectionSystemState(getChatState()).profiles[editor.roleName].records,
+        ).valueTenths,
+        editor.stages,
+      ).stageId;
+    } catch (error) {
+      if (affectionPanelState.editor === editor) {
+        editor.generationStatus = 'error';
+        editor.error = error?.message || String(error);
+      }
+    }
+    refreshPanel();
+  });
+  panelRoot.querySelector('[data-slx-affection-cancel-stage-edit]')?.addEventListener('click', () => {
+    affectionPanelState.editor = null;
+    affectionPanelState.view = 'detail';
+    affectionPanelState.regenerateOpen = false;
+    affectionPanelState.focusSelector = '[data-slx-affection-open-stage-editor]';
+    setAffectionPanelFeedback({ notice: '编辑副本已放弃，正式阶段未改变。' });
+    refreshPanel();
+  });
+  panelRoot.querySelector('[data-slx-affection-confirm-stages]')?.addEventListener('click', async event => {
+    const editor = affectionPanelState.editor;
+    if (editor.sourceBuildMode === 'generic' && editor.generationStatus !== 'success') {
+      affectionPanelState.regenerateOpen = true;
+      setAffectionPanelFeedback({ error: '请先生成专属五阶段草稿，再确认覆盖。' });
+      refreshPanel();
+      return;
+    }
+    const errors = getStageEditorErrors(editor.stages);
+    if (Object.keys(errors).length) {
+      editor.fieldErrors = errors;
+      editor.expandedStageId = Object.keys(errors)[0];
+      affectionPanelState.focusSelector = `.slx-affection-stage-draft-card.has-error [data-slx-affection-stage-field="name"]`;
+      refreshPanel();
+      return;
+    }
+    event.currentTarget.disabled = true;
+    try {
+      await applyAffectionProfileStages({ roleName: editor.roleName, stages: editor.stages, buildMode: 'custom' });
+      affectionPanelState.editor = null;
+      affectionPanelState.view = 'detail';
+      affectionPanelState.regenerateOpen = false;
+      setAffectionPanelFeedback({ notice: '新的专属五阶段已正式启用。' });
+    } catch (error) {
+      setAffectionPanelFeedback({ error: error?.message || String(error) });
+    }
+    refreshPanel();
+  });
+
+  panelRoot.querySelectorAll('.slx-affection-editor-overlay').forEach(overlay => {
+    overlay.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (affectionPanelState.view === 'stages') {
+          affectionPanelState.view = 'detail';
+          affectionPanelState.focusSelector = '[data-slx-affection-open-stage-editor]';
+        } else {
+          affectionPanelState.view = 'main';
+          affectionPanelState.focusRoleName = affectionPanelState.roleName;
+        }
+        refreshPanel();
+        return;
+      }
+      trapAffectionOverlayFocus(event, overlay);
+    });
+  });
+}
+
 export function bindAffectionPanelEvents(panelRoot) {
+  bindAffectionFormalEvents(panelRoot);
+
+  panelRoot.querySelector('[data-slx-affection-diagnostics]')?.addEventListener('toggle', event => {
+    affectionTestState.diagnosticsOpen = event.currentTarget.open;
+  });
+
   panelRoot.querySelectorAll('[data-slx-affection-test-section]').forEach(section => {
     section.addEventListener('toggle', () => {
       const sectionId = section.dataset.slxAffectionTestSection;
@@ -2266,6 +3457,12 @@ export function bindAffectionPanelEvents(panelRoot) {
   panelRoot.querySelector('[data-slx-affection-run-injection-suite]')?.addEventListener('click', async () => {
     syncAffectionTestInputs(panelRoot);
     await runAffectionInjectionSuite();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-ui-suite]')?.addEventListener('click', async () => {
+    syncAffectionTestInputs(panelRoot);
+    await runAffectionUiSuite();
     refreshPanel();
   });
 

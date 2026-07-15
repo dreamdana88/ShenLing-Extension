@@ -571,12 +571,19 @@ ${String(knownAffectionText || "暂无已建档角色。").trim() || "暂无已�
 export function buildAffectionProfilePrompt({
   roleName,
   initialAffection,
+  userRequirement = '',
   contextMaterial,
 }) {
+  const cleanRoleName = String(roleName || '').trim();
+  const cleanInitialAffection = String(initialAffection || '').trim();
+  const cleanUserRequirement = String(userRequirement || '').trim();
+  const requirementBlock = cleanUserRequirement
+    ? `\n## 用户专属需求（本次定制最高优先级）\n${cleanUserRequirement}\n\n在不改变固定五阶段范围、正式初值与角色核心身份的前提下，阶段关系走向、表达偏好和边界必须优先满足以上用户需求。\n`
+    : '';
   return `## 攻略角色专属阶段表建档
 
-请只为角色「${String(roleName || '').trim()}」生成一套从 0 到 100 的五阶段攻略关系表。
-当前正式初始好感已经由同一次小总结确定为 ${String(initialAffection || '').trim()}；不得重新估算、修改或覆盖这个初值。
+请只为角色「${cleanRoleName}」生成一套从 0 到 100 的五阶段攻略关系表。
+当前正式初始好感已经由同一次小总结确定为 ${cleanInitialAffection}；不得重新估算、修改或覆盖这个初值。
 
 只输出一个合法 JSON 对象，不要输出 Markdown、代码围栏或解释：
 {
@@ -596,12 +603,15 @@ export function buildAffectionProfilePrompt({
 要求：
 - stages 必须恰好五项，并依次对应 0-20、21-40、41-60、61-80、81-100。
 - 每一阶段必须包含非空的 name、meaning、trend、boundary，以及恰好三条非空 behaviors。
-- 阶段名和行为必须贴合「${String(roleName || '').trim()}」的人设、既有关系与表达方式，不使用通用模板名。
+- 阶段名和行为必须贴合「${cleanRoleName}」的人设、既有关系与表达方式，不使用通用模板名。
 - 行为必须具体、可演、逐阶段递进，不违背角色核心人设，也不提前越过本阶段关系边界。
-- 不得在 JSON 外输出任何内容。
+${requirementBlock}
 
 以下材料只用于理解角色和既有关系：
-${String(contextMaterial || '暂无额外材料。').trim() || '暂无额外材料。'}`;
+${String(contextMaterial || '暂无额外材料。').trim() || '暂无额外材料。'}
+
+${cleanUserRequirement ? '生成结果必须再次优先核对用户专属需求。' : '请依据角色与既有关系生成专属内容。'}
+不得在 JSON 外输出任何内容。`;
 }
 
 export function buildAffectionStateInjectionPrompt({ entriesText }) {

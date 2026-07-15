@@ -370,6 +370,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-panel.slx-panel-emotion-editor-only,
+.slx-panel.slx-panel-affection-editor-only,
 .slx-panel.slx-panel-theater-preview-only,
 .slx-panel.slx-panel-outline-editor-only {
   width: 100%;
@@ -385,6 +386,9 @@ body.slx-panel-open-lock {
 .slx-panel.slx-panel-emotion-editor-only > .slx-bubbles,
 .slx-panel.slx-panel-emotion-editor-only > .slx-header,
 .slx-panel.slx-panel-emotion-editor-only > .slx-communication-log-panel,
+.slx-panel.slx-panel-affection-editor-only > .slx-bubbles,
+.slx-panel.slx-panel-affection-editor-only > .slx-header,
+.slx-panel.slx-panel-affection-editor-only > .slx-communication-log-panel,
 .slx-panel.slx-panel-theater-preview-only > .slx-bubbles,
 .slx-panel.slx-panel-theater-preview-only > .slx-header,
 .slx-panel.slx-panel-theater-preview-only > .slx-communication-log-panel,
@@ -395,6 +399,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-panel.slx-panel-emotion-editor-only > .slx-body,
+.slx-panel.slx-panel-affection-editor-only > .slx-body,
 .slx-panel.slx-panel-theater-preview-only > .slx-body,
 .slx-panel.slx-panel-outline-editor-only > .slx-body {
   display: block;
@@ -405,6 +410,8 @@ body.slx-panel-open-lock {
 
 .slx-panel.slx-panel-emotion-editor-only .slx-module-grid,
 .slx-panel.slx-panel-emotion-editor-only .slx-detail > .slx-detail-head,
+.slx-panel.slx-panel-affection-editor-only .slx-module-grid,
+.slx-panel.slx-panel-affection-editor-only .slx-detail > .slx-detail-head,
 .slx-panel.slx-panel-theater-preview-only .slx-module-grid,
 .slx-panel.slx-panel-theater-preview-only .slx-detail > .slx-detail-head,
 .slx-panel.slx-panel-outline-editor-only .slx-module-grid,
@@ -413,6 +420,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-panel.slx-panel-emotion-editor-only .slx-detail,
+.slx-panel.slx-panel-affection-editor-only .slx-detail,
 .slx-panel.slx-panel-theater-preview-only .slx-detail,
 .slx-panel.slx-panel-outline-editor-only .slx-detail {
   position: absolute;
@@ -425,6 +433,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-panel.slx-panel-emotion-editor-only .slx-emotion-root,
+.slx-panel.slx-panel-affection-editor-only .slx-affection-root,
 .slx-panel.slx-panel-theater-preview-only .slx-theater-root,
 .slx-panel.slx-panel-outline-editor-only .slx-outline-root {
   height: 100%;
@@ -432,6 +441,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-panel.slx-panel-emotion-editor-only .slx-emotion-root > :not(.slx-emotion-editor-overlay),
+.slx-panel.slx-panel-affection-editor-only .slx-affection-root > :not(.slx-affection-editor-overlay),
 .slx-panel.slx-panel-theater-preview-only .slx-theater-root > :not(.slx-theater-preview-overlay):not(.slx-theater-modal-overlay),
 .slx-panel.slx-panel-outline-editor-only .slx-outline-root > :not(.slx-outline-editor-overlay) {
   display: none;
@@ -3249,10 +3259,1024 @@ body.slx-panel-open-lock {
    Affection Development Test Area
    ========================================================================== */
 
+/* 好感度：关系档案主面板、待确认项与专属阶段编辑器 */
+.slx-affection-root {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  color: var(--slx-text);
+}
+
+.slx-affection-main {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.slx-affection-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 2px 6px;
+}
+
+.slx-affection-page-head small,
+.slx-affection-page-head p,
+.slx-affection-section-head small,
+.slx-affection-profile-card footer small,
+.slx-affection-stage-caption {
+  color: var(--slx-muted);
+}
+
+.slx-affection-page-head h3 {
+  margin: 3px 0 5px;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.slx-affection-page-head p {
+  max-width: 430px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.slx-affection-page-counts {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.slx-affection-page-counts span,
+.slx-affection-status-pill,
+.slx-affection-card-badges small,
+.slx-affection-section-head > span,
+.slx-affection-stage-tags small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 999px;
+  background: var(--slx-bg-soft);
+  color: var(--slx-muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.slx-affection-page-counts b {
+  color: var(--slx-accent-text);
+  font-size: 13px;
+}
+
+.slx-affection-feedback,
+.slx-affection-dependency-note,
+.slx-affection-editor-errors,
+.slx-affection-field-error,
+.slx-affection-editor-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--slx-accent-rgb), 0.26);
+  border-radius: 10px;
+  background: rgba(var(--slx-accent-rgb), 0.08);
+  color: var(--slx-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.slx-affection-feedback svg,
+.slx-affection-dependency-note svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--slx-accent);
+}
+
+.slx-affection-feedback.is-error,
+.slx-affection-editor-errors,
+.slx-affection-field-error {
+  border-color: color-mix(in srgb, var(--slx-danger) 32%, transparent);
+  background: var(--slx-danger-soft);
+  color: var(--slx-danger);
+}
+
+.slx-affection-status-strip,
+.slx-affection-settings-fold,
+.slx-affection-pending-card,
+.slx-affection-profile-card,
+.slx-affection-empty-state {
+  padding: 14px;
+}
+
+.slx-affection-status-strip .slx-setting-toggle-row {
+  padding: 0;
+}
+
+.slx-affection-status-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.slx-affection-status-pill.is-ready {
+  border-color: rgba(var(--slx-accent-rgb), 0.32);
+  color: var(--slx-accent-text);
+}
+
+.slx-affection-status-pill.is-paused {
+  opacity: 0.72;
+}
+
+.slx-affection-dependency-note {
+  margin-top: 10px;
+}
+
+.slx-affection-settings-fold > summary,
+.slx-affection-regenerate-fold > summary,
+.slx-affection-stage-details > summary {
+  display: grid;
+  min-height: 32px;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+}
+
+.slx-affection-settings-fold > summary {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+}
+
+.slx-affection-settings-fold > summary::-webkit-details-marker,
+.slx-affection-regenerate-fold > summary::-webkit-details-marker,
+.slx-affection-stage-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.slx-affection-settings-fold > summary > span,
+.slx-affection-regenerate-fold > summary > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.slx-affection-settings-fold > summary > svg,
+.slx-affection-regenerate-fold > summary > svg,
+.slx-affection-stage-details > summary svg,
+.slx-affection-stage-toggle .slx-affection-stage-tags > svg {
+  width: 16px;
+  height: 16px;
+  color: var(--slx-muted);
+  transition: transform 160ms ease;
+}
+
+.slx-affection-settings-fold[open] > summary > svg,
+.slx-affection-regenerate-fold[open] > summary > svg,
+.slx-affection-stage-details[open] > summary svg,
+.slx-affection-stage-draft-card.is-open .slx-affection-stage-tags > svg {
+  transform: rotate(180deg);
+}
+
+.slx-affection-settings-body,
+.slx-affection-regenerate-fold > div {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--slx-border-dim);
+}
+
+.slx-affection-control-group {
+  display: grid;
+  gap: 7px;
+}
+
+.slx-affection-control-label,
+.slx-affection-initial-fix > span,
+.slx-affection-adjust-row label > span,
+.slx-affection-stage-fields label > span,
+.slx-affection-requirement > span {
+  color: var(--slx-muted);
+  font-size: 12px;
+}
+
+.slx-affection-segment {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 999px;
+  background: var(--slx-bg-btn);
+}
+
+.slx-affection-segment button,
+.slx-affection-api-toggle button {
+  min-width: 86px;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--slx-muted);
+  cursor: pointer;
+}
+
+.slx-affection-segment button.is-active,
+.slx-affection-api-toggle button.is-active {
+  background: var(--slx-bg-panel);
+  color: var(--slx-accent-text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.slx-affection-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.slx-affection-section-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.slx-affection-pending-card > p {
+  margin: 10px 0 0;
+  font-size: 11px;
+}
+
+.slx-affection-pending-card.is-empty {
+  opacity: 0.82;
+}
+
+.slx-affection-pending-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.slx-affection-pending-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: var(--slx-bg-soft);
+}
+
+.slx-affection-pending-row.is-first {
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, auto);
+}
+
+.slx-affection-pending-person,
+.slx-affection-build-state {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.slx-affection-pending-person small,
+.slx-affection-build-state small,
+.slx-affection-build-state span {
+  color: var(--slx-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.slx-affection-delta-stepper {
+  display: grid;
+  grid-template-columns: 32px minmax(70px, auto) 32px;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 999px;
+  background: var(--slx-bg-panel);
+}
+
+.slx-affection-delta-stepper button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  place-items: center;
+  background: transparent;
+  color: var(--slx-accent-text);
+  cursor: pointer;
+}
+
+.slx-affection-delta-stepper button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.slx-affection-delta-stepper svg {
+  width: 14px;
+  height: 14px;
+}
+
+.slx-affection-delta-stepper output {
+  color: var(--slx-text);
+  font-size: 12px;
+  text-align: center;
+}
+
+.slx-affection-text-action,
+.slx-affection-delete-profile {
+  border: 0;
+  background: transparent;
+  color: var(--slx-muted);
+  cursor: pointer;
+}
+
+.slx-affection-text-action.is-danger,
+.slx-affection-delete-profile {
+  color: var(--slx-danger);
+}
+
+.slx-affection-pending-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.slx-affection-initial-fix {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#shenling-assistant-panel-root .slx-affection-initial-fix input {
+  width: 92px;
+}
+
+.slx-affection-profile-section {
+  display: grid;
+  gap: 10px;
+}
+
+.slx-affection-profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.slx-affection-profile-card {
+  display: grid;
+  gap: 10px;
+}
+
+.slx-affection-profile-card > header,
+.slx-affection-profile-card > footer,
+.slx-affection-value-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.slx-affection-card-badges {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.slx-affection-value-line strong,
+.slx-affection-detail-hero strong {
+  color: var(--slx-accent-text);
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.slx-affection-value-line strong small,
+.slx-affection-detail-hero strong small {
+  margin-left: 2px;
+  color: var(--slx-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.slx-affection-value-line > span {
+  font-size: 13px;
+}
+
+.slx-affection-stage-rail {
+  --slx-affection-gap: 3px;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--slx-affection-gap);
+  height: 8px;
+  margin: 4px 5px 0;
+}
+
+.slx-affection-stage-segment {
+  border-radius: 999px;
+  background: var(--slx-border);
+  opacity: 0.55;
+}
+
+.slx-affection-stage-segment.is-current {
+  background: var(--slx-accent);
+  opacity: 1;
+}
+
+.slx-affection-stage-rail i {
+  position: absolute;
+  top: 50%;
+  left: var(--slx-affection-position);
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--slx-bg-panel);
+  border-radius: 50%;
+  background: var(--slx-accent);
+  box-shadow: 0 0 0 1px rgba(var(--slx-accent-rgb), 0.35);
+  transform: translate(-50%, -50%);
+}
+
+.slx-affection-stage-caption {
+  font-size: 11px;
+  text-align: right;
+}
+
+.slx-affection-stage-meaning {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.slx-affection-profile-card footer .slx-soft-btn,
+.slx-affection-build-mode-card > .slx-soft-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slx-affection-profile-card footer svg,
+.slx-affection-build-mode-card > .slx-soft-btn svg,
+.slx-affection-delete-profile svg {
+  width: 15px;
+  height: 15px;
+}
+
+.slx-affection-empty-state {
+  display: grid;
+  min-height: 150px;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  text-align: center;
+}
+
+.slx-affection-empty-state > svg {
+  width: 28px;
+  height: 28px;
+  color: var(--slx-accent);
+}
+
+.slx-affection-empty-state p {
+  max-width: 380px;
+  margin: 0;
+}
+
+.slx-affection-editor-overlay {
+  position: absolute;
+  z-index: 16;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--slx-bg-panel);
+}
+
+.slx-affection-editor {
+  display: flex;
+  width: min(100%, 780px);
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--slx-border-dim);
+  border-left: 1px solid var(--slx-border-dim);
+  background: var(--slx-bg-panel);
+}
+
+.slx-affection-editor-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--slx-border-dim);
+}
+
+.slx-affection-editor-head > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.slx-affection-editor-head small {
+  color: var(--slx-muted);
+  font-size: 11px;
+}
+
+.slx-affection-editor-head > button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  place-items: center;
+  background: var(--slx-bg-btn);
+  color: var(--slx-text);
+  cursor: pointer;
+}
+
+.slx-affection-editor-head > button:last-child:first-child {
+  margin-left: auto;
+}
+
+.slx-affection-editor-head svg {
+  width: 17px;
+  height: 17px;
+}
+
+.slx-affection-editor-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--slx-border) transparent;
+}
+
+.slx-affection-detail-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 6px 2px;
+}
+
+.slx-affection-detail-hero div {
+  display: grid;
+  gap: 4px;
+}
+
+.slx-affection-detail-hero p,
+.slx-affection-current-stage p {
+  margin: 0;
+}
+
+.slx-affection-adjust-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.slx-affection-adjust-row label {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+}
+
+.slx-affection-current-stage,
+.slx-affection-build-mode-card {
+  display: grid;
+  gap: 10px;
+}
+
+.slx-affection-current-stage ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--slx-muted);
+  line-height: 1.55;
+}
+
+.slx-affection-stage-details {
+  border-top: 1px solid var(--slx-border-dim);
+  padding-top: 8px;
+}
+
+.slx-affection-stage-details > summary {
+  grid-template-columns: 1fr auto;
+}
+
+.slx-affection-stage-details > div {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.slx-affection-stage-details article {
+  padding: 10px;
+  border-left: 2px solid var(--slx-border);
+  background: var(--slx-bg-soft);
+}
+
+.slx-affection-stage-details article.is-current {
+  border-left-color: var(--slx-accent);
+}
+
+.slx-affection-stage-details article header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.slx-affection-stage-details article p,
+.slx-affection-stage-details article ul {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.slx-affection-record-list {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.slx-affection-record-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--slx-border-dim);
+  font-size: 12px;
+}
+
+.slx-affection-record-list small {
+  color: var(--slx-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.slx-affection-delete-profile {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  align-self: center;
+  padding: 6px 10px;
+}
+
+.slx-affection-regenerate-fold {
+  padding: 12px;
+}
+
+.slx-affection-regenerate-fold > summary {
+  grid-template-columns: 1fr auto;
+}
+
+.slx-affection-requirement,
+.slx-affection-stage-fields label {
+  display: grid;
+  gap: 6px;
+}
+
+.slx-affection-requirement small {
+  color: var(--slx-muted);
+  font-size: 11px;
+}
+
+.slx-affection-regenerate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.slx-affection-regenerate-actions > .slx-soft-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slx-affection-stage-accordion {
+  display: grid;
+  gap: 8px;
+}
+
+.slx-affection-stage-draft-card {
+  overflow: hidden;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 10px;
+  background: var(--slx-bg-card);
+}
+
+.slx-affection-stage-draft-card.has-error {
+  border-color: color-mix(in srgb, var(--slx-danger) 42%, transparent);
+}
+
+.slx-affection-stage-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 50px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 0;
+  background: transparent;
+  color: var(--slx-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.slx-affection-stage-toggle > span:first-child {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 24px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.slx-affection-stage-toggle > span:first-child > small {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  place-items: center;
+  background: var(--slx-bg-btn);
+  color: var(--slx-accent-text);
+}
+
+.slx-affection-stage-toggle em {
+  overflow: hidden;
+  color: var(--slx-muted);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slx-affection-stage-tags {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.slx-affection-stage-tags small.is-current {
+  border-color: rgba(var(--slx-accent-rgb), 0.32);
+  color: var(--slx-accent-text);
+}
+
+.slx-affection-stage-tags small.is-error {
+  border-color: color-mix(in srgb, var(--slx-danger) 35%, transparent);
+  background: var(--slx-danger-soft);
+  color: var(--slx-danger);
+}
+
+.slx-affection-stage-fields {
+  display: grid;
+  gap: 11px;
+  padding: 12px;
+  border-top: 1px solid var(--slx-border-dim);
+  background: var(--slx-bg-soft);
+}
+
+.slx-affection-stage-fields[hidden] {
+  display: none;
+}
+
+#shenling-assistant-panel-root .slx-affection-root textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.slx-affection-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.slx-affection-editor-footer .slx-primary-btn {
+  border-color: var(--slx-accent);
+  background: var(--slx-accent);
+  color: var(--slx-bg-panel);
+}
+
+.slx-affection-diagnostics {
+  margin-top: 4px;
+}
+
+.slx-affection-diagnostics-body {
+  margin-top: 10px;
+}
+
+@media (hover: hover) {
+  .slx-affection-segment button:hover,
+  .slx-affection-api-toggle button:hover,
+  .slx-affection-editor-head > button:hover,
+  .slx-affection-stage-toggle:hover,
+  .slx-affection-delta-stepper button:hover:not(:disabled) {
+    background: var(--slx-bg-card-hover);
+    color: var(--slx-text);
+  }
+}
+
+@media (max-width: 760px) {
+  .slx-affection-page-head {
+    display: grid;
+  }
+
+  .slx-affection-page-counts {
+    flex-wrap: wrap;
+  }
+
+  .slx-affection-pending-row,
+  .slx-affection-pending-row.is-first {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .slx-affection-pending-row > .slx-affection-text-action,
+  .slx-affection-initial-fix,
+  .slx-affection-pending-actions {
+    grid-column: 1 / -1;
+  }
+
+  .slx-affection-pending-row > .slx-affection-text-action {
+    justify-self: end;
+  }
+
+  .slx-affection-editor {
+    width: 100%;
+    border: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .slx-affection-status-strip,
+  .slx-affection-settings-fold,
+  .slx-affection-pending-card,
+  .slx-affection-profile-card,
+  .slx-affection-empty-state {
+    padding: 12px;
+  }
+
+  .slx-affection-editor-head {
+    min-height: 58px;
+    padding: 8px 10px;
+  }
+
+  .slx-affection-editor-body {
+    padding: 10px;
+  }
+
+  .slx-affection-pending-row,
+  .slx-affection-pending-row.is-first {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .slx-affection-delta-stepper {
+    width: 100%;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+  }
+
+  .slx-affection-delta-stepper button,
+  .slx-affection-editor-head > button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .slx-affection-pending-row > .slx-affection-text-action {
+    min-height: 44px;
+  }
+
+  .slx-affection-profile-card > footer,
+  .slx-affection-adjust-row,
+  .slx-affection-regenerate-actions,
+  .slx-affection-editor-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .slx-affection-profile-card > footer .slx-soft-btn,
+  .slx-affection-adjust-row .slx-soft-btn,
+  .slx-affection-regenerate-actions > .slx-soft-btn,
+  .slx-affection-editor-footer .slx-soft-btn,
+  .slx-affection-pending-actions .slx-soft-btn {
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .slx-affection-pending-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .slx-affection-segment,
+  .slx-affection-api-toggle {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .slx-affection-segment button,
+  .slx-affection-api-toggle button {
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .slx-affection-detail-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .slx-affection-record-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .slx-affection-record-list li small {
+    grid-column: 1 / -1;
+  }
+
+  .slx-affection-stage-toggle > span:first-child {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .slx-affection-stage-toggle em {
+    grid-column: 2;
+  }
+
+  .slx-affection-stage-tags small:not(.is-current):not(.is-error) {
+    display: none;
+  }
+
+  #shenling-assistant-panel-root .slx-affection-root input,
+  #shenling-assistant-panel-root .slx-affection-root textarea,
+  #shenling-assistant-panel-root .slx-affection-root select {
+    font-size: 16px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slx-affection-settings-fold > summary > svg,
+  .slx-affection-regenerate-fold > summary > svg,
+  .slx-affection-stage-details > summary svg,
+  .slx-affection-stage-toggle .slx-affection-stage-tags > svg {
+    transition: none;
+  }
+}
+
 .slx-affection-test-root {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.slx-affection-panel-prep {
+  display: grid;
+  gap: 10px;
+}
+
+.slx-affection-diagnostics {
+  overflow: hidden;
+}
+
+.slx-affection-diagnostics > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.slx-affection-diagnostics > summary::-webkit-details-marker {
+  display: none;
+}
+
+.slx-affection-diagnostics[open] > summary .slx-affection-test-chevron {
+  transform: rotate(180deg);
+}
+
+.slx-affection-diagnostics-body {
+  padding-top: 10px;
 }
 
 .slx-affection-test-heading {

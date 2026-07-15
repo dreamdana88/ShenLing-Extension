@@ -37,8 +37,10 @@ import {
   SUMMARY_SUPPORT_MESSAGES,
 } from '../../prompts.js';
 import {
+  AFFECTION_ALLOWED_DELTA_TENTHS,
   AFFECTION_STAGE_RANGES,
   clampAffectionValueTenths,
+  createManualAffectionAdjustmentRecord,
   formatAffectionDeltaTenths,
   formatAffectionValueTenths,
   getStageForValueTenths,
@@ -46,6 +48,7 @@ import {
   normalizeAffectionFirstEntries,
   normalizeAffectionRoleName,
   recalculateAffectionLedger,
+  replaceAffectionRecord,
   sortAffectionRecords,
 } from './model.js';
 
@@ -335,7 +338,12 @@ function pruneAffectionBuildTasks(buildTasks) {
     .forEach(([key]) => delete buildTasks[key]);
 }
 
-function buildAffectionProfileMessages({ roleName, initialValueTenths, contextMaterial }) {
+function buildAffectionProfileMessages({
+  roleName,
+  initialValueTenths,
+  userRequirement = '',
+  contextMaterial,
+}) {
   return replacePromptMessageMacros([
     ...SUMMARY_SUPPORT_MESSAGES.map(message => ({ ...message })),
     {
@@ -343,6 +351,7 @@ function buildAffectionProfileMessages({ roleName, initialValueTenths, contextMa
       content: buildAffectionProfilePrompt({
         roleName,
         initialAffection: formatAffectionValueTenths(initialValueTenths),
+        userRequirement,
         contextMaterial,
       }),
     },
@@ -641,7 +650,9 @@ function logAffectionProfileBuild({
   if (!enabled) return;
   getWorkflowOption('addCommunicationLog')?.({
     moduleName: task.apiMode === 'main_api' ? '好感度建档 / 主 API' : '好感度建档 / 副 API',
-    taskType: task.buildMode === 'generic' ? '通用阶段表预建档' : '专属阶段表预建档',
+    taskType: task.operation === 'regenerate'
+      ? '专属阶段表主动重新生成'
+      : task.buildMode === 'generic' ? '通用阶段表预建档' : '专属阶段表预建档',
     status,
     startedAt,
     durationMs: Math.round(performance.now() - startedMs),
@@ -674,6 +685,7 @@ async function executeCustomAffectionProfileBuild(task, {
   const messages = buildAffectionProfileMessages({
     roleName: task.roleName,
     initialValueTenths: task.initialValueTenths,
+    userRequirement: task.userRequirement,
     contextMaterial,
   });
   const apiResult = requestCustomProfile
@@ -931,6 +943,317 @@ export async function runAffectionProfileBuildApiPreview({ roleName, initialValu
     });
     throw error;
   }
+}
+
+function getAffectionPendingItem(store, messageId, fingerprint) {
+  const bucket = store.pendingByMessage?.[String(Number(messageId))];
+  return isPlainObject(bucket?.items?.[String(fingerprint || '').trim()])
+    ? bucket.items[String(fingerprint || '').trim()]
+    : null;
+}
+
+function markAffectionStoreUpdated(store, persist) {
+  store.lastUpdatedAt = formatTimestamp();
+  if (persist) saveChatState();
+}
+
+export function updatePendingAffectionDelta({
+  messageId,
+  fingerprint,
+  roleName,
+  deltaTenths,
+} = {}, {
+  chatState = getChatState(),
+  persist = true,
+} = {}) {
+  const cleanRoleName = normalizeAffectionRoleName(roleName);
+  const cleanFingerprint = String(fingerprint || '').trim();
+  const nextDeltaTenths = Number(deltaTenths);
+  if (!cleanRoleName || !cleanFingerprint || !AFFECTION_ALLOWED_DELTA_TENTHS.includes(nextDeltaTenths)) {
+    throw new Error('待确认好感变化参数无效。');
+  }
+  const store = getAffectionSystemState(chatState);
+  const pending = getAffectionPendingItem(store, messageId, cleanFingerprint);
+  if (!pending) throw new Error('当前选中回复没有可编辑的好感 pending。');
+  const change = (Array.isArray(pending.changes) ? pending.changes : [])
+    .find(item => normalizeAffectionRoleName(item?.roleName) === cleanRoleName);
+  if (!change) throw new Error(`未找到「${cleanRoleName}」的待确认变化。`);
+  const profile = isPlainObject(store.profiles?.[cleanRoleName]) ? store.profiles[cleanRoleName] : null;
+  if (!profile) throw new Error(`「${cleanRoleName}」尚无正式好感档案。`);
+  const ledger = recalculateAffectionLedger(profile.initialValueTenths, profile.records);
+  change.deltaTenths = nextDeltaTenths;
+  change.valueBeforeTenths = ledger.valueTenths;
+  change.valueAfterTenths = clampAffectionValueTenths(ledger.valueTenths + nextDeltaTenths);
+  pending.changed = pending.changes.some(item => Number(item?.deltaTenths) !== 0);
+  pending.updatedAt = formatTimestamp();
+  markAffectionStoreUpdated(store, persist);
+  return { ...change };
+}
+
+export function discardPendingAffectionItem({
+  messageId,
+  fingerprint,
+  roleName,
+} = {}, {
+  chatState = getChatState(),
+  persist = true,
+} = {}) {
+  const cleanRoleName = normalizeAffectionRoleName(roleName);
+  const cleanFingerprint = String(fingerprint || '').trim();
+  const messageKey = String(Number(messageId));
+  const store = getAffectionSystemState(chatState);
+  const bucket = store.pendingByMessage?.[messageKey];
+  const pending = getAffectionPendingItem(store, messageId, cleanFingerprint);
+  if (!cleanRoleName || !pending || !isPlainObject(bucket?.items)) return false;
+  const matchingTaskKeys = Object.entries(store.buildTasks || {})
+    .filter(([, task]) => (
+      Number(task?.messageId) === Number(messageId)
+      && String(task?.fingerprint || '') === cleanFingerprint
+      && normalizeAffectionRoleName(task?.roleName) === cleanRoleName
+    ))
+    .map(([taskKey]) => taskKey);
+  const matchingPendingCount = [
+    ...(Array.isArray(pending.changes) ? pending.changes : []),
+    ...(Array.isArray(pending.firsts) ? pending.firsts : []),
+  ].filter(item => normalizeAffectionRoleName(item?.roleName) === cleanRoleName).length;
+  if (!matchingPendingCount && !matchingTaskKeys.length) return false;
+  pending.changes = (Array.isArray(pending.changes) ? pending.changes : [])
+    .filter(item => normalizeAffectionRoleName(item?.roleName) !== cleanRoleName);
+  pending.firsts = (Array.isArray(pending.firsts) ? pending.firsts : [])
+    .filter(item => normalizeAffectionRoleName(item?.roleName) !== cleanRoleName);
+  pending.changed = pending.changes.some(item => Number(item?.deltaTenths) !== 0);
+  const afterCount = pending.changes.length + pending.firsts.length;
+  matchingTaskKeys.forEach(taskKey => delete store.buildTasks[taskKey]);
+  if (!afterCount) delete bucket.items[cleanFingerprint];
+  if (!Object.keys(bucket.items).length) delete store.pendingByMessage[messageKey];
+  markAffectionStoreUpdated(store, persist);
+  return true;
+}
+
+export async function adjustAffectionProfileValue({
+  roleName,
+  targetValueTenths,
+} = {}, {
+  settings = getGlobalSettings(),
+  chatState = getChatState(),
+  persist = true,
+} = {}) {
+  const cleanRoleName = normalizeAffectionRoleName(roleName);
+  const target = Number(targetValueTenths);
+  const store = getAffectionSystemState(chatState);
+  const profile = isPlainObject(store.profiles?.[cleanRoleName]) ? store.profiles[cleanRoleName] : null;
+  if (!profile) throw new Error(`未找到「${cleanRoleName}」的好感档案。`);
+  if (!Number.isInteger(target) || target < 0 || target > 1000) {
+    throw new Error('当前好感必须是 0—100、最多一位小数。');
+  }
+  const timestamp = formatTimestamp();
+  const record = createManualAffectionAdjustmentRecord({
+    initialValueTenths: profile.initialValueTenths,
+    records: profile.records,
+    targetValueTenths: target,
+    recordId: `manual:${Date.now()}:${encodeURIComponent(cleanRoleName)}`,
+    createdAt: timestamp,
+  });
+  if (!record) return { changed: false, profile };
+  const ledger = recalculateAffectionLedger(
+    profile.initialValueTenths,
+    replaceAffectionRecord(profile.records, record),
+  );
+  store.profiles[cleanRoleName] = {
+    ...profile,
+    valueTenths: ledger.valueTenths,
+    records: ledger.records,
+    updatedAt: timestamp,
+  };
+  markAffectionStoreUpdated(store, persist);
+  if (persist) await syncAffectionInjection({ settings, chatState });
+  getWorkflowOption('refreshPanel')?.();
+  return { changed: true, profile: store.profiles[cleanRoleName], record };
+}
+
+export async function deleteAffectionProfile({ roleName } = {}, {
+  settings = getGlobalSettings(),
+  chatState = getChatState(),
+  persist = true,
+} = {}) {
+  const cleanRoleName = normalizeAffectionRoleName(roleName);
+  const store = getAffectionSystemState(chatState);
+  if (!cleanRoleName || !isPlainObject(store.profiles?.[cleanRoleName])) return false;
+  delete store.profiles[cleanRoleName];
+  markAffectionStoreUpdated(store, persist);
+  if (persist) await syncAffectionInjection({ settings, chatState });
+  getWorkflowOption('refreshPanel')?.();
+  return true;
+}
+
+export async function applyAffectionProfileStages({
+  roleName,
+  stages,
+  buildMode = 'custom',
+} = {}, {
+  settings = getGlobalSettings(),
+  chatState = getChatState(),
+  persist = true,
+} = {}) {
+  const cleanRoleName = normalizeAffectionRoleName(roleName);
+  const store = getAffectionSystemState(chatState);
+  const profile = isPlainObject(store.profiles?.[cleanRoleName]) ? store.profiles[cleanRoleName] : null;
+  if (!profile) throw new Error(`未找到「${cleanRoleName}」的好感档案。`);
+  const normalizedStages = normalizeAffectionProfileStages(stages);
+  const ledger = recalculateAffectionLedger(profile.initialValueTenths, profile.records);
+  store.profiles[cleanRoleName] = {
+    ...profile,
+    valueTenths: ledger.valueTenths,
+    records: ledger.records,
+    stages: normalizedStages,
+    buildMode: buildMode === 'generic' ? 'generic' : 'custom',
+    buildStatus: 'ready',
+    updatedAt: formatTimestamp(),
+  };
+  markAffectionStoreUpdated(store, persist);
+  if (persist) await syncAffectionInjection({ settings, chatState });
+  getWorkflowOption('refreshPanel')?.();
+  return store.profiles[cleanRoleName];
+}
+
+export async function regenerateAffectionProfileStages({
+  roleName,
+  userRequirement = '',
+  apiMode = '',
+} = {}, {
+  settings = getGlobalSettings(),
+  chatState = getChatState(),
+  requestCustomProfile = null,
+  resolveContextMaterial = resolveAffectionProfileContext,
+  log = true,
+} = {}) {
+  const cleanRoleName = normalizeAffectionRoleName(roleName);
+  const store = getAffectionSystemState(chatState);
+  const profile = isPlainObject(store.profiles?.[cleanRoleName]) ? store.profiles[cleanRoleName] : null;
+  if (!profile) throw new Error(`未找到「${cleanRoleName}」的好感档案。`);
+  const affection = getAffectionSettings(settings);
+  const cleanApiMode = ['main_api', 'secondary_api'].includes(apiMode)
+    ? apiMode
+    : affection.profileBuildApiMode;
+  const task = {
+    operation: 'regenerate',
+    buildRequestId: createBuildRequestId(),
+    chatId: getContextInfo().chatId,
+    messageId: -1,
+    fingerprint: 'manual-regenerate',
+    roleName: cleanRoleName,
+    initialValueTenths: profile.initialValueTenths,
+    buildMode: 'custom',
+    apiMode: cleanApiMode,
+    userRequirement: String(userRequirement || '').trim().slice(0, 2000),
+  };
+  const startedAt = formatTimestamp();
+  const startedMs = performance.now();
+  let result = null;
+  try {
+    result = await executeCustomAffectionProfileBuild(task, {
+      requestCustomProfile,
+      resolveContextMaterial,
+    });
+    logAffectionProfileBuild({
+      enabled: log,
+      task,
+      status: 'success',
+      startedAt,
+      startedMs,
+      messages: result.messages,
+      apiResult: result.apiResult,
+      parsedResult: { roleName: cleanRoleName, stages: result.stages },
+    });
+    return {
+      roleName: cleanRoleName,
+      apiMode: cleanApiMode,
+      userRequirement: task.userRequirement,
+      stages: result.stages,
+    };
+  } catch (error) {
+    logAffectionProfileBuild({
+      enabled: log,
+      task,
+      status: 'failure',
+      startedAt,
+      startedMs,
+      messages: result?.messages || [],
+      apiResult: result?.apiResult || null,
+      error,
+    });
+    throw error;
+  }
+}
+
+export async function retryAffectionBuildTask({ taskKey } = {}, {
+  settings = getGlobalSettings(),
+  chatState = getChatState(),
+  persist = true,
+} = {}) {
+  const store = getAffectionSystemState(chatState);
+  const task = store.buildTasks?.[String(taskKey || '')];
+  if (!isPlainObject(task)) throw new Error('待重试的专属建档任务已经不存在。');
+  const pending = getAffectionPendingItem(store, task.messageId, task.fingerprint);
+  if (!pending) throw new Error('建档来源回复已经失效，无法重试。');
+  return startAffectionProfileBuildsForPending(pending, {
+    settings,
+    chatState,
+    chatId: task.chatId,
+    persist,
+    force: true,
+  });
+}
+
+export function updateAffectionBuildTaskInitialValue({
+  taskKey,
+  initialValueTenths,
+} = {}, {
+  chatState = getChatState(),
+  persist = true,
+} = {}) {
+  const value = Number(initialValueTenths);
+  const store = getAffectionSystemState(chatState);
+  const task = store.buildTasks?.[String(taskKey || '')];
+  if (!isPlainObject(task)) throw new Error('待处理的首次建档任务已经不存在。');
+  if (!Number.isInteger(value) || value < 0 || value > 1000) {
+    throw new Error('初始好感必须是 0—100、最多一位小数。');
+  }
+  const pending = getAffectionPendingItem(store, task.messageId, task.fingerprint);
+  if (!pending) throw new Error('建档来源回复已经失效，无法补充初始好感。');
+  task.initialValueTenths = value;
+  task.error = '';
+  task.updatedAt = formatTimestamp();
+  const firsts = (Array.isArray(pending.firsts) ? pending.firsts : [])
+    .filter(item => normalizeAffectionRoleName(item?.roleName) !== normalizeAffectionRoleName(task.roleName));
+  pending.firsts = [...firsts, { roleName: task.roleName, initialValueTenths: value }];
+  pending.updatedAt = task.updatedAt;
+  markAffectionStoreUpdated(store, persist);
+  return task;
+}
+
+export async function useGenericAffectionBuildTask({ taskKey } = {}, {
+  settings = getGlobalSettings(),
+  chatState = getChatState(),
+  persist = true,
+} = {}) {
+  const store = getAffectionSystemState(chatState);
+  const task = store.buildTasks?.[String(taskKey || '')];
+  if (!isPlainObject(task) || !Number.isInteger(Number(task.initialValueTenths))) {
+    throw new Error('该建档任务缺少合法初始好感，无法改用通用阶段。');
+  }
+  task.buildMode = 'generic';
+  task.stages = createGenericAffectionStages();
+  task.profileDraft = createProfileDraft(task, task.stages);
+  task.buildStatus = 'ready';
+  task.error = '';
+  task.updatedAt = formatTimestamp();
+  markAffectionStoreUpdated(store, persist);
+  if (task.confirmed === true) {
+    await commitSelectedPendingAffectionUpdates({ settings, chatState, chatId: task.chatId, persist });
+  }
+  getWorkflowOption('refreshPanel')?.();
+  return task;
 }
 
 export function buildAffectionUpdatePromptSection(
