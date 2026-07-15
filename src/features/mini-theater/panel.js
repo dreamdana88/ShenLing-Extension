@@ -56,6 +56,7 @@ let panelState = {
   promptFolderFilter: null, // folderId | null（null = 全部）
   modal: null, // 见下方 modal 类型注释
   pickSearch: "", // 从库选择弹窗内的搜索词
+  pickExpandedFolders: new Set(),
 };
 
 /*
@@ -1316,12 +1317,15 @@ function renderModalContent() {
               ? `<p style="color:var(--slx-muted);font-size:12px;padding:8px 0;margin:0">
                 ${mt.prompts.length === 0 ? "提示词库为空，请先新建提示词" : "没有匹配的提示词"}</p>`
               : groups
-                  .map((group) => `
-                    <section class="slx-theater-pick-group" aria-label="${escapeHtml(group.name)}">
-                      <div class="slx-theater-pick-group-head">
+                  .map((group) => {
+                    const groupKey = group.id || "__uncategorized__";
+                    const isExpanded = panelState.pickExpandedFolders.has(groupKey);
+                    return `
+                    <details class="slx-theater-pick-group" data-theater-pick-folder="${escapeHtml(groupKey)}" ${isExpanded ? "open" : ""}>
+                      <summary class="slx-theater-pick-group-head">
                         <span class="slx-theater-pick-group-name">${escapeHtml(group.name)}</span>
                         <span class="slx-theater-pick-group-count">${group.prompts.length}</span>
-                      </div>
+                      </summary>
                       <div class="slx-theater-pick-group-items">
                         ${group.prompts
                           .map(
@@ -1334,8 +1338,9 @@ function renderModalContent() {
                           )
                           .join("")}
                       </div>
-                    </section>
-                  `)
+                    </details>
+                  `;
+                  })
                   .join("")
           }
         </div>
@@ -1897,6 +1902,7 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
     .querySelector("[data-theater-pick-prompt]")
     ?.addEventListener("click", () => {
       panelState.pickSearch = "";
+      panelState.pickExpandedFolders = new Set();
       panelState.modal = { type: "pick-prompt" };
       refreshPanel();
     });
@@ -2168,6 +2174,15 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
       panelState.pickSearch = e.target.value;
       refreshPanelDebounced("pick");
     });
+
+  root.querySelectorAll("[data-theater-pick-folder]").forEach((folder) => {
+    folder.addEventListener("toggle", () => {
+      const key = folder.dataset.theaterPickFolder;
+      if (!key) return;
+      if (folder.open) panelState.pickExpandedFolders.add(key);
+      else panelState.pickExpandedFolders.delete(key);
+    });
+  });
 
   root.querySelectorAll("[data-theater-pick-item]").forEach((btn) => {
     btn.addEventListener("click", () => {

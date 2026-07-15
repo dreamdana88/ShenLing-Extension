@@ -19,7 +19,7 @@ const editorState = {
   search: '',
   onlyOverrides: false,
   drafts: new Map(),
-  selectorOpen: false,
+  browserModuleId: definitions[0]?.moduleId || '',
   compareOpen: false,
   notice: '',
   selfTest: null,
@@ -76,36 +76,56 @@ function getModuleGroups() {
   return groups;
 }
 
-function renderPromptNavigation(settings, { selector = false } = {}) {
+function getVisiblePromptGroups(settings) {
   const query = editorState.search.trim().toLocaleLowerCase();
-  return getModuleGroups().map(group => {
-    const items = group.items.filter(definition => {
+  return getModuleGroups().map(group => ({
+    ...group,
+    items: group.items.filter(definition => {
       const state = getPromptOverrideState(definition.id, settings);
       if (editorState.onlyOverrides && !state?.hasOverride) return false;
       if (!query) return true;
       return `${definition.label} ${definition.description} ${definition.id}`.toLocaleLowerCase().includes(query);
-    });
-    if (!items.length) return '';
-    const overrideCount = group.items.filter(item => getPromptOverrideState(item.id, settings)?.hasOverride).length;
-    return `
-      <details class="slx-prompt-nav-group" open>
-        <summary class="slx-prompt-nav-group-head">
-          <b>${escapeHtml(group.label)}</b>
-          <span>${overrideCount}/${group.items.length}</span>
-        </summary>
-        ${items.map(definition => {
-          const state = getDraftState(settings, definition.id);
-          const status = getStatus(state);
-          return `
-            <button class="slx-prompt-nav-item${definition.id === editorState.activePromptId ? ' is-active' : ''}" type="button" data-slx-prompt-select="${escapeHtml(definition.id)}" data-slx-prompt-selector-item="${selector ? 'true' : 'false'}">
-              <span>${escapeHtml(definition.label)}</span>
-              ${status.id === 'default' ? '' : `<i class="is-${status.id}" title="${escapeHtml(status.label)}"></i>`}
-            </button>
-          `;
-        }).join('')}
-      </details>
-    `;
-  }).join('') || '<div class="slx-prompt-empty">没有符合条件的提示词</div>';
+    }),
+  })).filter(group => group.items.length);
+}
+
+function renderPromptCascade(settings) {
+  const groups = getVisiblePromptGroups(settings);
+  if (!groups.length) return '<div class="slx-prompt-empty">没有符合条件的提示词</div>';
+  const selectedGroup = groups.find(group => group.id === editorState.browserModuleId) || groups[0];
+  return `
+    <div class="slx-prompt-cascade" aria-label="选择提示词">
+      <section class="slx-prompt-cascade-level" aria-label="选择模块">
+        <div class="slx-prompt-cascade-label">模块</div>
+        <div class="slx-prompt-cascade-options">
+          ${groups.map(group => {
+            const overrideCount = group.items.filter(item => getPromptOverrideState(item.id, settings)?.hasOverride).length;
+            const totalCount = getModuleGroups().find(item => item.id === group.id)?.items.length || group.items.length;
+            return `
+              <button class="slx-prompt-cascade-option${group.id === selectedGroup.id ? ' is-active' : ''}" type="button" data-slx-prompt-module="${escapeHtml(group.id)}" aria-pressed="${group.id === selectedGroup.id}">
+                <span>${escapeHtml(group.label)}</span><small>${overrideCount}/${totalCount}</small>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </section>
+      <section class="slx-prompt-cascade-level" aria-label="选择具体提示词">
+        <div class="slx-prompt-cascade-label">${escapeHtml(selectedGroup.label)} · 提示词</div>
+        <div class="slx-prompt-cascade-options">
+          ${selectedGroup.items.map(definition => {
+            const state = getDraftState(settings, definition.id);
+            const status = getStatus(state);
+            return `
+              <button class="slx-prompt-cascade-option${definition.id === editorState.activePromptId ? ' is-active' : ''}" type="button" data-slx-prompt-select="${escapeHtml(definition.id)}" aria-pressed="${definition.id === editorState.activePromptId}">
+                <span>${escapeHtml(definition.label)}</span>
+                ${status.id === 'default' ? '' : `<small>${escapeHtml(status.label)}</small>`}
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </section>
+    </div>
+  `;
 }
 
 function renderVariables(definition) {
@@ -165,7 +185,6 @@ function renderPromptEditor(settings) {
           <code class="slx-prompt-id">${escapeHtml(definition.id)}</code>
           ${state.entry?.updatedAt ? `<span class="slx-prompt-updated-at">保存于 ${escapeHtml(String(state.entry.updatedAt).replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC'))}</span>` : ''}
         </div>
-        <button class="slx-soft-btn slx-prompt-mobile-select" type="button" data-slx-prompt-open-selector>${slxIcon('summary')} 选择提示词</button>
       </header>
 
       <details class="slx-prompt-variables">
@@ -192,18 +211,6 @@ function formatCompareValue(value) {
 }
 
 function renderOverlay(settings) {
-  if (editorState.selectorOpen) {
-    return `
-      <div class="slx-prompt-overlay" role="dialog" aria-modal="true" aria-label="选择提示词">
-        <header><div><b>选择提示词</b><small>按模块查找</small></div><button class="slx-icon-btn" type="button" data-slx-prompt-close-overlay aria-label="关闭">${slxIcon('close')}</button></header>
-        <div class="slx-prompt-overlay-tools">
-          <input type="search" data-slx-prompt-search value="${escapeHtml(editorState.search)}" placeholder="搜索名称或 promptId" />
-          <label><input type="checkbox" data-slx-prompt-only-overrides ${editorState.onlyOverrides ? 'checked' : ''} /> 只看已修改</label>
-        </div>
-        <div class="slx-prompt-selector-list">${renderPromptNavigation(settings, { selector: true })}</div>
-      </div>
-    `;
-  }
   if (editorState.compareOpen) {
     const state = getDraftState(settings);
     return `
@@ -231,7 +238,7 @@ export function renderPromptEditorPanel(settings) {
       </div>
       ${editorState.notice ? `<div class="slx-prompt-notice">${escapeHtml(editorState.notice)}</div>` : ''}
       <div class="slx-prompt-workspace">
-        <nav class="slx-prompt-navigation" aria-label="提示词列表">${renderPromptNavigation(settings)}</nav>
+        <div class="slx-prompt-cascade-wrap" data-slx-prompt-cascade>${renderPromptCascade(settings)}</div>
         ${renderPromptEditor(settings)}
       </div>
       <details class="slx-prompt-self-test">
@@ -247,11 +254,10 @@ export function renderPromptEditorPanel(settings) {
 }
 
 export function isPromptEditorOverlayOpen() {
-  return editorState.selectorOpen || editorState.compareOpen;
+  return editorState.compareOpen;
 }
 
 export function closePromptEditorOverlays() {
-  editorState.selectorOpen = false;
   editorState.compareOpen = false;
 }
 
@@ -273,11 +279,21 @@ export function bindPromptEditorPanelEvents(panelRoot, settings, { refresh } = {
   const root = panelRoot.querySelector('.slx-prompt-editor-root');
   if (!root) return;
   const rerender = () => typeof refresh === 'function' && refresh();
-  const bindSelectButtons = scope => {
+  const bindCascadeButtons = scope => {
+    scope.querySelectorAll('[data-slx-prompt-module]').forEach(button => {
+      button.addEventListener('click', () => {
+        editorState.browserModuleId = button.dataset.slxPromptModule;
+        const cascade = root.querySelector('[data-slx-prompt-cascade]');
+        if (cascade) {
+          cascade.innerHTML = renderPromptCascade(settings);
+          bindCascadeButtons(cascade);
+        }
+      });
+    });
     scope.querySelectorAll('[data-slx-prompt-select]').forEach(button => {
       button.addEventListener('click', () => {
         editorState.activePromptId = button.dataset.slxPromptSelect;
-        editorState.selectorOpen = false;
+        editorState.browserModuleId = getPromptOverrideState(editorState.activePromptId, settings)?.definition.moduleId || editorState.browserModuleId;
         editorState.compareOpen = false;
         setNotice('');
         rerender();
@@ -288,10 +304,11 @@ export function bindPromptEditorPanelEvents(panelRoot, settings, { refresh } = {
   root.querySelectorAll('[data-slx-prompt-search]').forEach(input => {
     input.addEventListener('input', event => {
       editorState.search = event.currentTarget.value;
-      root.querySelectorAll('.slx-prompt-navigation, .slx-prompt-selector-list').forEach(container => {
-        container.innerHTML = renderPromptNavigation(settings, { selector: container.classList.contains('slx-prompt-selector-list') });
-        bindSelectButtons(container);
-      });
+      const cascade = root.querySelector('[data-slx-prompt-cascade]');
+      if (cascade) {
+        cascade.innerHTML = renderPromptCascade(settings);
+        bindCascadeButtons(cascade);
+      }
     });
   });
 
@@ -302,7 +319,7 @@ export function bindPromptEditorPanelEvents(panelRoot, settings, { refresh } = {
     });
   });
 
-  bindSelectButtons(root);
+  bindCascadeButtons(root);
 
   const activeState = getDraftState(settings);
   root.querySelector('[data-slx-prompt-text]')?.addEventListener('input', event => {
@@ -355,12 +372,6 @@ export function bindPromptEditorPanelEvents(panelRoot, settings, { refresh } = {
 
   root.querySelector('[data-slx-prompt-compare]')?.addEventListener('click', () => {
     editorState.compareOpen = true;
-    editorState.selectorOpen = false;
-    rerender();
-  });
-  root.querySelector('[data-slx-prompt-open-selector]')?.addEventListener('click', () => {
-    editorState.selectorOpen = true;
-    editorState.compareOpen = false;
     rerender();
   });
   root.querySelector('[data-slx-prompt-close-overlay]')?.addEventListener('click', () => {

@@ -359,22 +359,24 @@ function renderAffectionSettings(settings) {
         ${slxIcon('chevronDown')}
       </summary>
       <div class="slx-affection-settings-body">
-        <div class="slx-affection-control-group">
-          <span class="slx-affection-control-label">新角色默认建档方式</span>
-          <div class="slx-affection-segment" role="group" aria-label="新角色默认建档方式">
-            <button type="button" data-slx-affection-build-mode="custom" class="${affection.defaultBuildMode === 'custom' ? 'is-active' : ''}" aria-pressed="${affection.defaultBuildMode === 'custom'}">专属阶段</button>
-            <button type="button" data-slx-affection-build-mode="generic" class="${affection.defaultBuildMode === 'generic' ? 'is-active' : ''}" aria-pressed="${affection.defaultBuildMode === 'generic'}">通用阶段</button>
-          </div>
-        </div>
-        ${affection.defaultBuildMode === 'custom' ? `
-          <div class="slx-affection-control-group slx-affection-api-setting">
-            <span class="slx-affection-control-label">首次建档 API</span>
-            <div class="slx-schedule-api-toggle slx-affection-api-toggle" role="group" aria-label="首次专属阶段生成 API">
-              <button type="button" data-slx-affection-build-api="main_api" class="${affection.profileBuildApiMode === 'main_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'main_api'}">主 API</button>
-              <button type="button" data-slx-affection-build-api="secondary_api" class="${affection.profileBuildApiMode === 'secondary_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'secondary_api'}">副 API</button>
+        <div class="slx-affection-settings-controls">
+          <div class="slx-affection-control-group">
+            <span class="slx-affection-control-label">新角色默认建档方式</span>
+            <div class="slx-affection-segment" role="group" aria-label="新角色默认建档方式">
+              <button type="button" data-slx-affection-build-mode="custom" class="${affection.defaultBuildMode === 'custom' ? 'is-active' : ''}" aria-pressed="${affection.defaultBuildMode === 'custom'}">专属阶段</button>
+              <button type="button" data-slx-affection-build-mode="generic" class="${affection.defaultBuildMode === 'generic' ? 'is-active' : ''}" aria-pressed="${affection.defaultBuildMode === 'generic'}">通用阶段</button>
             </div>
           </div>
-        ` : '<p>通用阶段不调用建档 API。</p>'}
+          ${affection.defaultBuildMode === 'custom' ? `
+            <div class="slx-affection-control-group slx-affection-api-setting">
+              <span class="slx-affection-control-label">首次建档 API</span>
+              <div class="slx-schedule-api-toggle slx-affection-api-toggle" role="group" aria-label="首次专属阶段生成 API">
+                <button type="button" data-slx-affection-build-api="main_api" class="${affection.profileBuildApiMode === 'main_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'main_api'}">主 API</button>
+                <button type="button" data-slx-affection-build-api="secondary_api" class="${affection.profileBuildApiMode === 'secondary_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'secondary_api'}">副 API</button>
+              </div>
+            </div>
+          ` : '<p class="slx-affection-build-note">通用阶段不调用建档 API。</p>'}
+        </div>
       </div>
     </details>
   `;

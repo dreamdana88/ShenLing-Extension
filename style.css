@@ -3359,11 +3359,91 @@ body.slx-panel-open-lock {
 }
 
 .slx-prompt-workspace {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.slx-prompt-cascade-wrap {
+  min-width: 0;
+}
+
+.slx-prompt-cascade {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(168px, 0.27fr) minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: minmax(170px, 0.42fr) minmax(0, 0.58fr);
+  gap: 10px;
+}
+
+.slx-prompt-cascade-level {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--slx-border-dim);
+  border-radius: 12px;
+  background: var(--slx-bg-soft);
+}
+
+.slx-prompt-cascade-label {
+  margin: 0 4px 7px;
+  color: var(--slx-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.slx-prompt-cascade-options {
+  display: grid;
+  gap: 8px;
+}
+
+.slx-prompt-cascade-option {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--slx-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+
+.slx-prompt-cascade-option:hover,
+.slx-prompt-cascade-option:focus-visible {
+  border-color: var(--slx-border-dim);
+  background: var(--slx-bg-card-hover);
+  color: var(--slx-text);
+  outline: none;
+}
+
+.slx-prompt-cascade-option.is-active {
+  border-color: rgba(var(--slx-accent-rgb), 0.26);
+  background: rgba(var(--slx-accent-rgb), 0.14);
+  color: var(--slx-text);
+  font-weight: 650;
+}
+
+.slx-prompt-cascade-option span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.slx-prompt-cascade-option small {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--slx-bg-btn);
+  color: var(--slx-muted);
+  font-size: 10px;
+  font-weight: 500;
 }
 
 .slx-prompt-navigation {
@@ -3450,6 +3530,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-prompt-editor {
+  width: 100%;
   min-width: 0;
   padding: 16px;
   border: 1px solid var(--slx-border-dim);
@@ -3569,15 +3650,57 @@ body.slx-panel-open-lock {
 }
 
 #shenling-assistant-panel-root .slx-prompt-edit-field textarea {
+  display: block !important;
+  box-sizing: border-box !important;
   width: 100%;
-  min-height: 360px;
+  min-height: clamp(520px, 62vh, 820px);
   padding: 13px !important;
+  border: 1px solid var(--slx-border-dim) !important;
   border-radius: 10px !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background: var(--slx-input-bg) !important;
+  background-color: var(--slx-input-bg) !important;
+  background-image: none !important;
+  color: var(--slx-input-text) !important;
+  caret-color: var(--slx-input-text) !important;
+  box-shadow: none !important;
+  outline: none !important;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 13px;
   line-height: 1.65;
   resize: vertical;
+  opacity: 1 !important;
+  scrollbar-color: rgba(var(--slx-accent-rgb), 0.42) transparent;
   tab-size: 2;
+}
+
+#shenling-assistant-panel-root .slx-prompt-edit-field textarea:focus {
+  border-color: var(--slx-accent) !important;
+  background: var(--slx-input-bg-focus) !important;
+  background-color: var(--slx-input-bg-focus) !important;
+  box-shadow: 0 0 0 2px rgba(var(--slx-accent-rgb), 0.1) !important;
+}
+
+#shenling-assistant-panel-root .slx-prompt-edit-field textarea::-webkit-scrollbar {
+  width: 9px;
+}
+
+#shenling-assistant-panel-root .slx-prompt-edit-field textarea::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(var(--slx-accent-rgb), 0.35);
+  background-clip: padding-box;
+}
+
+#shenling-assistant-panel-root .slx-prompt-edit-field textarea::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+#shenling-assistant-panel-root .slx-prompt-edit-field textarea::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .slx-prompt-message-list {
@@ -3848,10 +3971,12 @@ body.slx-panel-open-lock {
     justify-content: flex-end;
   }
 
-  .slx-prompt-toolbar .slx-prompt-search-wrap,
-  .slx-prompt-toolbar .slx-prompt-filter,
   .slx-prompt-toolbar .slx-prompt-count {
     display: none;
+  }
+
+  .slx-prompt-toolbar .slx-prompt-search-wrap {
+    flex-basis: 100%;
   }
 
   .slx-prompt-toolbar .slx-soft-btn {
@@ -3859,11 +3984,22 @@ body.slx-panel-open-lock {
   }
 
   .slx-prompt-workspace {
-    display: block;
+    display: flex;
   }
 
-  .slx-prompt-navigation {
-    display: none;
+  .slx-prompt-cascade {
+    grid-template-columns: minmax(118px, 0.4fr) minmax(0, 0.6fr);
+    gap: 8px;
+  }
+
+  .slx-prompt-cascade-level {
+    padding: 7px;
+  }
+
+  .slx-prompt-cascade-option {
+    min-height: 44px;
+    padding: 7px 8px;
+    font-size: 12px;
   }
 
   .slx-prompt-editor {
@@ -3874,18 +4010,8 @@ body.slx-panel-open-lock {
     display: block;
   }
 
-  .slx-prompt-mobile-select {
-    display: inline-flex;
-    width: 100%;
-    min-height: 44px;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    margin-top: 12px;
-  }
-
   #shenling-assistant-panel-root .slx-prompt-edit-field textarea {
-    min-height: 320px;
+    min-height: clamp(460px, 58svh, 720px);
     font-size: 16px;
   }
 
@@ -4074,12 +4200,34 @@ body.slx-panel-open-lock {
   gap: 7px;
 }
 
-.slx-affection-api-setting {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+.slx-affection-settings-controls {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1.2fr) minmax(142px, 0.8fr);
   gap: 12px;
+  align-items: end;
+}
+
+.slx-affection-settings-controls .slx-affection-segment,
+.slx-affection-settings-controls .slx-affection-api-toggle {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.slx-affection-settings-controls .slx-affection-segment button,
+.slx-affection-settings-controls .slx-affection-api-toggle button {
+  min-width: 0;
+}
+
+.slx-affection-build-note {
+  align-self: center;
+  margin: 0;
+}
+
+.slx-affection-api-setting {
+  display: grid;
+  gap: 7px;
 }
 
 .slx-affection-control-label,
@@ -4826,6 +4974,16 @@ body.slx-panel-open-lock {
     display: inline-grid;
     width: fit-content;
     grid-template-columns: repeat(2, minmax(0, auto));
+  }
+
+  .slx-affection-settings-controls {
+    grid-template-columns: minmax(0, 1.15fr) minmax(132px, 0.85fr);
+    gap: 8px;
+  }
+
+  .slx-affection-settings-controls .slx-affection-api-toggle {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .slx-affection-segment button,
@@ -8373,9 +8531,15 @@ body.slx-panel-open-lock {
 }
 
 .slx-theater-pick-group {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.slx-theater-pick-group[open] {
+  border-color: var(--slx-border-dim);
+  background: var(--slx-bg-soft);
 }
 
 .slx-theater-pick-group + .slx-theater-pick-group {
@@ -8386,13 +8550,43 @@ body.slx-panel-open-lock {
 
 .slx-theater-pick-group-head {
   display: flex;
+  min-height: 44px;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 0 4px;
+  padding: 8px 10px;
+  list-style: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.slx-theater-pick-group-head::-webkit-details-marker {
+  display: none;
+}
+
+.slx-theater-pick-group-head:focus-visible {
+  border-radius: 8px;
+  outline: 2px solid rgba(var(--slx-accent-rgb), 0.4);
+  outline-offset: -2px;
+}
+
+.slx-theater-pick-group-head::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  color: var(--slx-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.18s ease;
+}
+
+.slx-theater-pick-group[open] > .slx-theater-pick-group-head::before {
+  transform: rotate(45deg) translate(-1px, -1px);
 }
 
 .slx-theater-pick-group-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8417,7 +8611,8 @@ body.slx-panel-open-lock {
 .slx-theater-pick-group-items {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+  padding: 0 6px 6px 24px;
 }
 
 .slx-theater-pick-item {
@@ -8425,6 +8620,7 @@ body.slx-panel-open-lock {
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
+  min-height: 44px;
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid transparent;
@@ -9160,6 +9356,21 @@ button.slx-outline-check-item:active {
 .slx-schedule-api-toggle button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.slx-theater-pick-item:focus-visible {
+  border-color: var(--slx-accent);
+  background: var(--slx-bg-btn);
+  outline: 2px solid rgba(var(--slx-accent-rgb), 0.2);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slx-prompt-cascade-option,
+  .slx-theater-pick-group,
+  .slx-theater-pick-group-head::before {
+    transition: none;
+  }
 }
 
 .slx-memoir-api-toggle,
