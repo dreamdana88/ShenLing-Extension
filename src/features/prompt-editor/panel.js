@@ -93,37 +93,30 @@ function renderPromptCascade(settings) {
   const groups = getVisiblePromptGroups(settings);
   if (!groups.length) return '<div class="slx-prompt-empty">没有符合条件的提示词</div>';
   const selectedGroup = groups.find(group => group.id === editorState.browserModuleId) || groups[0];
+  const activePromptInGroup = selectedGroup.items.some(item => item.id === editorState.activePromptId);
   return `
     <div class="slx-prompt-cascade" aria-label="选择提示词">
-      <section class="slx-prompt-cascade-level" aria-label="选择模块">
-        <div class="slx-prompt-cascade-label">模块</div>
-        <div class="slx-prompt-cascade-options">
+      <label class="slx-prompt-cascade-field">
+        <span>模块</span>
+        <select data-slx-prompt-module aria-label="选择模块">
           ${groups.map(group => {
             const overrideCount = group.items.filter(item => getPromptOverrideState(item.id, settings)?.hasOverride).length;
             const totalCount = getModuleGroups().find(item => item.id === group.id)?.items.length || group.items.length;
-            return `
-              <button class="slx-prompt-cascade-option${group.id === selectedGroup.id ? ' is-active' : ''}" type="button" data-slx-prompt-module="${escapeHtml(group.id)}" aria-pressed="${group.id === selectedGroup.id}">
-                <span>${escapeHtml(group.label)}</span><small>${overrideCount}/${totalCount}</small>
-              </button>
-            `;
+            return `<option value="${escapeHtml(group.id)}" ${group.id === selectedGroup.id ? 'selected' : ''}>${escapeHtml(group.label)} · ${overrideCount}/${totalCount}</option>`;
           }).join('')}
-        </div>
-      </section>
-      <section class="slx-prompt-cascade-level" aria-label="选择具体提示词">
-        <div class="slx-prompt-cascade-label">${escapeHtml(selectedGroup.label)} · 提示词</div>
-        <div class="slx-prompt-cascade-options">
+        </select>
+      </label>
+      <label class="slx-prompt-cascade-field">
+        <span>提示词</span>
+        <select data-slx-prompt-select aria-label="选择${escapeHtml(selectedGroup.label)}提示词">
+          ${activePromptInGroup ? '' : '<option value="" selected disabled>选择提示词</option>'}
           ${selectedGroup.items.map(definition => {
-            const state = getDraftState(settings, definition.id);
-            const status = getStatus(state);
-            return `
-              <button class="slx-prompt-cascade-option${definition.id === editorState.activePromptId ? ' is-active' : ''}" type="button" data-slx-prompt-select="${escapeHtml(definition.id)}" aria-pressed="${definition.id === editorState.activePromptId}">
-                <span>${escapeHtml(definition.label)}</span>
-                ${status.id === 'default' ? '' : `<small>${escapeHtml(status.label)}</small>`}
-              </button>
-            `;
+            const status = getStatus(getDraftState(settings, definition.id));
+            const statusText = status.id === 'default' ? '' : ` · ${status.label}`;
+            return `<option value="${escapeHtml(definition.id)}" ${definition.id === editorState.activePromptId ? 'selected' : ''}>${escapeHtml(definition.label + statusText)}</option>`;
           }).join('')}
-        </div>
-      </section>
+        </select>
+      </label>
     </div>
   `;
 }
@@ -279,25 +272,25 @@ export function bindPromptEditorPanelEvents(panelRoot, settings, { refresh } = {
   const root = panelRoot.querySelector('.slx-prompt-editor-root');
   if (!root) return;
   const rerender = () => typeof refresh === 'function' && refresh();
-  const bindCascadeButtons = scope => {
-    scope.querySelectorAll('[data-slx-prompt-module]').forEach(button => {
-      button.addEventListener('click', () => {
-        editorState.browserModuleId = button.dataset.slxPromptModule;
-        const cascade = root.querySelector('[data-slx-prompt-cascade]');
-        if (cascade) {
-          cascade.innerHTML = renderPromptCascade(settings);
-          bindCascadeButtons(cascade);
-        }
-      });
+  const bindCascadeControls = scope => {
+    scope.querySelector('[data-slx-prompt-module]')?.addEventListener('change', event => {
+      editorState.browserModuleId = event.currentTarget.value;
+      const selectedGroup = getVisiblePromptGroups(settings).find(group => group.id === editorState.browserModuleId);
+      const nextPrompt = selectedGroup?.items.find(item => item.id === editorState.activePromptId) || selectedGroup?.items[0];
+      if (nextPrompt) editorState.activePromptId = nextPrompt.id;
+      editorState.compareOpen = false;
+      setNotice('');
+      rerender();
     });
-    scope.querySelectorAll('[data-slx-prompt-select]').forEach(button => {
-      button.addEventListener('click', () => {
-        editorState.activePromptId = button.dataset.slxPromptSelect;
+    scope.querySelector('[data-slx-prompt-select]')?.addEventListener('change', event => {
+      const promptId = event.currentTarget.value;
+      if (promptId) {
+        editorState.activePromptId = promptId;
         editorState.browserModuleId = getPromptOverrideState(editorState.activePromptId, settings)?.definition.moduleId || editorState.browserModuleId;
         editorState.compareOpen = false;
         setNotice('');
         rerender();
-      });
+      }
     });
   };
 
@@ -307,7 +300,7 @@ export function bindPromptEditorPanelEvents(panelRoot, settings, { refresh } = {
       const cascade = root.querySelector('[data-slx-prompt-cascade]');
       if (cascade) {
         cascade.innerHTML = renderPromptCascade(settings);
-        bindCascadeButtons(cascade);
+        bindCascadeControls(cascade);
       }
     });
   });
@@ -319,7 +312,7 @@ export function bindPromptEditorPanelEvents(panelRoot, settings, { refresh } = {
     });
   });
 
-  bindCascadeButtons(root);
+  bindCascadeControls(root);
 
   const activeState = getDraftState(settings);
   root.querySelector('[data-slx-prompt-text]')?.addEventListener('input', event => {

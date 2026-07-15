@@ -3372,78 +3372,65 @@ body.slx-panel-open-lock {
 .slx-prompt-cascade {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(170px, 0.42fr) minmax(0, 0.58fr);
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
   gap: 10px;
 }
 
-.slx-prompt-cascade-level {
+.slx-prompt-cascade-field {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--slx-border-dim);
-  border-radius: 12px;
-  background: var(--slx-bg-soft);
+  gap: 6px;
 }
 
-.slx-prompt-cascade-label {
-  margin: 0 4px 7px;
+.slx-prompt-cascade-field > span {
+  padding-left: 3px;
   color: var(--slx-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 650;
 }
 
-.slx-prompt-cascade-options {
-  display: grid;
-  gap: 8px;
-}
-
-.slx-prompt-cascade-option {
-  display: flex;
+#shenling-assistant-panel-root .slx-prompt-cascade-field select {
+  display: block !important;
+  box-sizing: border-box !important;
   width: 100%;
   min-width: 0;
   min-height: 44px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 10px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--slx-muted);
-  font: inherit;
-  text-align: left;
+  margin: 0 !important;
+  padding: 8px 34px 8px 11px !important;
+  border: 1px solid var(--slx-border-dim) !important;
+  border-radius: 10px !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-color: var(--slx-input-bg) !important;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%) !important;
+  background-position:
+    calc(100% - 16px) 50%,
+    calc(100% - 11px) 50% !important;
+  background-size: 5px 5px !important;
+  background-repeat: no-repeat !important;
+  color: var(--slx-input-text) !important;
+  box-shadow: none !important;
+  outline: none !important;
+  font: inherit !important;
+  font-size: 13px !important;
+  text-overflow: ellipsis;
+  opacity: 1 !important;
   cursor: pointer;
-  touch-action: manipulation;
-  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
-.slx-prompt-cascade-option:hover,
-.slx-prompt-cascade-option:focus-visible {
-  border-color: var(--slx-border-dim);
-  background: var(--slx-bg-card-hover);
-  color: var(--slx-text);
-  outline: none;
+#shenling-assistant-panel-root .slx-prompt-cascade-field select:focus {
+  border-color: var(--slx-accent) !important;
+  background-color: var(--slx-input-bg-focus) !important;
+  box-shadow: 0 0 0 2px rgba(var(--slx-accent-rgb), 0.1) !important;
 }
 
-.slx-prompt-cascade-option.is-active {
-  border-color: rgba(var(--slx-accent-rgb), 0.26);
-  background: rgba(var(--slx-accent-rgb), 0.14);
-  color: var(--slx-text);
-  font-weight: 650;
-}
-
-.slx-prompt-cascade-option span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.slx-prompt-cascade-option small {
-  flex: 0 0 auto;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--slx-bg-btn);
-  color: var(--slx-muted);
-  font-size: 10px;
-  font-weight: 500;
+#shenling-assistant-panel-root .slx-prompt-cascade-field select option {
+  background: var(--slx-bg-panel);
+  color: var(--slx-input-text);
 }
 
 .slx-prompt-navigation {
@@ -3992,14 +3979,12 @@ body.slx-panel-open-lock {
     gap: 8px;
   }
 
-  .slx-prompt-cascade-level {
-    padding: 7px;
-  }
-
-  .slx-prompt-cascade-option {
-    min-height: 44px;
-    padding: 7px 8px;
-    font-size: 12px;
+  #shenling-assistant-panel-root .slx-prompt-cascade-field select {
+    padding-right: 29px !important;
+    background-position:
+      calc(100% - 13px) 50%,
+      calc(100% - 8px) 50% !important;
+    font-size: 12px !important;
   }
 
   .slx-prompt-editor {
@@ -9366,7 +9351,7 @@ button.slx-outline-check-item:active {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .slx-prompt-cascade-option,
+  #shenling-assistant-panel-root .slx-prompt-cascade-field select,
   .slx-theater-pick-group,
   .slx-theater-pick-group-head::before {
     transition: none;
