@@ -123,7 +123,10 @@ import {
   configureAffectionPanel,
   renderAffectionPanel,
 } from './src/features/affection/panel.js';
-import { configureAffectionWorkflow } from './src/features/affection/workflow.js';
+import {
+  configureAffectionWorkflow,
+  registerAffectionWorkflowEvents,
+} from './src/features/affection/workflow.js';
 
 let panelRoot = null;
 let communicationLogOpen = false;
@@ -996,6 +999,7 @@ function openFloatingPanel() {
   scanExistingSummaryState();
   registerAutoSummaryEvents();
   registerEmotionProfileEvents();
+  registerAffectionWorkflowEvents();
   registerPendingCommitEvents();
   registerPromptStateLineSanitizerEvents();
   renderFloatingPanel();

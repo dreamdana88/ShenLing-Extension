@@ -42,6 +42,8 @@ import {
 import { stripMemoryChangedControlLines } from '../../core/summary.js';
 import {
   buildAffectionUpdatePromptSection,
+  commitSelectedPendingAffectionUpdates,
+  createAffectionBuildTaskKey,
   parseAffectionUpdateFromMemory,
   runAffectionProfileBuildApiPreview,
   startAffectionProfileBuildsForPending,
@@ -184,6 +186,12 @@ function createDefaultTestState() {
     buildRealStatus: 'idle',
     buildRealResult: null,
     buildRealError: '',
+    commitSuiteStatus: 'idle',
+    commitSuiteResults: [],
+    commitSelectedSwipe: 'swipe-b',
+    commitStatus: 'idle',
+    commitResult: null,
+    commitError: '',
     expandedSections: {
       suite: false,
       change: false,
@@ -197,6 +205,7 @@ function createDefaultTestState() {
       fieldSimulator: false,
       buildSuite: false,
       buildSimulator: false,
+      commitSuite: false,
     },
   };
 }
@@ -1246,6 +1255,244 @@ async function runAffectionBuildRealApiPreview() {
   refreshPanel();
 }
 
+function createCommitTestProfile(roleName = '沈青', initialValueTenths = 350, records = []) {
+  const ledger = recalculateAffectionLedger(initialValueTenths, records);
+  return {
+    roleName,
+    initialValueTenths,
+    valueTenths: ledger.valueTenths,
+    buildMode: 'generic',
+    buildStatus: 'ready',
+    stages: createGenericCommitTestStages(),
+    records: ledger.records,
+    createdAt: '2026/7/15 10:00:00',
+    updatedAt: '2026/7/15 10:00:00',
+  };
+}
+
+function createGenericCommitTestStages() {
+  return Array.from({ length: 5 }, (_, index) => ({
+    stageId: `S${index + 1}`,
+    minTenths: index === 0 ? 0 : index * 200 + 1,
+    maxTenths: (index + 1) * 200,
+    name: `测试阶段${index + 1}`,
+    meaning: `测试关系${index + 1}`,
+    behaviors: ['行为A', '行为B', '行为C'],
+    trend: '继续发展',
+    boundary: '不越级',
+  }));
+}
+
+function createCommitPending(messageId, fingerprint, { changes = [], firsts = [] } = {}) {
+  return {
+    messageId,
+    fingerprint,
+    changed: changes.some(item => Number(item.deltaTenths) !== 0),
+    changes: changes.map(item => ({ ...item })),
+    firsts: firsts.map(item => ({ ...item })),
+    diagnostics: [],
+    raw: {},
+    updatedAt: '2026/7/15 10:00:00',
+  };
+}
+
+function putCommitPending(chatState, messageId, items) {
+  chatState.affectionSystem.pendingByMessage[String(messageId)] = {
+    messageId,
+    items,
+    updatedAt: '2026/7/15 10:00:00',
+  };
+}
+
+function createReadyCommitTask(chatState, {
+  chatId = 'chat-a',
+  messageId = 20,
+  fingerprint = 'swipe-a',
+  roleName = '阿蛮',
+  initialValueTenths = 350,
+} = {}) {
+  const taskKey = createAffectionBuildTaskKey({ chatId, messageId, fingerprint, roleName });
+  const profileDraft = createCommitTestProfile(roleName, initialValueTenths);
+  const task = {
+    taskKey,
+    buildRequestId: `test:${fingerprint}:${roleName}`,
+    chatId,
+    messageId,
+    fingerprint,
+    roleName,
+    initialValueTenths,
+    buildMode: 'generic',
+    apiMode: 'secondary_api',
+    buildStatus: 'ready',
+    stages: profileDraft.stages,
+    profileDraft,
+    createdAt: '2026/7/15 10:00:00',
+    updatedAt: '2026/7/15 10:00:00',
+  };
+  chatState.affectionSystem.buildTasks[taskKey] = task;
+  return task;
+}
+
+function createCommitOptions(chatState, selectedFingerprint) {
+  return {
+    settings: createBuildTestSettings('generic'),
+    chatState,
+    chatId: 'chat-a',
+    persist: false,
+    getSelectedFingerprint: () => selectedFingerprint,
+  };
+}
+
+export async function runAffectionCommitSuite() {
+  const tests = [];
+  tests.push(await runAsyncTest('多 swipe 只提交当前选中 fingerprint', async () => {
+    const chatState = createBuildTestChatState();
+    chatState.affectionSystem.profiles.沈青 = createCommitTestProfile();
+    putCommitPending(chatState, 20, {
+      'swipe-a': createCommitPending(20, 'swipe-a', { changes: [{ roleName: '沈青', deltaTenths: 1 }] }),
+      'swipe-b': createCommitPending(20, 'swipe-b', { changes: [{ roleName: '沈青', deltaTenths: -2 }] }),
+    });
+    const result = await commitSelectedPendingAffectionUpdates(createCommitOptions(chatState, 'swipe-b'));
+    const records = chatState.affectionSystem.profiles.沈青.records;
+    assertTest(records.length === 1 && records[0].deltaTenths === -2, `正式 records：${JSON.stringify(records)}`);
+    assertTest(records[0].sourceFingerprint === 'swipe-b', '未使用选中 swipe 的 fingerprint。');
+    assertTest(result.discardedSwipeCount === 1 && !chatState.affectionSystem.pendingByMessage['20'], '未清理同楼未选 pending。');
+    return '只落盘 swipe-b 的 -0.2；swipe-a 被丢弃并清理。';
+  }));
+  tests.push(await runAsyncTest('同楼记录按 sourceMessageId 替换并从初值重算', async () => {
+    const chatState = createBuildTestChatState();
+    chatState.affectionSystem.profiles.沈青 = createCommitTestProfile('沈青', 350, [
+      { recordId: 'old-20', sourceMessageId: 20, sourceFingerprint: 'old', deltaTenths: 3, sourceType: 'auto', createdAt: '2026/7/15 10:00:00' },
+      { recordId: 'later-22', sourceMessageId: 22, sourceFingerprint: 'later', deltaTenths: 2, sourceType: 'auto', createdAt: '2026/7/15 10:02:00' },
+    ]);
+    putCommitPending(chatState, 20, {
+      'swipe-new': createCommitPending(20, 'swipe-new', { changes: [{ roleName: '沈青', deltaTenths: -1 }] }),
+    });
+    await commitSelectedPendingAffectionUpdates(createCommitOptions(chatState, 'swipe-new'));
+    const profile = chatState.affectionSystem.profiles.沈青;
+    assertTest(profile.records.length === 2, `替换后 records 数量：${profile.records.length}`);
+    assertTest(profile.records[0].deltaTenths === -1 && profile.records[1].valueBeforeTenths === 349, `重算结果：${JSON.stringify(profile.records)}`);
+    assertTest(profile.valueTenths === 351, `当前值应为 35.1，实际 ${profile.valueTenths / 10}`);
+    return '第20楼旧 +0.3 被 -0.1 替换，第22楼从新前值继续重算。';
+  }));
+  tests.push(await runAsyncTest('delta=0 撤销同楼旧自动记录且不新增 records', async () => {
+    const chatState = createBuildTestChatState();
+    chatState.affectionSystem.profiles.沈青 = createCommitTestProfile('沈青', 350, [
+      { recordId: 'old-20', sourceMessageId: 20, sourceFingerprint: 'old', deltaTenths: 3, sourceType: 'auto', createdAt: '2026/7/15 10:00:00' },
+    ]);
+    putCommitPending(chatState, 20, {
+      zero: createCommitPending(20, 'zero', { changes: [{ roleName: '沈青', deltaTenths: 0 }] }),
+    });
+    await commitSelectedPendingAffectionUpdates(createCommitOptions(chatState, 'zero'));
+    const profile = chatState.affectionSystem.profiles.沈青;
+    assertTest(profile.records.length === 0 && profile.valueTenths === 350, `零变化结果：${JSON.stringify(profile)}`);
+    return '0 不入账，并能把同楼旧 swipe 已留下的自动变化撤销。';
+  }));
+  tests.push(await runAsyncTest('affection_first 只接受完全匹配的 ready 草稿', async () => {
+    const chatState = createBuildTestChatState();
+    const first = { roleName: '阿蛮', initialValueTenths: 350 };
+    putCommitPending(chatState, 20, {
+      selected: createCommitPending(20, 'selected', { firsts: [first] }),
+      other: createCommitPending(20, 'other', { firsts: [{ roleName: '苏暮香', initialValueTenths: 500 }] }),
+    });
+    createReadyCommitTask(chatState, { fingerprint: 'selected', roleName: '阿蛮', initialValueTenths: 350 });
+    createReadyCommitTask(chatState, { fingerprint: 'other', roleName: '苏暮香', initialValueTenths: 500 });
+    const result = await commitSelectedPendingAffectionUpdates(createCommitOptions(chatState, 'selected'));
+    assertTest(chatState.affectionSystem.profiles.阿蛮?.initialValueTenths === 350, '匹配 ready 草稿未转正。');
+    assertTest(!chatState.affectionSystem.profiles.苏暮香, '未选 swipe 的 ready 草稿误建档。');
+    assertTest(Object.keys(chatState.affectionSystem.buildTasks).length === 0, '同楼无用任务未清理。');
+    assertTest(result.createdRoleNames[0] === '阿蛮', `创建结果：${JSON.stringify(result)}`);
+    return '仅 selected/阿蛮/35.0 的匹配 ready 草稿转正，另一 swipe 全部清理。';
+  }));
+  tests.push(await runAsyncTest('failed / stale 建档任务不会误建正式 profile', async () => {
+    for (const buildStatus of ['error', 'stale']) {
+      const chatState = createBuildTestChatState();
+      const first = { roleName: '阿蛮', initialValueTenths: 350 };
+      putCommitPending(chatState, 20, {
+        selected: createCommitPending(20, 'selected', { firsts: [first] }),
+      });
+      const task = createReadyCommitTask(chatState, { fingerprint: 'selected' });
+      task.buildStatus = buildStatus;
+      await commitSelectedPendingAffectionUpdates(createCommitOptions(chatState, 'selected'));
+      assertTest(!chatState.affectionSystem.profiles.阿蛮, `${buildStatus} 任务误建了正式 profile。`);
+    }
+    return 'error 与 stale 均不接受 profileDraft，且不会留下可误提交任务。';
+  }));
+  tests.push(await runAsyncTest('building 先记确认，完成后自动复核并转正', async () => {
+    const chatState = createBuildTestChatState();
+    const pending = createCommitPending(20, 'swipe-a', {
+      firsts: [{ roleName: '阿蛮', initialValueTenths: 350 }],
+    });
+    putCommitPending(chatState, 20, { 'swipe-a': pending });
+    let releaseRequest = null;
+    const waitForRelease = new Promise(resolve => { releaseRequest = resolve; });
+    const buildRun = startAffectionProfileBuildsForPending(pending, {
+      ...createBuildTestOptions(chatState, createBuildTestSettings('custom')),
+      requestCustomProfile: async () => {
+        await waitForRelease;
+        return createMockCustomStages();
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    const firstCommit = await commitSelectedPendingAffectionUpdates(createCommitOptions(chatState, 'swipe-a'));
+    const buildingTask = Object.values(chatState.affectionSystem.buildTasks)[0];
+    assertTest(buildingTask?.buildStatus === 'building' && buildingTask?.confirmed === true, 'building 任务未保留确认标记。');
+    assertTest(!chatState.affectionSystem.profiles.阿蛮 && firstCommit.waitingRoleNames[0] === '阿蛮', 'building 阶段提前建档。');
+    assertTest(chatState.affectionSystem.pendingByMessage['20']?.items?.['swipe-a']?.changes?.length === 0, '已提交变化仍留在等待建档的 pending 中。');
+    releaseRequest();
+    await buildRun;
+    assertTest(chatState.affectionSystem.profiles.阿蛮?.initialValueTenths === 350, '完成后未自动转正。');
+    assertTest(!chatState.affectionSystem.pendingByMessage['20'] && !Object.keys(chatState.affectionSystem.buildTasks).length, '转正后未清理 pending/task。');
+    return '发送时只标记 confirmed；mock API 完成后重新核对绑定并转为正式 profile。';
+  }));
+  tests.push(await runAsyncTest('重复提交保持幂等', async () => {
+    const chatState = createBuildTestChatState();
+    chatState.affectionSystem.profiles.沈青 = createCommitTestProfile();
+    putCommitPending(chatState, 20, {
+      only: createCommitPending(20, 'only', { changes: [{ roleName: '沈青', deltaTenths: 2 }] }),
+    });
+    const options = createCommitOptions(chatState, 'only');
+    await commitSelectedPendingAffectionUpdates(options);
+    const snapshot = JSON.stringify(chatState.affectionSystem.profiles.沈青);
+    const repeated = await commitSelectedPendingAffectionUpdates(options);
+    assertTest(JSON.stringify(chatState.affectionSystem.profiles.沈青) === snapshot, '重复事件改变了正式档案。');
+    assertTest(repeated.committedMessageIds.length === 0, '无 pending 时仍报告提交。');
+    return '第二次 MESSAGE_SENT 等价调用不新增、不重复累计、也不改写档案。';
+  }));
+
+  affectionTestState.commitSuiteResults = tests;
+  affectionTestState.commitSuiteStatus = tests.every(item => item.status === 'passed') ? 'passed' : 'failed';
+  return cloneData(tests);
+}
+
+async function runAffectionCommitSimulator() {
+  try {
+    const selectedSwipe = affectionTestState.commitSelectedSwipe;
+    const chatState = createBuildTestChatState();
+    chatState.affectionSystem.profiles.沈青 = createCommitTestProfile();
+    putCommitPending(chatState, 20, {
+      'swipe-a': createCommitPending(20, 'swipe-a', { changes: [{ roleName: '沈青', deltaTenths: 1 }] }),
+      'swipe-b': createCommitPending(20, 'swipe-b', { changes: [{ roleName: '沈青', deltaTenths: -2 }] }),
+    });
+    createReadyCommitTask(chatState, { fingerprint: 'swipe-a', roleName: '阿蛮', initialValueTenths: 350 });
+    const before = cloneData(chatState.affectionSystem);
+    const summary = await commitSelectedPendingAffectionUpdates(createCommitOptions(chatState, selectedSwipe));
+    affectionTestState.commitResult = {
+      selectedSwipe,
+      before,
+      summary,
+      after: chatState.affectionSystem,
+    };
+    affectionTestState.commitStatus = 'passed';
+    affectionTestState.commitError = '';
+  } catch (error) {
+    affectionTestState.commitResult = null;
+    affectionTestState.commitStatus = 'failed';
+    affectionTestState.commitError = error?.message || String(error);
+  }
+}
+
 function renderJsonResult(result, error, emptyText) {
   if (error) return `<div class="slx-affection-test-error">${escapeHtml(error)}</div>`;
   if (!result) return `<div class="slx-affection-test-empty">${escapeHtml(emptyText)}</div>`;
@@ -1307,6 +1554,13 @@ export function renderAffectionPanel() {
     affectionTestState.buildSuiteStatus,
     buildPassedCount,
     buildTotalCount,
+  );
+  const commitPassedCount = affectionTestState.commitSuiteResults.filter(item => item.status === 'passed').length;
+  const commitTotalCount = affectionTestState.commitSuiteResults.length;
+  const commitSuiteLabel = getTestStatusLabel(
+    affectionTestState.commitSuiteStatus,
+    commitPassedCount,
+    commitTotalCount,
   );
 
   return `
@@ -1620,6 +1874,40 @@ export function renderAffectionPanel() {
           ${renderJsonResult(affectionTestState.buildRealResult, affectionTestState.buildRealError, '只有点击“显式调用真实 API”后才会产生请求。')}
         </div>
       </details>
+
+      <details class="slx-detail-card slx-affection-test-section" data-slx-affection-test-section="commitSuite" ${affectionTestState.expandedSections.commitSuite ? 'open' : ''}>
+        <summary class="slx-affection-test-heading">
+          <span class="slx-affection-test-title">
+            <small>开发期测试区</small>
+            <b>第 6 步 · 选中 swipe 提交与正式账本</b>
+          </span>
+          <span class="slx-affection-test-summary-side">
+            <span class="slx-affection-test-status is-${escapeHtml(affectionTestState.commitSuiteStatus)}">${escapeHtml(commitSuiteLabel)}</span>
+            <span class="slx-affection-test-chevron" aria-hidden="true">⌄</span>
+          </span>
+        </summary>
+        <div class="slx-affection-test-body">
+          <p>全部检查只使用页面内存，直接调用正式提交函数与预建档函数；覆盖多 swipe、sourceMessageId 替换、0 撤销、ready 转正、building 延迟转正和重复提交，不写聊天 metadata、不请求真实 API。</p>
+          <div class="slx-action-row">
+            <button class="slx-soft-btn" type="button" data-slx-affection-run-commit-suite>运行第 6 步全部检查</button>
+          </div>
+          ${renderSuiteResults(affectionTestState.commitSuiteResults)}
+          <div class="slx-affection-test-subsection">
+            <p><b>自定义模拟 G：选择本楼正式采用的 swipe</b></p>
+            <label class="slx-field">
+              <span>当前选中 swipe</span>
+              <select data-slx-affection-commit-swipe>
+                <option value="swipe-a" ${affectionTestState.commitSelectedSwipe === 'swipe-a' ? 'selected' : ''}>swipe-a · 沈青 +0.1</option>
+                <option value="swipe-b" ${affectionTestState.commitSelectedSwipe === 'swipe-b' ? 'selected' : ''}>swipe-b · 沈青 -0.2</option>
+              </select>
+            </label>
+            <div class="slx-action-row">
+              <button class="slx-soft-btn" type="button" data-slx-affection-run-commit-simulator>模拟选中 swipe 提交</button>
+            </div>
+            ${renderJsonResult(affectionTestState.commitResult, affectionTestState.commitError, '运行后显示提交前快照、提交摘要、正式账本与清理结果。')}
+          </div>
+        </div>
+      </details>
     </div>
   `;
 }
@@ -1651,6 +1939,8 @@ function syncAffectionTestInputs(panelRoot) {
     ?? affectionTestState.buildInitialValue;
   affectionTestState.buildMode = panelRoot.querySelector('[data-slx-affection-build-mode]')?.value
     || affectionTestState.buildMode;
+  affectionTestState.commitSelectedSwipe = panelRoot.querySelector('[data-slx-affection-commit-swipe]')?.value
+    || affectionTestState.commitSelectedSwipe;
 }
 
 export function bindAffectionPanelEvents(panelRoot) {
@@ -1747,6 +2037,18 @@ export function bindAffectionPanelEvents(panelRoot) {
   panelRoot.querySelector('[data-slx-affection-run-build-real]')?.addEventListener('click', async () => {
     syncAffectionTestInputs(panelRoot);
     await runAffectionBuildRealApiPreview();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-commit-suite]')?.addEventListener('click', async () => {
+    syncAffectionTestInputs(panelRoot);
+    await runAffectionCommitSuite();
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-run-commit-simulator]')?.addEventListener('click', async () => {
+    syncAffectionTestInputs(panelRoot);
+    await runAffectionCommitSimulator();
+    refreshPanel();
   });
 
   panelRoot.querySelector('[data-slx-affection-reset-tests]')?.addEventListener('click', () => {

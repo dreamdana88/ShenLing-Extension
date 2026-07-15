@@ -24,6 +24,7 @@ import {
   normalizeMemoryBlock,
 } from '../../core/summary.js';
 import { getMessageContentFingerprint } from '../../core/message-fingerprint.js';
+import { registerPendingCommitHandler } from '../../core/pending-commit.js';
 import {
   buildAffectionProfilePrompt,
   buildAffectionUpdatePromptSection as buildAffectionUpdatePromptSectionText,
@@ -38,11 +39,13 @@ import {
   normalizeAffectionFirstEntries,
   normalizeAffectionRoleName,
   recalculateAffectionLedger,
+  sortAffectionRecords,
 } from './model.js';
 
 const AFFECTION_PROFILE_BUILD_TIMEOUT_MS = 180000;
 const AFFECTION_PROFILE_BUILDING_MAX_AGE_MS = 5 * 60 * 1000;
 const AFFECTION_BUILD_TASK_LIMIT = 60;
+const AFFECTION_PENDING_COMMIT_HANDLER_ID = 'affection';
 
 let workflowOptions = {
   addCommunicationLog: null,
@@ -50,6 +53,8 @@ let workflowOptions = {
   getGenerateRawFunction: null,
   refreshPanel: null,
 };
+
+let affectionPendingCommitRegistered = false;
 
 export function configureAffectionWorkflow(options = {}) {
   workflowOptions = { ...workflowOptions, ...options };
@@ -457,6 +462,91 @@ function saveAffectionBuildState(persist) {
   }
 }
 
+function isAutomaticRecordForMessage(record, messageId) {
+  return record?.sourceType !== 'manual_adjustment'
+    && Number(record?.sourceMessageId) === Number(messageId);
+}
+
+function removeAutomaticRecordsForMessage(records, messageId) {
+  return sortAffectionRecords(records).filter(record => !isAutomaticRecordForMessage(record, messageId));
+}
+
+function getMatchingAffectionBuildTask(store, {
+  chatId,
+  messageId,
+  fingerprint,
+  roleName,
+}) {
+  const taskKey = createAffectionBuildTaskKey({ chatId, messageId, fingerprint, roleName });
+  const task = store.buildTasks?.[taskKey];
+  if (!isPlainObject(task)) return null;
+  return String(task.chatId || '') === String(chatId || '')
+    && Number(task.messageId) === Number(messageId)
+    && String(task.fingerprint || '') === String(fingerprint || '')
+    && normalizeAffectionRoleName(task.roleName) === normalizeAffectionRoleName(roleName)
+    ? task
+    : null;
+}
+
+function removeAffectionBuildTasksForMessage(store, messageId, { keepTaskKeys = [] } = {}) {
+  const keep = new Set(keepTaskKeys);
+  let removed = 0;
+  Object.entries(store.buildTasks || {}).forEach(([taskKey, task]) => {
+    if (Number(task?.messageId) !== Number(messageId) || keep.has(taskKey)) return;
+    delete store.buildTasks[taskKey];
+    removed += 1;
+  });
+  return removed;
+}
+
+function applyPendingAffectionChange(profile, change, { messageId, fingerprint, timestamp }) {
+  if (!isPlainObject(profile)) return false;
+  const deltaTenths = Number(change?.deltaTenths);
+  if (!Number.isInteger(deltaTenths)) return false;
+
+  const currentRecords = Array.isArray(profile.records) ? profile.records : [];
+  const previousRecord = currentRecords.find(record => isAutomaticRecordForMessage(record, messageId));
+  const recordsWithoutCurrentMessage = removeAutomaticRecordsForMessage(currentRecords, messageId);
+  const nextRecords = deltaTenths === 0
+    ? recordsWithoutCurrentMessage
+    : sortAffectionRecords([
+      ...recordsWithoutCurrentMessage,
+      {
+        recordId: `affection:auto:${messageId}:${encodeURIComponent(normalizeAffectionRoleName(change.roleName))}`,
+        sourceMessageId: Number(messageId),
+        sourceFingerprint: String(fingerprint || ''),
+        deltaTenths,
+        sourceType: 'auto',
+        createdAt: String(previousRecord?.createdAt || timestamp),
+        updatedAt: timestamp,
+      },
+    ]);
+  const ledger = recalculateAffectionLedger(profile.initialValueTenths, nextRecords);
+  const before = JSON.stringify({
+    valueTenths: profile.valueTenths,
+    records: currentRecords,
+  });
+  const after = JSON.stringify({
+    valueTenths: ledger.valueTenths,
+    records: ledger.records,
+  });
+  if (before === after) return false;
+  profile.valueTenths = ledger.valueTenths;
+  profile.records = ledger.records;
+  profile.updatedAt = timestamp;
+  return true;
+}
+
+function isMatchingReadyProfileDraft(task, first) {
+  const draft = task?.profileDraft;
+  return task?.buildStatus === 'ready'
+    && isPlainObject(draft)
+    && normalizeAffectionRoleName(draft.roleName) === normalizeAffectionRoleName(first?.roleName)
+    && Number(draft.initialValueTenths) === Number(first?.initialValueTenths)
+    && Array.isArray(draft.stages)
+    && draft.stages.length === AFFECTION_STAGE_RANGES.length;
+}
+
 function getCurrentTaskState(task, {
   getCurrentSnapshot,
   getCurrentChatState,
@@ -674,6 +764,15 @@ async function runAffectionBuildCandidate(candidate, pending, options) {
       apiResult: result.apiResult,
       parsedResult: validation.task.profileDraft,
     });
+    if (validation.task.confirmed === true) {
+      await commitSelectedPendingAffectionUpdates({
+        settings,
+        chatState: getCurrentChatState(),
+        chatId,
+        persist,
+        getSelectedFingerprint: messageId => getCurrentSnapshot(messageId)?.fingerprint || '',
+      });
+    }
     return validation.task;
   } catch (error) {
     const validation = getCurrentTaskState(task, { getCurrentSnapshot, getCurrentChatState });
@@ -981,4 +1080,144 @@ export function processAffectionUpdateFromSummaryResult(
     });
   }
   return { ...prepared, pending, fingerprint };
+}
+
+export async function commitSelectedPendingAffectionUpdates({
+  settings = getGlobalSettings(),
+  chatState = getChatState(),
+  chatId = getContextInfo().chatId,
+  persist = true,
+  getSelectedFingerprint = messageId => getMessageContentFingerprint(messageId, settings),
+} = {}) {
+  const summary = {
+    active: isAffectionAnalysisActive(settings),
+    committedMessageIds: [],
+    committedRoleNames: [],
+    createdRoleNames: [],
+    waitingRoleNames: [],
+    discardedSwipeCount: 0,
+    removedBuildTaskCount: 0,
+  };
+  if (!summary.active) return summary;
+
+  const store = getAffectionSystemState(chatState);
+  const pendingEntries = Object.entries(store.pendingByMessage || {});
+  if (!pendingEntries.length) return summary;
+
+  let stateChanged = false;
+  const timestamp = formatTimestamp();
+
+  for (const [messageKey, bucket] of pendingEntries) {
+    const messageId = Number(messageKey);
+    if (!Number.isInteger(messageId) || !isPlainObject(bucket) || !isPlainObject(bucket.items)) {
+      delete store.pendingByMessage[messageKey];
+      stateChanged = true;
+      continue;
+    }
+
+    const fingerprint = String(getSelectedFingerprint(messageId) || '').trim();
+    if (!fingerprint) continue;
+    const selected = bucket.items[fingerprint];
+    if (!isPlainObject(selected)) {
+      summary.discardedSwipeCount += Object.keys(bucket.items).length;
+      delete store.pendingByMessage[messageKey];
+      summary.removedBuildTaskCount += removeAffectionBuildTasksForMessage(store, messageId);
+      stateChanged = true;
+      continue;
+    }
+
+    summary.discardedSwipeCount += Math.max(0, Object.keys(bucket.items).length - 1);
+    const selectedChanges = Array.isArray(selected.changes) ? selected.changes : [];
+    selectedChanges.forEach(change => {
+      const roleName = normalizeAffectionRoleName(change?.roleName);
+      const profile = isPlainObject(store.profiles?.[roleName]) ? store.profiles[roleName] : null;
+      if (!profile) return;
+      if (applyPendingAffectionChange(profile, change, { messageId, fingerprint, timestamp })) {
+        stateChanged = true;
+      }
+      if (Number(change?.deltaTenths) !== 0) summary.committedRoleNames.push(roleName);
+    });
+
+    const unresolvedFirsts = [];
+    const keepTaskKeys = [];
+    (Array.isArray(selected.firsts) ? selected.firsts : []).forEach(first => {
+      const roleName = normalizeAffectionRoleName(first?.roleName);
+      if (!roleName || isPlainObject(store.profiles?.[roleName])) return;
+      const task = getMatchingAffectionBuildTask(store, {
+        chatId,
+        messageId,
+        fingerprint,
+        roleName,
+      });
+      if (isMatchingReadyProfileDraft(task, first)) {
+        const draft = task.profileDraft;
+        const ledger = recalculateAffectionLedger(draft.initialValueTenths, draft.records);
+        store.profiles[roleName] = {
+          ...draft,
+          roleName,
+          initialValueTenths: ledger.initialValueTenths,
+          valueTenths: ledger.valueTenths,
+          records: ledger.records,
+          sourceMessageId: messageId,
+          sourceFingerprint: fingerprint,
+          buildStatus: 'ready',
+          updatedAt: timestamp,
+        };
+        delete store.buildTasks[task.taskKey];
+        summary.createdRoleNames.push(roleName);
+        stateChanged = true;
+        return;
+      }
+      if (task?.buildStatus === 'building') {
+        task.confirmed = true;
+        task.confirmedAt = task.confirmedAt || timestamp;
+        task.updatedAt = timestamp;
+        unresolvedFirsts.push({ ...first });
+        keepTaskKeys.push(task.taskKey);
+        summary.waitingRoleNames.push(roleName);
+        stateChanged = true;
+      }
+    });
+
+    summary.removedBuildTaskCount += removeAffectionBuildTasksForMessage(store, messageId, {
+      keepTaskKeys,
+    });
+    if (unresolvedFirsts.length) {
+      selected.changes = [];
+      selected.changed = false;
+      selected.firsts = unresolvedFirsts;
+      selected.confirmed = true;
+      selected.confirmedAt = selected.confirmedAt || timestamp;
+      selected.updatedAt = timestamp;
+      store.pendingByMessage[messageKey] = {
+        messageId,
+        items: { [fingerprint]: selected },
+        updatedAt: timestamp,
+      };
+    } else {
+      delete store.pendingByMessage[messageKey];
+    }
+    summary.committedMessageIds.push(messageId);
+    stateChanged = true;
+  }
+
+  summary.committedMessageIds = [...new Set(summary.committedMessageIds)];
+  summary.committedRoleNames = [...new Set(summary.committedRoleNames)];
+  summary.createdRoleNames = [...new Set(summary.createdRoleNames)];
+  summary.waitingRoleNames = [...new Set(summary.waitingRoleNames)];
+  if (stateChanged) {
+    store.lastUpdatedAt = timestamp;
+    if (persist) saveChatState();
+    getWorkflowOption('refreshPanel')?.();
+  }
+  return summary;
+}
+
+export function registerAffectionWorkflowEvents() {
+  registerPendingCommitHandler(
+    AFFECTION_PENDING_COMMIT_HANDLER_ID,
+    commitSelectedPendingAffectionUpdates,
+  );
+  affectionPendingCommitRegistered = true;
+  return affectionPendingCommitRegistered;
 }
