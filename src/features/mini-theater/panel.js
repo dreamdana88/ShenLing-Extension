@@ -288,6 +288,33 @@ function getFilteredSortedPrompts(prompts, { search, folderId, sortBy }) {
   return result;
 }
 
+function groupMiniTheaterPromptsByFolder(
+  prompts,
+  folders,
+  { search = "", sortBy = "name" } = {},
+) {
+  const sortedPrompts = getFilteredSortedPrompts(prompts, {
+    search,
+    folderId: null,
+    sortBy,
+  });
+  const knownFolderIds = new Set(folders.map((folder) => folder.id));
+  const groups = folders
+    .map((folder) => ({
+      id: folder.id,
+      name: folder.name || "未命名文件夹",
+      prompts: sortedPrompts.filter((prompt) => prompt.folderId === folder.id),
+    }))
+    .filter((group) => group.prompts.length > 0);
+  const uncategorized = sortedPrompts.filter(
+    (prompt) => !prompt.folderId || !knownFolderIds.has(prompt.folderId),
+  );
+  if (uncategorized.length > 0) {
+    groups.push({ id: null, name: "未分类", prompts: uncategorized });
+  }
+  return groups;
+}
+
 function getFilteredSortedStyles(styles, { search, sortBy }) {
   let result = [...styles];
   if (search.trim()) {
@@ -1256,11 +1283,14 @@ function renderModalContent() {
 
   if (m.type === "pick-prompt") {
     const mt = getMiniTheaterSettings();
-    const filtered = getFilteredSortedPrompts(mt.prompts, {
+    const groups = groupMiniTheaterPromptsByFolder(mt.prompts, mt.folders, {
       search: panelState.pickSearch,
-      folderId: null,
       sortBy: "name",
     });
+    const matchedCount = groups.reduce(
+      (total, group) => total + group.prompts.length,
+      0,
+    );
     return `
       <div class="slx-theater-modal-header">
         <span class="slx-theater-modal-title">选择提示词</span>
@@ -1272,18 +1302,30 @@ function renderModalContent() {
           data-theater-pick-search aria-label="搜索提示词">
         <div class="slx-theater-pick-list">
           ${
-            filtered.length === 0
+            matchedCount === 0
               ? `<p style="color:var(--slx-muted);font-size:12px;padding:8px 0;margin:0">
                 ${mt.prompts.length === 0 ? "提示词库为空，请先新建提示词" : "没有匹配的提示词"}</p>`
-              : filtered
-                  .map(
-                    (p) => `
-                <button class="slx-theater-pick-item" type="button" data-theater-pick-item="${escapeHtml(p.id)}">
-                  <span class="slx-theater-pick-item-name">${escapeHtml(p.name || "未命名")}</span>
-                  <span class="slx-theater-pick-item-preview">${escapeHtml((p.content || "").slice(0, 55))}${(p.content || "").length > 55 ? "…" : ""}</span>
-                </button>
-              `,
-                  )
+              : groups
+                  .map((group) => `
+                    <section class="slx-theater-pick-group" aria-label="${escapeHtml(group.name)}">
+                      <div class="slx-theater-pick-group-head">
+                        <span class="slx-theater-pick-group-name">${escapeHtml(group.name)}</span>
+                        <span class="slx-theater-pick-group-count">${group.prompts.length}</span>
+                      </div>
+                      <div class="slx-theater-pick-group-items">
+                        ${group.prompts
+                          .map(
+                            (p) => `
+                              <button class="slx-theater-pick-item" type="button" data-theater-pick-item="${escapeHtml(p.id)}">
+                                <span class="slx-theater-pick-item-name">${escapeHtml(p.name || "未命名")}</span>
+                                <span class="slx-theater-pick-item-preview">${escapeHtml((p.content || "").slice(0, 55))}${(p.content || "").length > 55 ? "…" : ""}</span>
+                              </button>
+                            `,
+                          )
+                          .join("")}
+                      </div>
+                    </section>
+                  `)
                   .join("")
           }
         </div>
@@ -1340,6 +1382,9 @@ function renderModal() {
     "slx-theater-modal",
     panelState.modal.type === "prompt-form" || panelState.modal.type === "style-form"
       ? "slx-theater-modal-prompt-form"
+      : "",
+    panelState.modal.type === "pick-prompt" || panelState.modal.type === "pick-style"
+      ? "slx-theater-modal-picker"
       : "",
   ]
     .filter(Boolean)

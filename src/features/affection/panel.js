@@ -367,13 +367,12 @@ function renderAffectionSettings(settings) {
           </div>
         </div>
         ${affection.defaultBuildMode === 'custom' ? `
-          <div class="slx-affection-control-group">
-            <span class="slx-affection-control-label">首次专属阶段生成 API</span>
+          <div class="slx-affection-control-group slx-affection-api-setting">
+            <span class="slx-affection-control-label">首次建档 API</span>
             <div class="slx-schedule-api-toggle slx-affection-api-toggle" role="group" aria-label="首次专属阶段生成 API">
               <button type="button" data-slx-affection-build-api="main_api" class="${affection.profileBuildApiMode === 'main_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'main_api'}">主 API</button>
               <button type="button" data-slx-affection-build-api="secondary_api" class="${affection.profileBuildApiMode === 'secondary_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'secondary_api'}">副 API</button>
             </div>
-            <small>首次建档仅调用一次。</small>
           </div>
         ` : '<p>通用阶段不调用建档 API。</p>'}
       </div>
