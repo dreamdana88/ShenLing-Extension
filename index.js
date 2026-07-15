@@ -12,7 +12,6 @@ import {
 } from './src/utils/text.js';
 import {
   buildModelListUrl,
-  getApiModeLabel,
   normalizeApiBaseUrl,
   parseModelListResponse,
 } from './src/core/api.js';
@@ -33,6 +32,7 @@ import {
 } from './src/core/logs.js';
 import {
   defaultGlobalSettings,
+  getAffectionSettings,
   getChatState,
   getContextInfo,
   getEmotionProfileSettings,
@@ -367,20 +367,6 @@ function getGenerateRawFunction() {
 async function fetchSecondaryApiModels() {
   const settings = getGlobalSettings();
   const api = getApiSettings(settings);
-  if (api.mode === 'main_api') {
-    api.lastTestAt = formatTimestamp();
-    api.lastTestStatus = '主 API 模式无需拉取模型';
-    addCommunicationLog({
-      moduleName: '主 API',
-      taskType: '拉取模型',
-      status: 'success',
-      startedAt: api.lastTestAt,
-      model: '酒馆当前连接',
-      url: '酒馆当前连接',
-      parsedResult: '主 API 使用当前酒馆连接，不需要单独拉取模型。',
-    });
-    return [];
-  }
   const profile = getActiveApiProfile(settings);
   const startedAt = performance.now();
   let url = '';
@@ -477,6 +463,15 @@ function getActiveModule(settings = getGlobalSettings()) {
 }
 
 function renderModuleHeaderAction(activeModule, settings) {
+  if (activeModule.id === 'summary') {
+    const api = getApiSettings(settings);
+    return `
+      <div class="slx-schedule-api-toggle slx-summary-api-toggle" role="group" aria-label="自动总结 API 模式">
+        <button class="${api.mode === 'main_api' ? 'is-active' : ''}" type="button" data-slx-summary-api-mode="main_api" aria-pressed="${api.mode === 'main_api'}">主 API</button>
+        <button class="${api.mode === 'secondary_api' ? 'is-active' : ''}" type="button" data-slx-summary-api-mode="secondary_api" aria-pressed="${api.mode === 'secondary_api'}">副 API</button>
+      </div>
+    `;
+  }
   if (activeModule.id === 'profile') {
     const emotionSettings = getEmotionProfileSettings(settings);
     return `
@@ -501,6 +496,14 @@ function renderModuleHeaderAction(activeModule, settings) {
         <button class="${memoirSettings.apiMode === 'main_api' ? 'is-active' : ''}" type="button" data-slx-memoir-api-mode="main_api">主 API</button>
         <button class="${memoirSettings.apiMode === 'secondary_api' ? 'is-active' : ''}" type="button" data-slx-memoir-api-mode="secondary_api">副 API</button>
       </div>
+    `;
+  }
+  if (activeModule.id === 'pursuit') {
+    const affection = getAffectionSettings(settings);
+    return `
+      <label class="slx-setting-toggle-row slx-module-head-toggle" for="slx-affection-enabled" title="攻略追踪">
+        <input id="slx-affection-enabled" type="checkbox" data-slx-affection-enabled ${affection.enabled ? 'checked' : ''} />
+      </label>
     `;
   }
   return '';
@@ -603,54 +606,47 @@ function renderCommunicationLogPanel(settings) {
 function renderApiSettingsPanel(settings) {
   const api = getApiSettings(settings);
   const profile = getActiveApiProfile(settings);
-  const isMainApi = api.mode === 'main_api';
-  const disabled = isMainApi ? 'disabled' : '';
 
   return `
     <div class="slx-detail-card">
-      <div class="slx-detail-title">总结 API 设置</div>
-      <p>${isMainApi ? '沿用当前酒馆主 API。' : '使用独立副 API 处理总结任务。'} API Key 仅保存在本地。</p>
-      <div class="slx-segment-row" role="group" aria-label="总结 API 模式">
-        <button class="slx-segment-btn ${api.mode === 'secondary_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-api-mode="secondary_api">独立副 API</button>
-        <button class="slx-segment-btn ${api.mode === 'main_api' ? 'slx-segment-btn-active' : ''}" type="button" data-slx-api-mode="main_api">使用主 API</button>
-      </div>
-      <div class="slx-field-hint">当前：${escapeHtml(getApiModeLabel(api))}</div>
-      <div class="slx-api-config ${isMainApi ? 'slx-api-config-disabled' : ''}">
+      <div class="slx-detail-title">副 API 设置</div>
+      <p>API Key 仅保存在本地。</p>
+      <div class="slx-api-config">
         <div class="slx-profile-bar">
           <label class="slx-field">
             <span>当前 Profile</span>
-            <select data-slx-api-profile-select ${disabled}>${renderApiProfileOptions(api)}</select>
+            <select data-slx-api-profile-select>${renderApiProfileOptions(api)}</select>
           </label>
           <div class="slx-profile-actions">
-            <button class="slx-soft-btn" type="button" data-slx-new-api-profile ${disabled}>新增</button>
-            <button class="slx-soft-btn" type="button" data-slx-delete-api-profile ${api.profiles.length <= 1 || isMainApi ? 'disabled' : ''}>删除</button>
+            <button class="slx-soft-btn" type="button" data-slx-new-api-profile>新增</button>
+            <button class="slx-soft-btn" type="button" data-slx-delete-api-profile ${api.profiles.length <= 1 ? 'disabled' : ''}>删除</button>
           </div>
         </div>
         <div class="slx-form-grid">
           <label class="slx-field">
             <span>Profile 名称</span>
-            <input type="text" data-slx-api-field="name" value="${escapeHtml(profile.name)}" placeholder="默认副 API" ${disabled} />
+            <input type="text" data-slx-api-field="name" value="${escapeHtml(profile.name)}" placeholder="默认副 API" />
           </label>
           <label class="slx-field">
             <span>请求地址</span>
-            <input type="text" data-slx-api-field="baseUrl" value="${escapeHtml(profile.baseUrl)}" placeholder="https://api.example.com" ${disabled} />
+            <input type="text" data-slx-api-field="baseUrl" value="${escapeHtml(profile.baseUrl)}" placeholder="https://api.example.com" />
           </label>
           <label class="slx-field">
             <span>API Key</span>
             <div class="slx-secret-field">
-              <input type="password" data-slx-api-field="apiKey" value="${escapeHtml(profile.apiKey)}" placeholder="sk-..." autocomplete="off" ${disabled} />
-              <button class="slx-secret-toggle" type="button" data-slx-toggle-api-key title="显示 API Key" aria-label="显示 API Key" ${disabled}><i class="fa-solid fa-eye"></i></button>
+              <input type="password" data-slx-api-field="apiKey" value="${escapeHtml(profile.apiKey)}" placeholder="sk-..." autocomplete="off" />
+              <button class="slx-secret-toggle" type="button" data-slx-toggle-api-key title="显示 API Key" aria-label="显示 API Key"><i class="fa-solid fa-eye"></i></button>
             </div>
           </label>
           <label class="slx-field">
             <span>模型名</span>
-            <select data-slx-api-field="model" ${disabled}>${renderModelOptions(profile)}</select>
+            <select data-slx-api-field="model">${renderModelOptions(profile)}</select>
           </label>
         </div>
       </div>
       <div class="slx-api-actions">
-        <button class="slx-soft-btn" type="button" data-slx-save-api>${isMainApi ? '保存模式' : '保存配置'}</button>
-        <button class="slx-soft-btn" type="button" data-slx-fetch-models ${disabled}>拉取模型</button>
+        <button class="slx-soft-btn" type="button" data-slx-save-api>保存配置</button>
+        <button class="slx-soft-btn" type="button" data-slx-fetch-models>拉取模型</button>
       </div>
       <div class="slx-api-status">
         <span>最近操作：${escapeHtml(api.lastTestAt || '尚未操作')}</span>
@@ -748,7 +744,6 @@ function renderModuleDetail(module, settings) {
       <div class="slx-detail-title">当前聊天快照</div>
       ${renderDiagnosticLine('小总结计数', chatState.summary.smallSummaryCount)}
       ${renderDiagnosticLine('回忆录条目数', (chatState.memoir.entries || []).length)}
-      ${renderDiagnosticLine('平行事件时间', chatState.parallel.lastParallelEventTime || '尚未记录')}
     </div>
   `;
 }
@@ -871,11 +866,10 @@ function renderFloatingPanel(options = {}) {
     profile.endpointPath = '/v1/chat/completions';
   };
 
-  panelRoot.querySelectorAll('[data-slx-api-mode]').forEach(button => {
+  panelRoot.querySelectorAll('[data-slx-summary-api-mode]').forEach(button => {
     button.addEventListener('click', () => {
-      syncApiFormToSettings();
       const api = getApiSettings(settings);
-      api.mode = button.dataset.slxApiMode === 'main_api' ? 'main_api' : 'secondary_api';
+      api.mode = button.dataset.slxSummaryApiMode === 'main_api' ? 'main_api' : 'secondary_api';
       saveGlobalSettings();
       renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
       syncSettingsPanelState();
@@ -925,7 +919,7 @@ function renderFloatingPanel(options = {}) {
     saveGlobalSettings();
     event.currentTarget.textContent = '已保存';
     setTimeout(() => {
-      event.currentTarget.textContent = getApiSettings(settings).mode === 'main_api' ? '保存模式' : '保存配置';
+      event.currentTarget.textContent = '保存配置';
     }, 1200);
     syncSettingsPanelState();
   });

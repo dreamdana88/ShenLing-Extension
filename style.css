@@ -2957,10 +2957,6 @@ body.slx-panel-open-lock {
   gap: 10px;
 }
 
-.slx-api-config-disabled {
-  opacity: 0.52;
-}
-
 .slx-profile-bar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3276,43 +3272,19 @@ body.slx-panel-open-lock {
   gap: 12px;
 }
 
-.slx-affection-page-head {
+.slx-affection-overview {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 2px 2px 6px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.slx-affection-page-head small,
-.slx-affection-page-head p,
 .slx-affection-section-head small,
 .slx-affection-profile-card footer small,
 .slx-affection-stage-caption {
   color: var(--slx-muted);
 }
 
-.slx-affection-page-head h3 {
-  margin: 3px 0 5px;
-  font-size: 18px;
-  line-height: 1.35;
-}
-
-.slx-affection-page-head p {
-  max-width: 430px;
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.slx-affection-page-counts {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
-}
-
-.slx-affection-page-counts span,
-.slx-affection-status-pill,
+.slx-affection-overview span,
 .slx-affection-card-badges small,
 .slx-affection-section-head > span,
 .slx-affection-stage-tags small {
@@ -3329,13 +3301,12 @@ body.slx-panel-open-lock {
   line-height: 1.2;
 }
 
-.slx-affection-page-counts b {
+.slx-affection-overview b {
   color: var(--slx-accent-text);
   font-size: 13px;
 }
 
 .slx-affection-feedback,
-.slx-affection-dependency-note,
 .slx-affection-editor-errors,
 .slx-affection-field-error,
 .slx-affection-editor-status {
@@ -3351,8 +3322,7 @@ body.slx-panel-open-lock {
   line-height: 1.5;
 }
 
-.slx-affection-feedback svg,
-.slx-affection-dependency-note svg {
+.slx-affection-feedback svg {
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
@@ -3368,36 +3338,11 @@ body.slx-panel-open-lock {
   color: var(--slx-danger);
 }
 
-.slx-affection-status-strip,
 .slx-affection-settings-fold,
 .slx-affection-pending-card,
 .slx-affection-profile-card,
 .slx-affection-empty-state {
   padding: 14px;
-}
-
-.slx-affection-status-strip .slx-setting-toggle-row {
-  padding: 0;
-}
-
-.slx-affection-status-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
-}
-
-.slx-affection-status-pill.is-ready {
-  border-color: rgba(var(--slx-accent-rgb), 0.32);
-  color: var(--slx-accent-text);
-}
-
-.slx-affection-status-pill.is-paused {
-  opacity: 0.72;
-}
-
-.slx-affection-dependency-note {
-  margin-top: 10px;
 }
 
 .slx-affection-settings-fold > summary,
@@ -4103,14 +4048,6 @@ body.slx-panel-open-lock {
 }
 
 @media (max-width: 760px) {
-  .slx-affection-page-head {
-    display: grid;
-  }
-
-  .slx-affection-page-counts {
-    flex-wrap: wrap;
-  }
-
   .slx-affection-pending-row,
   .slx-affection-pending-row.is-first {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -4133,7 +4070,6 @@ body.slx-panel-open-lock {
 }
 
 @media (max-width: 480px) {
-  .slx-affection-status-strip,
   .slx-affection-settings-fold,
   .slx-affection-pending-card,
   .slx-affection-profile-card,
@@ -8468,11 +8404,13 @@ button.slx-outline-check-item:active {
   cursor: not-allowed;
 }
 
-.slx-memoir-api-toggle {
+.slx-memoir-api-toggle,
+.slx-summary-api-toggle {
   flex: 0 0 auto;
 }
 
-.slx-memoir-api-toggle button {
+.slx-memoir-api-toggle button,
+.slx-summary-api-toggle button {
   min-width: 52px;
 }
 

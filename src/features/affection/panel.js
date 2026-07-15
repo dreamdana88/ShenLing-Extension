@@ -25,7 +25,6 @@ import {
   getContextInfo,
   getGlobalSettings,
   getStorageDiagnostics,
-  getSummarySettings,
   saveChatState,
   saveGlobalSettings,
 } from '../../core/settings.js';
@@ -350,31 +349,9 @@ function renderAffectionFeedback() {
 
 function renderAffectionSettings(settings) {
   const affection = getAffectionSettings(settings);
-  const summary = getSummarySettings(settings);
-  const active = settings.enabled === true && summary.enabled === true && affection.enabled === true;
   const buildModeLabel = affection.defaultBuildMode === 'generic' ? '通用阶段' : '专属阶段';
   const apiLabel = affection.profileBuildApiMode === 'main_api' ? '主 API' : '副 API';
   return `
-    <section class="slx-detail-card slx-affection-status-strip" aria-label="好感度运行状态">
-      <label class="slx-setting-toggle-row" for="slx-affection-enabled">
-        <span>
-          <b>攻略追踪</b>
-          <small>${active ? '正在记录角色对 {{user}} 的好感变化。' : affection.enabled ? '已开启，但当前依赖条件未满足。' : '关闭后保留档案，但停止判断与注入。'}</small>
-        </span>
-        <input id="slx-affection-enabled" type="checkbox" data-slx-affection-enabled ${affection.enabled ? 'checked' : ''} />
-      </label>
-      <div class="slx-affection-status-meta">
-        <span class="slx-affection-status-pill ${summary.enabled ? 'is-ready' : 'is-paused'}">自动小总结：${summary.enabled ? '可用' : '已关闭'}</span>
-        <span class="slx-affection-status-pill ${active ? 'is-ready' : 'is-paused'}">${active ? '攻略运行中' : '攻略已暂停'}</span>
-      </div>
-      ${summary.enabled ? '' : `
-        <div class="slx-affection-dependency-note">
-          ${slxIcon('alert')}
-          <span>攻略判断与正文注入已暂停；已有档案仍可查看和手动调整。请先在自动总结中开启自动小总结。</span>
-        </div>
-      `}
-    </section>
-
     <details class="slx-detail-card slx-affection-settings-fold" data-slx-affection-settings ${affectionPanelState.settingsOpen ? 'open' : ''}>
       <summary>
         <span>${slxIcon('settings')}<b>建档设置</b></span>
@@ -396,9 +373,9 @@ function renderAffectionSettings(settings) {
               <button type="button" data-slx-affection-build-api="main_api" class="${affection.profileBuildApiMode === 'main_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'main_api'}">主 API</button>
               <button type="button" data-slx-affection-build-api="secondary_api" class="${affection.profileBuildApiMode === 'secondary_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'secondary_api'}">副 API</button>
             </div>
-            <small>新角色首次建档时额外生成一次，之后不会每轮调用。</small>
+            <small>首次建档仅调用一次。</small>
           </div>
-        ` : '<p>通用阶段不额外调用建档 API，初始好感仍采用 affection_first。</p>'}
+        ` : '<p>通用阶段不调用建档 API。</p>'}
       </div>
     </details>
   `;
@@ -464,7 +441,7 @@ function renderAffectionPending(settings, store) {
     return `
       <section class="slx-detail-card slx-affection-pending-card is-empty">
         <div class="slx-affection-section-head"><b>当前回复待确认</b><small>暂无</small></div>
-        <p>当前回复没有待确认的好感变化。</p>
+        <p>暂无待确认变化。</p>
       </section>
     `;
   }
@@ -489,7 +466,7 @@ function renderAffectionPending(settings, store) {
           ${entry.otherSwipeCount ? `<span>另有 ${entry.otherSwipeCount} 个未选回复暂存</span>` : ''}
         </div>
         <div class="slx-affection-pending-list">${[...changeRows, ...firstRows, ...taskRows].join('')}</div>
-        <p>发送下一条消息时，只有当前选中回复会写入正式账本。</p>
+        <p>下次发送时确认。</p>
       </section>
     `;
   }).join('');
@@ -559,7 +536,7 @@ function renderAffectionProfiles(store) {
         <div class="slx-detail-card slx-affection-empty-state">
           ${slxIcon('pursuit')}
           <b>还没有正式好感档案</b>
-          <p>攻略模式会在自动小总结识别到长期可攻略角色后，根据 affection_first 自动建档。</p>
+          <p>出现可攻略角色后自动建档。</p>
         </div>
       `}
     </section>
@@ -619,7 +596,7 @@ function renderAffectionDetailOverlay(store) {
           ${renderAffectionStageRail(affectionPanelState.roleName, ledger.valueTenths, profile.stages)}
 
           <section class="slx-detail-card slx-affection-adjust-card">
-            <div class="slx-affection-section-head"><b>当前值校准</b><small>生成一条 manual_adjustment 记录</small></div>
+            <div class="slx-affection-section-head"><b>当前值校准</b><small>记录为手动调整</small></div>
             <div class="slx-affection-adjust-row">
               <label><span>当前好感</span><input type="number" min="0" max="100" step="0.1" inputmode="decimal" data-slx-affection-adjust-value value="${escapeHtml(formatAffectionValueTenths(ledger.valueTenths))}" /></label>
               <button class="slx-soft-btn" type="button" data-slx-affection-apply-adjust>应用调整</button>
@@ -744,7 +721,7 @@ function renderAffectionStageEditorOverlay(store) {
           <details class="slx-detail-card slx-affection-regenerate-fold" data-slx-affection-regenerate-fold ${affectionPanelState.regenerateOpen ? 'open' : ''}>
             <summary><span>${slxIcon('sparkles')}<b>按需求重新生成</b></span>${slxIcon('chevronDown')}</summary>
             <div>
-              <label class="slx-affection-requirement"><span>重新生成需求（可选）</span><textarea rows="4" maxlength="2000" data-slx-affection-requirement placeholder="例如：前期戒备更重；确认关系后仍不擅长直白表达……" ${isRunning ? 'disabled' : ''}>${escapeHtml(editor.userRequirement)}</textarea><small>填写后，关系走向、表达偏好和边界以你的需求为主。</small></label>
+              <label class="slx-affection-requirement"><span>重新生成需求（可选）</span><textarea rows="4" maxlength="2000" data-slx-affection-requirement placeholder="例如：前期戒备更重；确认关系后仍不擅长直白表达……" ${isRunning ? 'disabled' : ''}>${escapeHtml(editor.userRequirement)}</textarea><small>按此需求生成。</small></label>
               <div class="slx-affection-regenerate-actions">
                 <div class="slx-schedule-api-toggle slx-affection-api-toggle" role="group" aria-label="本次重新生成 API">
                   <button type="button" data-slx-affection-regenerate-api="main_api" class="${editor.regenerateApiMode === 'main_api' ? 'is-active' : ''}" aria-pressed="${editor.regenerateApiMode === 'main_api'}" ${isRunning ? 'disabled' : ''}>主 API</button>
@@ -2895,17 +2872,10 @@ export function renderAffectionPanel() {
   return `
     <div class="slx-affection-root">
       <div class="slx-affection-main">
-        <header class="slx-affection-page-head">
-          <div>
-            <small>攻略模式</small>
-            <h3>角色对 {{user}} 的好感档案</h3>
-            <p>变化先随当前回复暂存，发送下一条消息时才写入正式账本。</p>
-          </div>
-          <div class="slx-affection-page-counts" aria-label="好感度档案概况">
-            <span><b>${profileCount}</b> 人已建档</span>
-            <span><b>${pendingItemCount}</b> 项待确认</span>
-          </div>
-        </header>
+        <div class="slx-affection-overview" aria-label="好感度档案概况">
+          <span>档案 <b>${profileCount}</b></span>
+          <span>待确认 <b>${pendingItemCount}</b></span>
+        </div>
         ${renderAffectionFeedback()}
         ${renderAffectionSettings(settings)}
         ${renderAffectionPending(settings, store)}

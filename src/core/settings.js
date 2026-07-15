@@ -225,12 +225,6 @@ export const defaultGlobalSettings = Object.freeze({
       enabled: false,
       apiMode: 'secondary_api',
     },
-    parallel: {
-      enabled: false,
-      triggerMode: 'manual_and_timed',
-      thresholdMinutes: 60,
-      appendToChat: true,
-    },
     replace: getDefaultWordReplaceSettings(),
     emotionProfile: {
       enabled: false,
@@ -348,10 +342,6 @@ export const defaultChatState = Object.freeze({
     capture: createDefaultCaptureState(), // 用户主动发起的设定采集表单与草稿；与 pending 独立
     updatedAt: '',
   },
-  parallel: {
-    lastParallelEventTime: '',
-    lastParallelEventMessageId: null,
-  },
   emotionProfiles: {
     profiles: {},
     pendingByMessage: {},
@@ -418,9 +408,12 @@ export function getGlobalSettings() {
     context.extensionSettings[MODULE_NAME],
     cloneData(defaultGlobalSettings),
   );
-  context.extensionSettings[MODULE_NAME].schemaVersion = STORAGE_VERSION;
+  const settings = context.extensionSettings[MODULE_NAME];
+  settings.schemaVersion = STORAGE_VERSION;
+  if (isPlainObject(settings.modules)) delete settings.modules.parallel;
+  if (settings.activeModule === 'parallel') settings.activeModule = 'summary';
 
-  return context.extensionSettings[MODULE_NAME];
+  return settings;
 }
 
 export function saveGlobalSettings() {
@@ -447,6 +440,7 @@ export function getChatState() {
   const state = context.chatMetadata[CHAT_STATE_KEY];
   state.schemaVersion = STORAGE_VERSION;
   state.identity = info;
+  delete state.parallel;
   return state;
 }
 

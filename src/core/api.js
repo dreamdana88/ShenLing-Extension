@@ -37,7 +37,3 @@ export function parseModelListResponse(data) {
     })
     .filter(Boolean))];
 }
-
-export function getApiModeLabel(api) {
-  return api.mode === 'main_api' ? '使用主 API' : '独立副 API';
-}
