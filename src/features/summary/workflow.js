@@ -18,13 +18,15 @@ import {
   createMessageIdRange,
   getChatMessageById,
   getChatMessagesSafe,
-  getContextSafe,
-  getGlobalFunction,
   getLastMessageId,
   isLatestMessage,
   setChatMessageContent,
   setChatMessagesPartial,
 } from '../../core/chat.js';
+import {
+  getTavernEventsSafe,
+  registerTavernEvent,
+} from '../../core/tavern-events.js';
 import {
   getChatState,
   getGlobalSettings,
@@ -1356,28 +1358,6 @@ export function scheduleAutoSummary(messageId) {
     void processAutoSummary(numericMessageId, expectedFingerprint);
   }, SUMMARY_EVENT_DELAY_MS);
   summaryProcessTimers.set(numericMessageId, timer);
-}
-
-export function getTavernEventsSafe() {
-  const context = getContextSafe();
-  return globalThis.tavern_events || context?.tavern_events || context?.event_types || {};
-}
-
-export function registerTavernEvent(eventName, handler) {
-  if (!eventName) return null;
-  const eventOn = getGlobalFunction('eventOn');
-  if (typeof eventOn === 'function') {
-    return eventOn(eventName, handler);
-  }
-
-  const context = getContextSafe();
-  if (context?.eventSource?.on) {
-    context.eventSource.on(eventName, handler);
-    return {
-      stop: () => context.eventSource.off?.(eventName, handler),
-    };
-  }
-  return null;
 }
 
 export function resolveEventMessageId(payload) {

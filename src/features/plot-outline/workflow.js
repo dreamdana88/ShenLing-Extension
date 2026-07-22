@@ -1,6 +1,10 @@
 ﻿import { buildApiUrl } from '../../core/api.js';
 import { getContextSafe } from '../../core/chat.js';
 import {
+  getTavernEventsSafe,
+  registerTavernEvent,
+} from '../../core/tavern-events.js';
+import {
   formatShenlingContextForPrompt,
   resolveShenlingContext,
 } from '../../core/context-resolver.js';
@@ -519,30 +523,6 @@ async function clearPlotOutlineInjection(setExtensionPrompt) {
     0,
     disabledFilter,
   );
-}
-
-function getTavernEventsSafe() {
-  const context = getContextSafe();
-  return globalThis.tavern_events || context?.tavern_events || context?.event_types || {};
-}
-
-function registerTavernEvent(eventName, handler) {
-  if (!eventName) return null;
-  const context = getContextSafe();
-  if (context?.eventSource?.on) {
-    context.eventSource.on(eventName, handler);
-    return {
-      stop: () => context.eventSource.off?.(eventName, handler),
-    };
-  }
-  const eventSource = globalThis.eventSource || globalThis.parent?.eventSource;
-  if (eventSource?.on) {
-    eventSource.on(eventName, handler);
-    return {
-      stop: () => eventSource.off?.(eventName, handler),
-    };
-  }
-  return null;
 }
 
 export function registerPlotOutlineEvents() {

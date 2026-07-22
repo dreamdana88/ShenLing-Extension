@@ -11,7 +11,6 @@ import {
 import {
   getChatMessagesSafe,
   getContextSafe,
-  getGlobalFunction,
   getLastMessageId,
 } from './chat.js';
 import {
@@ -21,6 +20,10 @@ import {
 import {
   extractMemoryBlocks,
 } from './summary.js';
+import {
+  getTavernEventsSafe,
+  registerTavernEvent,
+} from './tavern-events.js';
 
 const DEFAULT_RECENT_MESSAGE_LIMIT = 8;
 const DEFAULT_MEMORY_LIMIT = 4;
@@ -186,36 +189,6 @@ function getFilteredWorldInfoMaterialSource(filtered, injectionText = '') {
     return filtered.used.length ? 'filtered_entries_fallback' : 'filtered_out_all';
   }
   return injectionText ? 'injection' : (filtered.used.length ? 'entries_fallback' : 'none');
-}
-
-function getTavernEventsSafe() {
-  const context = getContextSafe();
-  return globalThis.tavern_events || context?.tavern_events || context?.event_types || {};
-}
-
-function registerTavernEvent(eventName, handler) {
-  if (!eventName) return null;
-  const eventOn = getGlobalFunction('eventOn');
-  if (typeof eventOn === 'function') {
-    return eventOn(eventName, handler);
-  }
-
-  const context = getContextSafe();
-  if (context?.eventSource?.on) {
-    context.eventSource.on(eventName, handler);
-    return {
-      stop: () => context.eventSource.off?.(eventName, handler),
-    };
-  }
-
-  const eventSource = globalThis.eventSource || globalThis.parent?.eventSource;
-  if (eventSource?.on) {
-    eventSource.on(eventName, handler);
-    return {
-      stop: () => eventSource.off?.(eventName, handler),
-    };
-  }
-  return null;
 }
 
 async function importFirstAvailable(candidates) {
