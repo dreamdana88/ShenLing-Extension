@@ -44,7 +44,7 @@ import {
   buildMemoirExtractPrompt,
   PROMPT_IDS,
 } from '../../prompts.js';
-import { getWorldbookApi, getWorldbookReadApi } from './worldbook-api.js';
+import { getWorldbookApi, getWorldbookReadApi } from '../../core/worldbook.js';
 import {
   buildMemoirBlueContent,
   ensureMemoirWorldbook,

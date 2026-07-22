@@ -3,7 +3,7 @@
 import { formatTimestamp } from '../../utils/text.js';
 import { getContextSafe } from '../../core/chat.js';
 import { getContextInfo, getMemoirState, saveChatState } from '../../core/settings.js';
-import { getWorldbookApi } from './worldbook-api.js';
+import { getWorldbookApi } from '../../core/worldbook.js';
 
 const MEMOIR_BOOK_PREFIX = '蜃灵回忆录｜';
 const MEMOIR_GREEN_NAME_PREFIX = 'SLX-Memoir-Green-';
