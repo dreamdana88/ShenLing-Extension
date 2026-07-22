@@ -1,8 +1,11 @@
-import { buildApiUrl } from "../../core/api.js";
 import {
   formatShenlingContextForPrompt,
   resolveShenlingContext,
 } from "../../core/context-resolver.js";
+import {
+  generateWithMainApi,
+  generateWithSecondaryApi,
+} from "../../core/generation.js";
 import { replacePromptMessageMacros } from "../../core/macros.js";
 import {
   resolvePromptMessages,
@@ -16,7 +19,6 @@ import {
   saveChatState,
   saveGlobalSettings,
 } from "../../core/settings.js";
-import { getOpenAiResponseContent } from "../../core/summary.js";
 import {
   buildMiniTheaterPrompt,
   PROMPT_IDS,
@@ -28,7 +30,6 @@ let panelOptions = {
   addCommunicationLog: null,
   closePanel: null,
   getActiveApiProfile: null,
-  getGenerateRawFunction: null,
   refreshPanel: null,
 };
 
@@ -340,19 +341,6 @@ function getFilteredSortedStyles(styles, { search, sortBy }) {
   return result;
 }
 
-function withTimeout(promise, timeoutMs = THEATER_GENERATION_TIMEOUT_MS) {
-  let timer = null;
-  const timeoutPromise = new Promise((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error("小剧场生成超时，请稍后重试。")),
-      timeoutMs,
-    );
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() =>
-    clearTimeout(timer),
-  );
-}
-
 function stripMarkdownFence(text) {
   const raw = String(text || "").trim();
   const matched = raw.match(/^```(?:html|HTML|text|txt)?\s*([\s\S]*?)\s*```$/);
@@ -481,70 +469,6 @@ function buildTheaterContextDiagnostics(context = {}) {
   };
 }
 
-async function requestMiniTheaterMainApi({ messages }) {
-  const generateRaw = getPanelOption("getGenerateRawFunction")?.();
-  if (typeof generateRaw !== "function") {
-    throw new Error("当前环境未发现 generateRaw，无法调用酒馆主 API。");
-  }
-  const requestBody = { prompt: messages };
-  const responseText = await withTimeout(
-    Promise.resolve().then(() => generateRaw(requestBody)),
-  );
-  return {
-    profileName: "酒馆当前连接",
-    model: "酒馆主 API",
-    url: "酒馆当前连接",
-    requestBody,
-    responseText: String(responseText || ""),
-  };
-}
-
-async function requestMiniTheaterSecondaryApi({ messages }) {
-  const profile = getPanelOption("getActiveApiProfile")?.(getGlobalSettings());
-  if (!profile) throw new Error("当前环境未提供副 API 配置。");
-  if (!String(profile.model || "").trim()) {
-    throw new Error("请先在设置页选择小剧场生成模型。");
-  }
-  const url = buildApiUrl(profile);
-  const requestBody = {
-    model: String(profile.model).trim(),
-    messages,
-    stream: false,
-  };
-  const headers = { "Content-Type": "application/json" };
-  if (String(profile.apiKey || "").trim()) {
-    headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
-  }
-  const response = await withTimeout(
-    fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-    }),
-  );
-  const responseText = await response.text();
-  let responseJson = null;
-  try {
-    responseJson = responseText ? JSON.parse(responseText) : null;
-  } catch {
-    responseJson = null;
-  }
-  if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status} ${response.statusText}: ${responseText}`,
-    );
-  }
-  return {
-    profileName: profile.name || "未命名副 API",
-    model: profile.model,
-    url,
-    httpStatus: `${response.status} ${response.statusText}`,
-    requestBody,
-    responseText,
-    responseJson,
-  };
-}
-
 async function runMiniTheaterGeneration() {
   const userPrompt = String(panelState.promptText || "").trim();
   if (!userPrompt) {
@@ -593,13 +517,22 @@ async function runMiniTheaterGeneration() {
     });
     apiResult =
       apiMode === "main_api"
-        ? await requestMiniTheaterMainApi({ messages })
-        : await requestMiniTheaterSecondaryApi({ messages });
+        ? await generateWithMainApi({
+            messages,
+            timeoutMs: THEATER_GENERATION_TIMEOUT_MS,
+            timeoutMessage: "小剧场生成超时，请稍后重试。",
+          })
+        : await generateWithSecondaryApi({
+            profile: getPanelOption("getActiveApiProfile")?.(
+              getGlobalSettings(),
+            ),
+            messages,
+            timeoutMs: THEATER_GENERATION_TIMEOUT_MS,
+            timeoutMessage: "小剧场生成超时，请稍后重试。",
+          });
     requestBody = apiResult.requestBody;
 
-    const rawContent = apiResult.responseJson
-      ? getOpenAiResponseContent(apiResult.responseJson)
-      : apiResult.responseText;
+    const rawContent = apiResult.content;
     const content = stripMarkdownFence(rawContent);
     if (!content) throw new Error("小剧场生成结果为空。");
     const resultType = detectTheaterResultType(content);

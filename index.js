@@ -1264,7 +1264,6 @@ function init() {
     addCommunicationLog,
     closePanel: closeFloatingPanel,
     getActiveApiProfile,
-    getGenerateRawFunction,
     refreshPanel: renderFloatingPanel,
   });
   configurePlotOutlinePanel({
