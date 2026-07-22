@@ -1274,7 +1274,10 @@ function init() {
     }),
   });
   configureSchedulePanel({
-    refreshPanel: renderFloatingPanel,
+    refreshPanel: () => renderFloatingPanel({
+      moduleScrollTop: panelRoot?.querySelector('.slx-module-grid')?.scrollTop,
+      detailScrollTop: panelRoot?.querySelector('.slx-detail')?.scrollTop,
+    }),
   });
   configureAffectionPanel({
     refreshPanel: () => renderFloatingPanel({
