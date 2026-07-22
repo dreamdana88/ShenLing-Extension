@@ -1291,7 +1291,6 @@ function init() {
   configureScheduleWorkflow({
     addCommunicationLog,
     getActiveApiProfile,
-    getGenerateRawFunction,
   });
   configureCaptureWorkflow({
     addCommunicationLog,

@@ -1,8 +1,11 @@
-import { buildApiUrl } from '../../core/api.js';
 import {
   formatShenlingContextForPrompt,
   resolveShenlingContext,
 } from '../../core/context-resolver.js';
+import {
+  generateWithMainApi,
+  generateWithSecondaryApi,
+} from '../../core/generation.js';
 import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
   resolvePromptMessages,
@@ -17,7 +20,6 @@ import {
   getWordReplaceSettings,
   saveChatState,
 } from '../../core/settings.js';
-import { getOpenAiResponseContent } from '../../core/summary.js';
 import {
   buildSchedulePrompt,
   PROMPT_IDS,
@@ -34,7 +36,6 @@ export { normalizeScheduleResult } from './model.js';
 let workflowOptions = {
   addCommunicationLog: null,
   getActiveApiProfile: null,
-  getGenerateRawFunction: null,
 };
 
 const SCHEDULE_GENERATION_TIMEOUT_MS = 180000;
@@ -46,17 +47,6 @@ export function configureScheduleWorkflow(options = {}) {
 function getWorkflowOption(name) {
   const value = workflowOptions[name];
   return typeof value === 'function' ? value : null;
-}
-
-function withTimeout(promise, timeoutMs = SCHEDULE_GENERATION_TIMEOUT_MS) {
-  let timer = null;
-  const timeoutPromise = new Promise((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error('日程表生成超时，请稍后重试。')),
-      timeoutMs,
-    );
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
 function stripMarkdownFence(text) {
@@ -149,64 +139,6 @@ function buildScheduleMessages({ userDirection, contextMaterial, outlineMaterial
   ]);
 }
 
-async function requestScheduleMainApi({ messages }) {
-  const generateRaw = getWorkflowOption('getGenerateRawFunction')?.();
-  if (typeof generateRaw !== 'function') {
-    throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
-  }
-  const requestBody = { prompt: messages };
-  const responseText = await withTimeout(
-    Promise.resolve().then(() => generateRaw(requestBody)),
-  );
-  return {
-    profileName: '酒馆当前连接',
-    model: '酒馆主 API',
-    url: '酒馆当前连接',
-    requestBody,
-    responseText: String(responseText || ''),
-  };
-}
-
-async function requestScheduleSecondaryApi({ messages }) {
-  const profile = getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings());
-  if (!profile) throw new Error('当前环境未提供副 API 配置。');
-  if (!String(profile.model || '').trim()) {
-    throw new Error('请先在设置页选择生成模型。');
-  }
-  const url = buildApiUrl(profile);
-  const requestBody = {
-    model: String(profile.model).trim(),
-    messages,
-    stream: false,
-  };
-  const headers = { 'Content-Type': 'application/json' };
-  if (String(profile.apiKey || '').trim()) {
-    headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
-  }
-  const response = await withTimeout(
-    fetch(url, { method: 'POST', headers, body: JSON.stringify(requestBody) }),
-  );
-  const responseText = await response.text();
-  let responseJson = null;
-  try {
-    responseJson = responseText ? JSON.parse(responseText) : null;
-  } catch {
-    responseJson = null;
-  }
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} ${response.statusText}: ${responseText}`);
-  }
-  return {
-    profileName: profile.name || '未命名副 API',
-    model: profile.model,
-    url,
-    httpStatus: `${response.status} ${response.statusText}`,
-    requestBody,
-    responseText,
-    responseJson,
-  };
-}
-
 function buildContextDiagnostics(context) {
   return {
     purpose: context.purpose,
@@ -251,12 +183,19 @@ export async function runScheduleGeneration({ userDirection } = {}) {
     messages = buildScheduleMessages({ userDirection, contextMaterial, outlineMaterial });
 
     apiResult = apiMode === 'main_api'
-      ? await requestScheduleMainApi({ messages })
-      : await requestScheduleSecondaryApi({ messages });
+      ? await generateWithMainApi({
+        messages,
+        timeoutMs: SCHEDULE_GENERATION_TIMEOUT_MS,
+        timeoutMessage: '日程表生成超时，请稍后重试。',
+      })
+      : await generateWithSecondaryApi({
+        profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
+        messages,
+        timeoutMs: SCHEDULE_GENERATION_TIMEOUT_MS,
+        timeoutMessage: '日程表生成超时，请稍后重试。',
+      });
 
-    const rawContent = apiResult.responseJson
-      ? getOpenAiResponseContent(apiResult.responseJson)
-      : apiResult.responseText;
+    const rawContent = apiResult.content;
     const jsonText = stripMarkdownFence(rawContent);
     if (!jsonText) throw new Error('日程表生成结果为空。');
 
