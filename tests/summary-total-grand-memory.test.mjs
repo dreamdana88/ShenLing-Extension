@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  configureSummaryWorkflow,
   createScannedSummaryState,
   createTotalGrandMemoryPlan,
+  processTotalGrandMemory,
   shouldTriggerAutoTotalGrandMemory,
 } from '../src/features/summary/workflow.js';
+import { renderSummarySettingsPanel } from '../src/features/summary/panel.js';
+import { CHAT_STATE_KEY } from '../src/constants.js';
 
 function grandMessage(messageId) {
   return {
@@ -38,6 +42,69 @@ function createPlan(records, missingMessageIds = []) {
   }, {
     getMessageById: messageId => messages.get(Number(messageId)) || null,
   });
+}
+
+function createLifecycleHarness({ failureAt = '' } = {}) {
+  const archiveRecords = Array.from({ length: 9 }, (_, messageId) => archiveRecord(messageId, {
+    archiveFrom: messageId,
+    archiveTo: messageId,
+    memoryFrom: messageId,
+    memoryTo: messageId,
+  }));
+  const context = {
+    chat: archiveRecords.map(record => grandMessage(record.summaryMessageId)),
+    chatMetadata: {
+      [CHAT_STATE_KEY]: {
+        summary: {
+          runningTask: 'none',
+          archiveRecords,
+        },
+      },
+    },
+    saveMetadataDebounced: () => {},
+  };
+  const replaceMetadata = () => {
+    context.chatMetadata = structuredClone(context.chatMetadata);
+  };
+  context.createChatMessages = async messages => {
+    replaceMetadata();
+    if (failureAt === 'create') throw new Error('创建总档案失败');
+    const message = messages[0];
+    context.chat.push({
+      message_id: context.chat.length,
+      role: message.role,
+      message: message.message,
+    });
+  };
+  context.setChatMessages = async updates => {
+    updates.forEach(update => Object.assign(context.chat[Number(update.message_id)], update));
+    replaceMetadata();
+    if (failureAt === 'hide') throw new Error('隐藏旧楼失败');
+  };
+  return context;
+}
+
+async function runTotalGrandMemoryLifecycle(context, { failureAt = '' } = {}) {
+  const previousSillyTavern = globalThis.SillyTavern;
+  const previousWindow = globalThis.window;
+  configureSummaryWorkflow({
+    addCommunicationLog: () => {},
+    getApiSettings: () => ({ mode: 'main_api' }),
+    getGenerateRawFunction: () => async () => {
+      if (failureAt === 'model') throw new Error('模型生成失败');
+      return '<grand_memory>\n[volume: 0-8]\n合并结果\n</grand_memory>';
+    },
+    refreshSummaryPanel: () => {},
+  });
+  globalThis.SillyTavern = { getContext: () => context };
+  globalThis.window = globalThis;
+  try {
+    await processTotalGrandMemory();
+    return context.chatMetadata[CHAT_STATE_KEY];
+  } finally {
+    globalThis.SillyTavern = previousSillyTavern;
+    globalThis.window = previousWindow;
+  }
 }
 
 test('threshold only counts fresh ordinary grand memories across three merge rounds', () => {
@@ -145,4 +212,69 @@ test('planning has no side effects before a merge succeeds', () => {
   const before = structuredClone(chatState);
   createPlan(chatState.summary.archiveRecords);
   assert.deepEqual(chatState, before);
+});
+
+test('manual merge persists to the replacement chat state and renders separate counts', async () => {
+  const context = createLifecycleHarness();
+  const stateA = context.chatMetadata[CHAT_STATE_KEY];
+  const finalState = await runTotalGrandMemoryLifecycle(context);
+  const records = finalState.summary.archiveRecords;
+  const totalRecord = records.find(record => record.rangeType === 'total_grand');
+
+  assert.notStrictEqual(finalState, stateA);
+  assert.equal(records.length, 10);
+  assert.equal(records.filter(record => record.compressedBy === 9).length, 9);
+  assert.deepEqual(totalRecord.compressedRecordIds, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(finalState.summary.runningTask, 'none');
+  assert.equal(finalState.summary.lastGrandSummaryMessageId, 9);
+  assert.equal(createPlan(records).freshCount, 0);
+  assert.equal(createPlan(records).count, 1);
+  const reloaded = createScannedSummaryState(structuredClone(finalState.summary), { messages: context.chat });
+  const reloadedTotal = reloaded.archiveRecords.find(record => record.rangeType === 'total_grand');
+  assert.equal(reloaded.archiveRecords.filter(record => record.compressedBy === 9).length, 9);
+  assert.deepEqual(reloadedTotal.compressedRecordIds, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(createPlan(reloaded.archiveRecords).freshCount, 0);
+
+  const previousSillyTavern = globalThis.SillyTavern;
+  globalThis.SillyTavern = { getContext: () => context };
+  let html = '';
+  try {
+    html = renderSummarySettingsPanel({ modules: { summary: { totalGrandMemoryInterval: 3 } } }, finalState);
+  } finally {
+    globalThis.SillyTavern = previousSillyTavern;
+  }
+  assert.match(html, /大总结合并[\s\S]*?0 \/ 3/);
+  assert.match(html, /活动 1 条｜已合并旧记录 9 条/);
+  assert.match(html, /可合并材料：1 条｜本轮新增大总结：0 条｜已合并旧记录 9 条/);
+});
+
+test('manual merge button remains based on material count, not fresh threshold progress', () => {
+  const records = [
+    archiveRecord(100, { rangeType: 'total_grand', compressedRecordIds: [10, 20, 30] }),
+    archiveRecord(110),
+  ];
+  const state = { summary: { runningTask: 'none', archiveRecords: records } };
+  const context = { chat: records.map(record => grandMessage(record.summaryMessageId)) };
+  const previousSillyTavern = globalThis.SillyTavern;
+  globalThis.SillyTavern = { getContext: () => context };
+  try {
+    const html = renderSummarySettingsPanel({ modules: { summary: { totalGrandMemoryInterval: 3 } } }, state);
+    assert.equal(createTotalGrandMemoryPlan(state).count, 2);
+    assert.equal(createTotalGrandMemoryPlan(state).freshCount, 1);
+    assert.match(html, /data-slx-compress-grand-memories >/);
+    assert.match(html, /大总结合并[\s\S]*?1 \/ 3/);
+  } finally {
+    globalThis.SillyTavern = previousSillyTavern;
+  }
+});
+
+test('failure paths clear the current replacement state without consuming records', async () => {
+  for (const failureAt of ['model', 'create', 'hide']) {
+    const context = createLifecycleHarness({ failureAt });
+    const finalState = await runTotalGrandMemoryLifecycle(context, { failureAt });
+    assert.equal(finalState.summary.runningTask, 'none', failureAt);
+    assert.equal(finalState.summary.archiveRecords.length, 9, failureAt);
+    assert.equal(finalState.summary.archiveRecords.some(record => record.compressedBy), false, failureAt);
+    assert.match(finalState.summary.lastError, /失败/, failureAt);
+  }
 });

@@ -293,7 +293,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
   const sourceTags = getSummarySourceTags(summary);
   const sourceRulesCollapsed = settings.ui?.sourceRulesCollapsed !== false;
   const archiveRecordViews = [...activeArchiveRecords].reverse().map(createArchiveRecordView);
-  const totalGrandPlan = createTotalGrandMemoryPlan();
+  const totalGrandPlan = createTotalGrandMemoryPlan(chatState);
   const legacyBatchSize = summary.legacyArchiveBatchSize || '';
   const summarySourceModeLabel = summary.includeUserInput ? '续写模式：用户输入 + AI 正文' : '转述模式：仅 AI 正文';
   const legacyScopeLabel = summary.includeUserInput ? '用户楼 + AI 楼' : '仅 AI 楼';
@@ -420,8 +420,8 @@ export function renderSummarySettingsPanel(settings, chatState) {
       ${renderDiagnosticLine('上次归档', chatState.summary.lastArchivedMessageId ?? '无')}
       ${renderDiagnosticLine('上次小总结楼', chatState.summary.lastSummaryMessageId ?? '无')}
       ${renderDiagnosticLine('上次大总结楼', chatState.summary.lastGrandSummaryMessageId ?? '无')}
-      ${renderDiagnosticLine('归档记录', compressedArchiveCount ? `${activeArchiveRecords.length} 条（已合并 ${compressedArchiveCount} 条）` : `${activeArchiveRecords.length} 条`)}
-      ${renderDiagnosticLine('大总结合并', `${activeArchiveRecords.length} / ${totalGrandInterval}`)}
+      ${renderDiagnosticLine('归档记录', compressedArchiveCount ? `活动 ${activeArchiveRecords.length} 条｜已合并旧记录 ${compressedArchiveCount} 条` : `活动 ${activeArchiveRecords.length} 条`)}
+      ${renderDiagnosticLine('大总结合并', `${totalGrandPlan.freshCount} / ${totalGrandInterval}`)}
       ${renderDiagnosticLine('最新归档', latestArchiveLabel)}
       ${renderDiagnosticLine('最近通讯日志', latestLogLabel)}
       ${renderDiagnosticLine('上次错误', chatState.summary.lastError || '无')}
@@ -446,7 +446,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
         </div>
         <button class="slx-mini-action-btn" type="button" data-slx-refresh-archive-scan title="刷新归档状态"><i class="fa-solid fa-rotate-right"></i></button>
       </div>
-      ${activeArchiveRecords.length ? `<div class="slx-archive-detail">可合并大总结：${escapeHtml(totalGrandPlan.count)} 条${compressedArchiveCount ? `｜已合并旧记录 ${escapeHtml(compressedArchiveCount)} 条` : ''}</div>` : ''}
+      ${activeArchiveRecords.length ? `<div class="slx-archive-detail">可合并材料：${escapeHtml(totalGrandPlan.count)} 条｜本轮新增大总结：${escapeHtml(totalGrandPlan.freshCount)} 条${compressedArchiveCount ? `｜已合并旧记录 ${escapeHtml(compressedArchiveCount)} 条` : ''}</div>` : ''}
       ${archiveRecordViews.length ? archiveRecordViews.map(renderArchiveRecordView).join('') : '<p>暂无归档记录。</p>'}
     </div>
     ${grandMemoryEditorHtml}

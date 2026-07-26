@@ -1043,13 +1043,14 @@ export async function processTotalGrandMemory() {
       );
     }
 
+    const currentChatState = getChatState();
     const oldIds = new Set(plan.records.map(item => Number(item.record.summaryMessageId)));
-    chatState.summary.archiveRecords = (chatState.summary.archiveRecords || []).map(record => (
+    currentChatState.summary.archiveRecords = (currentChatState.summary.archiveRecords || []).map(record => (
       oldIds.has(Number(record.summaryMessageId))
         ? { ...record, compressedBy: Number(summaryMessageId) }
         : record
     ));
-    chatState.summary.archiveRecords.push({
+    currentChatState.summary.archiveRecords.push({
       id: `${summaryMessageId}-${Date.now()}`,
       summaryMessageId,
       archiveFrom: plan.archiveFrom,
@@ -1061,17 +1062,18 @@ export async function processTotalGrandMemory() {
       createdAt: Date.now(),
     });
 
-    chatState.summary.runningTask = 'none';
-    chatState.summary.lastArchivedMessageId = plan.archiveTo;
-    chatState.summary.lastGrandSummaryMessageId = Number(summaryMessageId);
-    chatState.summary.lastError = '';
+    currentChatState.summary.runningTask = 'none';
+    currentChatState.summary.lastArchivedMessageId = plan.archiveTo;
+    currentChatState.summary.lastGrandSummaryMessageId = Number(summaryMessageId);
+    currentChatState.summary.lastError = '';
     saveChatState();
     scanExistingSummaryState();
     notifySummary('success', `已生成第 ${summaryMessageId} 楼总档案，并合并 ${plan.count} 条大总结。`, '总档案压缩');
     refreshSummaryPanelAfterAction();
   } catch (error) {
-    chatState.summary.runningTask = 'none';
-    chatState.summary.lastError = error.message || String(error);
+    const currentChatState = getChatState();
+    currentChatState.summary.runningTask = 'none';
+    currentChatState.summary.lastError = error.message || String(error);
     saveChatState();
     notifySummary('error', error.message || String(error), '总档案压缩失败');
     refreshSummaryPanelAfterAction();
