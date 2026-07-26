@@ -43,6 +43,10 @@ import {
   updateLegacyArchiveStatus,
   writeManualMemoryToMessage,
 } from './workflow.js';
+import {
+  bindTemporarySummaryTools,
+  renderTemporarySummaryTools,
+} from './temporary-tools.js';
 
 let memoryEditorState = null;
 let grandMemoryEditorState = null;
@@ -449,6 +453,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
       ${activeArchiveRecords.length ? `<div class="slx-archive-detail">可合并材料：${escapeHtml(totalGrandPlan.count)} 条｜本轮新增大总结：${escapeHtml(totalGrandPlan.freshCount)} 条${compressedArchiveCount ? `｜已合并旧记录 ${escapeHtml(compressedArchiveCount)} 条` : ''}</div>` : ''}
       ${archiveRecordViews.length ? archiveRecordViews.map(renderArchiveRecordView).join('') : '<p>暂无归档记录。</p>'}
     </div>
+    ${renderTemporarySummaryTools(chatState)}
     ${grandMemoryEditorHtml}
 
     <div class="slx-detail-card slx-muted-card">
@@ -632,6 +637,7 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
       button.disabled = false;
     });
   });
+  bindTemporarySummaryTools(panelRoot, rerenderSummaryPanel);
   panelRoot.querySelector('[data-slx-generate-opening-memory]')?.addEventListener('click', event => {
     const button = event.currentTarget;
     button.disabled = true;
