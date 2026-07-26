@@ -3,7 +3,6 @@ import test from 'node:test';
 import { CHAT_STATE_KEY } from '../src/constants.js';
 import { getChatState } from '../src/core/settings.js';
 import {
-  TEMP_SUMMARY_TOOLS_KEY,
   createTemporaryGrandFixtures,
   repairTemporaryGrandRelationship,
   renderTemporarySummaryTools,
@@ -20,10 +19,8 @@ function record(messageId, extra = {}) {
 
 async function withContext(context, fn) {
   const previousSt = globalThis.SillyTavern;
-  const previousStorage = globalThis.localStorage;
   globalThis.SillyTavern = { getContext: () => context };
-  globalThis.localStorage = { getItem: key => key === TEMP_SUMMARY_TOOLS_KEY ? 'enabled' : null };
-  try { return await fn(); } finally { globalThis.SillyTavern = previousSt; globalThis.localStorage = previousStorage; }
+  try { return await fn(); } finally { globalThis.SillyTavern = previousSt; }
 }
 
 function createContext({ records = [], auto = false, postprocess = false } = {}) {
@@ -39,6 +36,20 @@ function createContext({ records = [], auto = false, postprocess = false } = {})
   };
   return context;
 }
+
+test('temporary tools render without a localStorage activation gate', async () => {
+  const previousStorage = globalThis.localStorage;
+  globalThis.localStorage = undefined;
+  try {
+    await withContext(createContext(), async () => {
+      const html = renderTemporarySummaryTools();
+      assert.match(html, /临时大总结诊断工具/);
+      assert.match(html, /仅供本次实机测试与历史修复，完成后删除/);
+    });
+  } finally {
+    globalThis.localStorage = previousStorage;
+  }
+});
 
 test('temporary fixture creates three scan-recognized grand memories without AI', async () => {
   const context = createContext();

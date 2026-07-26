@@ -21,24 +21,11 @@ import {
   shouldRunMessagePostprocess,
 } from './workflow.js';
 
-export const TEMP_SUMMARY_TOOLS_KEY = 'shenling_temp_summary_tools_v1';
 let temporaryToolNotice = '';
-
-export function isTemporarySummaryToolsEnabled() {
-  try {
-    return globalThis.localStorage?.getItem(TEMP_SUMMARY_TOOLS_KEY) === 'enabled';
-  } catch {
-    return false;
-  }
-}
 
 function getChatSignature(chatState = getChatState()) {
   const identity = chatState.identity || {};
   return `${identity.characterId || ''}::${identity.chatId || ''}`;
-}
-
-function requireEnabled() {
-  if (!isTemporarySummaryToolsEnabled()) throw new Error('临时工具未启用。');
 }
 
 function requireSameChat(expectedSignature) {
@@ -74,7 +61,6 @@ function fixtureSource(label) {
 }
 
 export async function createTemporaryGrandFixtures({ confirmed = false } = {}) {
-  requireEnabled();
   if (!confirmed) throw new Error('请先确认这是可删除的隔离测试聊天。');
   const initialState = requireSameChat();
   const initialSignature = getChatSignature(initialState);
@@ -138,7 +124,6 @@ function restoreArchiveRecordFields(records, snapshot, changedMessageIds = new S
 }
 
 export function repairTemporaryGrandRelationship({ chatSignature, targetId, sourceIds, confirmation }) {
-  requireEnabled();
   const state = requireSameChat(chatSignature);
   if (state.summary.runningTask !== 'none') throw new Error('当前 Summary 任务未结束。');
   const target = Number(targetId);
@@ -208,7 +193,6 @@ export function repairTemporaryGrandRelationship({ chatSignature, targetId, sour
 }
 
 export function renderTemporarySummaryTools(chatState = getChatState()) {
-  if (!isTemporarySummaryToolsEnabled()) return '';
   const signature = getChatSignature(chatState);
   const records = getTemporaryRepairRecords(chatState);
   const rows = records.map(item => {
@@ -219,7 +203,7 @@ export function renderTemporarySummaryTools(chatState = getChatState()) {
   return `
     <div class="slx-detail-card slx-muted-card" data-slx-temp-summary-tools data-slx-temp-chat="${escapeHtml(signature)}">
       <div class="slx-detail-title">临时大总结诊断工具</div>
-      <p>仅供测试与历史修复。操作前请复制或导出当前聊天；下列修复不会调用 AI。</p>
+      <p>仅供本次实机测试与历史修复，完成后删除。操作前请复制或导出当前聊天；下列修复不会调用 AI。</p>
       <label class="slx-setting-toggle-row"><span><b>生成测试夹具</b><small>仅限可删除的隔离聊天；创建 3 条合法普通大总结，不调用 AI。</small></span><input type="checkbox" data-slx-temp-fixture-confirm /></label>
       <button class="slx-soft-btn" type="button" data-slx-temp-create-fixture>生成 3 条临时大总结测试数据</button>
       <hr />
@@ -234,7 +218,7 @@ export function renderTemporarySummaryTools(chatState = getChatState()) {
 }
 
 export function bindTemporarySummaryTools(panelRoot, rerender) {
-  if (!isTemporarySummaryToolsEnabled() || !panelRoot) return;
+  if (!panelRoot) return;
   const root = panelRoot.querySelector('[data-slx-temp-summary-tools]');
   if (!root) return;
   const updateRepairUi = () => {
