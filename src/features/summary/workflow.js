@@ -468,9 +468,13 @@ export function hasMemoryBlock(content) {
   return /<memory>[\s\S]*?<\/memory>/i.test(String(content || ''));
 }
 
-export function createScannedSummaryState(baseSummary = getChatState().summary) {
-  const summarySettings = getSummarySettings();
-  const messages = getChatMessagesSafe(undefined, { hide_state: 'all' });
+export function createScannedSummaryState(
+  baseSummary = getChatState().summary,
+  {
+    summarySettings = getSummarySettings(),
+    messages = getChatMessagesSafe(undefined, { hide_state: 'all' }),
+  } = {},
+) {
   const messagesById = new Map(messages.map(message => [message.message_id, message]));
   const validBaseRecords = (baseSummary.archiveRecords || []).filter(record => {
     const message = messagesById.get(Number(record.summaryMessageId));
@@ -498,6 +502,9 @@ export function createScannedSummaryState(baseSummary = getChatState().summary) 
       memoryTo: baseRecord?.memoryTo ?? memoryRange?.archiveTo ?? null,
       rangeType: baseRecord?.rangeType || 'memory',
       compressedBy: baseRecord?.compressedBy ?? null,
+      compressedRecordIds: Array.isArray(baseRecord?.compressedRecordIds)
+        ? [...baseRecord.compressedRecordIds]
+        : undefined,
       createdAt: baseRecord?.createdAt || Date.now(),
     });
   }
@@ -867,8 +874,8 @@ export function shouldTriggerAutoTotalGrandMemory(chatState = getChatState(), se
   const summary = getSummarySettings(settings);
   if (!settings.enabled || !summary.autoTotalGrandMemoryEnabled) return false;
   const threshold = Math.max(2, Number(summary.totalGrandMemoryInterval) || 5);
-  const plan = createTotalGrandMemoryPlan();
-  return Boolean(chatState.summary.runningTask === 'none' && plan.count >= threshold);
+  const plan = createTotalGrandMemoryPlan(chatState);
+  return Boolean(chatState.summary.runningTask === 'none' && plan.freshCount >= threshold);
 }
 
 export async function regenerateLatestGrandMemory() {
@@ -927,23 +934,55 @@ function getArchiveRecordMemoryBoundary(record, side) {
   return Number.isFinite(number) ? number : null;
 }
 
-export function createTotalGrandMemoryPlan() {
-  const chatState = getChatState();
-  const records = (Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [])
-    .filter(record => !record.compressedBy)
-    .map(record => {
-      const message = getChatMessageById(Number(record.summaryMessageId));
-      const grandMemory = message?.message?.match(GRAND_MEMORY_BLOCK_RE)?.[0]?.trim() || '';
-      return { record, message, grandMemory };
-    })
-    .filter(item => item.message && item.grandMemory)
+function isTotalGrandArchiveRecord(record) {
+  return record?.rangeType === 'total_grand' || Array.isArray(record?.compressedRecordIds);
+}
+
+function getTotalGrandConsumedRecordIds(records) {
+  return new Set(records.flatMap(record => (
+    isTotalGrandArchiveRecord(record) && Array.isArray(record.compressedRecordIds)
+      ? record.compressedRecordIds.map(Number).filter(Number.isFinite)
+      : []
+  )));
+}
+
+export function createTotalGrandMemoryPlan(
+  chatState = getChatState(),
+  { getMessageById = getChatMessageById } = {},
+) {
+  const archiveRecords = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [];
+  const recordsBySummaryId = new Map();
+  for (const record of archiveRecords) {
+    const summaryMessageId = Number(record?.summaryMessageId);
+    if (!Number.isFinite(summaryMessageId)) continue;
+    const message = getMessageById(summaryMessageId);
+    const grandMemory = message?.message?.match(GRAND_MEMORY_BLOCK_RE)?.[0]?.trim() || '';
+    if (message && grandMemory) {
+      recordsBySummaryId.set(summaryMessageId, { record, message, grandMemory });
+    }
+  }
+
+  const availableRecords = [...recordsBySummaryId.values()]
+    .sort((a, b) => Number(a.record.summaryMessageId) - Number(b.record.summaryMessageId));
+  const consumedRecordIds = getTotalGrandConsumedRecordIds(archiveRecords);
+  const baseline = [...availableRecords].reverse().find(item => isTotalGrandArchiveRecord(item.record)) || null;
+  const freshRecords = availableRecords.filter(item => {
+    const summaryMessageId = Number(item.record.summaryMessageId);
+    return !isTotalGrandArchiveRecord(item.record)
+      && !item.record.compressedBy
+      && !consumedRecordIds.has(summaryMessageId);
+  });
+  const records = [...(baseline ? [baseline] : []), ...freshRecords]
     .sort((a, b) => Number(a.record.summaryMessageId) - Number(b.record.summaryMessageId));
 
   const first = records[0]?.record || null;
   const last = records.at(-1)?.record || null;
   return {
+    baselineRecord: baseline?.record || null,
+    freshRecords,
     records,
     count: records.length,
+    freshCount: freshRecords.length,
     archiveFrom: first ? Number(first.archiveFrom) : null,
     archiveTo: last ? Number(last.summaryMessageId) : null,
     memoryFrom: first ? getArchiveRecordMemoryBoundary(first, 'from') : null,
