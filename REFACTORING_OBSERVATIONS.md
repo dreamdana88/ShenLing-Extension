@@ -158,4 +158,4 @@ Phase 4E：Generation 收尾与 timeout 策略复查。
 - **触发复查条件**：启动 Generation Core 全仓收尾；需要统一副 API 失败日志；或其他迁移 Feature 复现同类诊断缺失。
 - **建议处理阶段**：Phase 4E：Generation 全仓收尾。
 - **后续设计方向**：可评估由 Generation Core 在错误对象中附带经过安全处理的结构化请求上下文，例如 URL、model、messages 数量、是否 stream、HTTP status，以及可安全记录的请求体摘要；不在本观察项中确定最终 API 设计。
-- **最终关闭记录**：暂未关闭。
+- **最终关闭记录**：关闭阶段：Phase 4C-1 Audit Fix；关闭提交：`6239ade298aca24995e1c4e32574fd566261e5f3`；提交标题：`Phase 4C-1 Audit Fix`；关闭日期：2026-07-26。
