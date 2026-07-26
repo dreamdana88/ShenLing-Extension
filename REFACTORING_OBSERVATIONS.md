@@ -135,10 +135,27 @@ Phase 4E：Generation 收尾与 timeout 策略复查。
 ## OBS-005：Summary total-grand memory 现有回归测试失败
 
 - **来源 Phase**：Phase 4C-1 联合回归
-- **当前状态**：观察中
-- **现象或能力边界**：在 `test` 的 `c88b4ad` 基线上运行 `tests/summary-total-grand-memory.test.mjs` 时，第 3 项“automatic trigger uses freshCount instead of total merge material count”在第 112 行断言失败：预期 `true`，实际为 `false`。其余 4 项通过。
-- **当前影响**：当前回归测试不能完整证明永劫合并自动触发路径满足该用例；本阶段未修改 `src/features/summary/workflow.js` 或该测试文件，不能将失败归因于 Plot Outline / Diary 的 Generation Core 迁移。
-- **为什么本阶段不处理**：Summary 与 `tests/summary-total-grand-memory.test.mjs` 均为 Phase 4C-1 明确禁止修改范围。直接调整实现或测试会混入永劫合并紧急修复的复查工作。
-- **触发复查条件**：启动已同步永劫合并修复的独立复核；修复提交重新审查；或该测试在确认的相同 Node 运行环境中仍稳定失败。
-- **建议处理阶段**：永劫合并计数修复的独立回归/审查阶段，不早于 Phase 4C-1 完成后。
-- **最终关闭记录**：
+- **当前状态**：已关闭
+- **发现位置**：`tests/summary-total-grand-memory.test.mjs` 第 3 项“automatic trigger uses freshCount instead of total merge material count”。
+- **最终根因**：测试夹具将 `message_id` 为 `100`、`110`、`120`、`130` 的消息放入长度为 4 的 `context.chat`。Compatibility Provider 以 `context.chat.length - 1` 作为最后楼层号，并按该范围读取消息；因此请求高 message ID 时范围被截断，找不到对应聊天消息，`freshCount` 错误地成为 `0`。
+- **为什么属于测试夹具问题**：真实 SillyTavern 聊天数组以数组索引表示楼层号。生产代码的 Compatibility 路径正是按该语义读取；原夹具的高 message ID 与短数组索引不一致，不能模拟真实聊天数据。
+- **生产代码影响**：无。已确认 `src/features/summary/workflow.js` 与 `src/core/chat.js` 无需修改，永劫合并阈值、`compressedBy` 和 `compressedRecordIds` 生产逻辑保持不变。
+- **修复方式**：将该测试的 baseline 与后续普通大总结记录改为连续的 `0`、`1`、`2`、`3`，使 `message_id` 与 `context.chat` 数组索引一致；断言、阈值与业务覆盖保持不变。
+- **验证结果**：`node tests/summary-total-grand-memory.test.mjs` 通过 5/5；第 3 项恢复验证 `freshCount` 而非总合并材料数触发自动合并。
+- **建议处理阶段**：已于 Phase 4C-1 Audit Fix 处理。
+- **最终关闭记录**：关闭阶段：Phase 4C-1 Audit Fix；关闭提交：Phase 4C-1 Audit Fix 提交；提交标题：`test(summary): align total grand memory fixture`。
+
+---
+
+## OBS-006：Generation Core 抛错路径缺少结构化请求诊断信息
+
+- **来源 Phase**：Phase 4C-1 审查后复核。
+- **当前状态**：观察中。
+- **现象或能力边界**：Diary 使用副 API 时，成功路径可从 Generation Core 返回值取得 URL、请求体、模型回复等通信日志信息。若 `generateWithSecondaryApi()` 在返回结果前抛错，Diary 无法取得 `apiResult`，失败通信日志可能只保留原始错误，URL 为空且请求体为 `null`。
+- **可能涉及的错误**：HTTP 非成功状态（包括 HTTP 429）、fetch 网络错误、响应 JSON 解析错误、成功响应缺少模型正文，以及 Core 内部响应提取错误。
+- **当前影响**：不影响成功生成；不吞掉原始错误；不触发 Provider fallback；不改变用户 API 配置。但会降低副 API 故障时通信日志的完整度，未来迁移至 Generation Core 的其他 Feature 也可能出现相同情况。
+- **为什么本阶段不处理**：Phase 4C-1 Audit Fix 仅修正 Summary 测试夹具和维护观察项；修改 Diary 或 Generation Core 会超出允许范围并改变已审查的迁移内容。
+- **触发复查条件**：启动 Generation Core 全仓收尾；需要统一副 API 失败日志；或其他迁移 Feature 复现同类诊断缺失。
+- **建议处理阶段**：Phase 4E：Generation 全仓收尾。
+- **后续设计方向**：可评估由 Generation Core 在错误对象中附带经过安全处理的结构化请求上下文，例如 URL、model、messages 数量、是否 stream、HTTP status，以及可安全记录的请求体摘要；不在本观察项中确定最终 API 设计。
+- **最终关闭记录**：暂未关闭。

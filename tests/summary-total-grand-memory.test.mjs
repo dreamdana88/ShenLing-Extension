@@ -88,9 +88,9 @@ test('consumed, duplicate, and invalid records do not advance the next threshold
 });
 
 test('automatic trigger uses freshCount instead of total merge material count', () => {
-  const baseline = archiveRecord(100, { rangeType: 'total_grand', compressedRecordIds: [10, 20, 30] });
-  const beforeThreshold = [baseline, archiveRecord(110), archiveRecord(120)];
-  const atThreshold = [...beforeThreshold, archiveRecord(130)];
+  const baseline = archiveRecord(0, { rangeType: 'total_grand', compressedRecordIds: [0] });
+  const beforeThreshold = [baseline, archiveRecord(1), archiveRecord(2)];
+  const atThreshold = [...beforeThreshold, archiveRecord(3)];
   const previousSillyTavern = globalThis.SillyTavern;
   const settings = {
     enabled: true,
