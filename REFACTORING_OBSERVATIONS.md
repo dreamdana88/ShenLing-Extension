@@ -129,3 +129,16 @@ Phase 4E：Generation 收尾与 timeout 策略复查。
 ### 最终关闭记录
 
 暂未关闭。
+
+---
+
+## OBS-005：Summary total-grand memory 现有回归测试失败
+
+- **来源 Phase**：Phase 4C-1 联合回归
+- **当前状态**：观察中
+- **现象或能力边界**：在 `test` 的 `c88b4ad` 基线上运行 `tests/summary-total-grand-memory.test.mjs` 时，第 3 项“automatic trigger uses freshCount instead of total merge material count”在第 112 行断言失败：预期 `true`，实际为 `false`。其余 4 项通过。
+- **当前影响**：当前回归测试不能完整证明永劫合并自动触发路径满足该用例；本阶段未修改 `src/features/summary/workflow.js` 或该测试文件，不能将失败归因于 Plot Outline / Diary 的 Generation Core 迁移。
+- **为什么本阶段不处理**：Summary 与 `tests/summary-total-grand-memory.test.mjs` 均为 Phase 4C-1 明确禁止修改范围。直接调整实现或测试会混入永劫合并紧急修复的复查工作。
+- **触发复查条件**：启动已同步永劫合并修复的独立复核；修复提交重新审查；或该测试在确认的相同 Node 运行环境中仍稳定失败。
+- **建议处理阶段**：永劫合并计数修复的独立回归/审查阶段，不早于 Phase 4C-1 完成后。
+- **最终关闭记录**：

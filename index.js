@@ -1248,7 +1248,6 @@ function init() {
   configureDiaryPanel({
     addCommunicationLog,
     getActiveApiProfile,
-    getGenerateRawFunction,
     refreshPanel: renderFloatingPanel,
   });
   configureContextDiagnosticsPanel({
@@ -1299,7 +1298,6 @@ function init() {
   configurePlotOutlineWorkflow({
     addCommunicationLog,
     getActiveApiProfile,
-    getGenerateRawFunction,
   });
   configureSummaryWorkflow({
     addCommunicationLog,

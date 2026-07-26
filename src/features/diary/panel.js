@@ -4,8 +4,9 @@ import {
   isPlainObject,
 } from '../../utils/text.js';
 import {
-  buildApiUrl,
-} from '../../core/api.js';
+  generateWithMainApi,
+  generateWithSecondaryApi,
+} from '../../core/generation.js';
 import {
   getChatState,
   getGlobalSettings,
@@ -22,7 +23,6 @@ import {
 } from '../../core/macros.js';
 import {
   extractMemoryBlocks,
-  getOpenAiResponseContent,
 } from '../../core/summary.js';
 import {
   resolvePromptMessages,
@@ -85,7 +85,6 @@ const DIARY_ENTRY_WARN_LIMIT = 100;
 let panelOptions = {
   addCommunicationLog: null,
   getActiveApiProfile: null,
-  getGenerateRawFunction: null,
   refreshPanel: null,
 };
 
@@ -994,16 +993,9 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
   const startedAt = performance.now();
 
   if (store.settings.apiMode === 'main') {
-    const requestBody = {
-      prompt: messages,
-    };
     try {
-      const generateRaw = getPanelOption('getGenerateRawFunction')?.();
-      if (typeof generateRaw !== 'function') {
-        throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
-      }
-      const responseText = await generateRaw(requestBody);
-      const rawParsedResult = parseDiaryGenerationResult(responseText, fallbackDate);
+      const apiResult = await generateWithMainApi({ messages });
+      const rawParsedResult = parseDiaryGenerationResult(apiResult.content, fallbackDate);
       const { result: parsedResult, replacement: wordReplacement } =
         applyWordReplacementToDiaryResult(rawParsedResult);
       addCommunicationLog?.({
@@ -1016,8 +1008,8 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
         model: '酒馆主 API',
         url: '酒馆当前连接',
         messages,
-        requestBody,
-        responseText,
+        requestBody: apiResult.requestBody,
+        responseText: apiResult.responseText,
         rawParsedResult,
         parsedResult,
         wordReplacement,
@@ -1037,7 +1029,7 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
         model: '酒馆主 API',
         url: '酒馆当前连接',
         messages,
-        requestBody,
+        requestBody: { prompt: messages },
         errorStack: error.stack || error.message || error,
       });
       throw error;
@@ -1045,43 +1037,10 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
   }
 
   const profile = getPanelOption('getActiveApiProfile')?.(getGlobalSettings());
-  let url = '';
-  let requestBody = null;
+  let apiResult = null;
   try {
-    if (!profile) throw new Error('当前环境未提供副 API 配置。');
-    url = buildApiUrl(profile);
-    if (!String(profile.model || '').trim()) {
-      throw new Error('请先在设置页选择日记生成模型。');
-    }
-    requestBody = {
-      model: String(profile.model).trim(),
-      messages,
-      stream: false,
-    };
-    const headers = { 'Content-Type': 'application/json' };
-    if (String(profile.apiKey || '').trim()) {
-      headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
-    }
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody),
-    });
-    const responseText = await response.text();
-    let responseJson = null;
-    try {
-      responseJson = responseText ? JSON.parse(responseText) : null;
-    } catch {
-      responseJson = null;
-    }
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} ${response.statusText}: ${responseText}`);
-    }
-    const content = getOpenAiResponseContent(responseJson).trim();
-    if (!content) {
-      throw new Error(`接口返回成功，但没有读取到回复正文：${responseText}`);
-    }
-    const rawParsedResult = parseDiaryGenerationResult(content, fallbackDate);
+    apiResult = await generateWithSecondaryApi({ profile, messages });
+    const rawParsedResult = parseDiaryGenerationResult(apiResult.content, fallbackDate);
     const { result: parsedResult, replacement: wordReplacement } =
       applyWordReplacementToDiaryResult(rawParsedResult);
     addCommunicationLog?.({
@@ -1092,11 +1051,11 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
       durationMs: Math.round(performance.now() - startedAt),
       profileName: profile.name,
       model: profile.model,
-      url,
-      httpStatus: response.status,
+      url: apiResult.url,
+      httpStatus: Number.parseInt(apiResult.httpStatus, 10),
       messages,
-      requestBody,
-      responseText,
+      requestBody: apiResult.requestBody,
+      responseText: apiResult.responseText,
       rawParsedResult,
       parsedResult,
       wordReplacement,
@@ -1114,9 +1073,9 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
       durationMs: Math.round(performance.now() - startedAt),
       profileName: profile?.name,
       model: profile?.model,
-      url,
+      url: apiResult?.url || '',
       messages,
-      requestBody,
+      requestBody: apiResult?.requestBody || null,
       errorStack: error.stack || error.message || error,
     });
     throw error;
