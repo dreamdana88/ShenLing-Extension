@@ -18,6 +18,7 @@ import {
 import {
   createTotalGrandMemoryPlan,
   scanExistingSummaryState,
+  shouldRunMessagePostprocess,
 } from './workflow.js';
 
 export const TEMP_SUMMARY_TOOLS_KEY = 'shenling_temp_summary_tools_v1';
@@ -80,6 +81,7 @@ export async function createTemporaryGrandFixtures({ confirmed = false } = {}) {
   const summary = getSummarySettings(getGlobalSettings());
   if (initialState.summary.runningTask !== 'none') throw new Error('当前 Summary 任务未结束。');
   if (summary.autoTotalGrandMemoryEnabled) throw new Error('请先关闭自动大总结合并。');
+  if (shouldRunMessagePostprocess(getGlobalSettings())) throw new Error('请先关闭自动小总结与词汇替换后处理，再生成临时夹具。');
   if ((initialState.summary.archiveRecords || []).length > 0 || getChatMessagesSafe(undefined, { hide_state: 'all' }).some(message => GRAND_MEMORY_BLOCK_RE.test(message.message))) {
     throw new Error('当前聊天已有大总结或归档记录，拒绝追加临时测试数据。');
   }
@@ -119,6 +121,22 @@ function normalizeIds(ids) {
   return [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Number.isFinite))];
 }
 
+function hasExactIdSet(ids, expectedIds) {
+  if (!Array.isArray(ids) || ids.length !== expectedIds.length) return false;
+  const normalized = normalizeIds(ids);
+  return normalized.length === expectedIds.length && normalized.every(id => expectedIds.includes(id));
+}
+
+function restoreArchiveRecordFields(records, snapshot, changedMessageIds = new Set()) {
+  const snapshotByMessageId = new Map(snapshot.map(record => [Number(record.summaryMessageId), record]));
+  return records.map(record => {
+    const messageId = Number(record.summaryMessageId);
+    const previous = snapshotByMessageId.get(messageId);
+    if (!previous || !changedMessageIds.has(messageId)) return previous ? { ...previous } : record;
+    return { ...previous, ...record };
+  });
+}
+
 export function repairTemporaryGrandRelationship({ chatSignature, targetId, sourceIds, confirmation }) {
   requireEnabled();
   const state = requireSameChat(chatSignature);
@@ -139,8 +157,7 @@ export function repairTemporaryGrandRelationship({ chatSignature, targetId, sour
 
   const existingIds = Array.isArray(targetRecord.compressedRecordIds) ? normalizeIds(targetRecord.compressedRecordIds) : [];
   const relationMatches = targetRecord.rangeType === 'total_grand'
-    && existingIds.length === sources.length
-    && existingIds.every(id => sources.includes(id))
+    && hasExactIdSet(targetRecord.compressedRecordIds, sources)
     && sourceRecords.every(record => Number(record.compressedBy) === target);
   if (relationMatches) {
     temporaryToolNotice = '该合并关系已正确存在，无需重复修复。';
@@ -160,12 +177,19 @@ export function repairTemporaryGrandRelationship({ chatSignature, targetId, sour
     });
     saveChatState();
     scanExistingSummaryState();
+    const scanned = requireSameChat(chatSignature);
+    scanned.summary.archiveRecords = restoreArchiveRecordFields(
+      scanned.summary.archiveRecords,
+      snapshot,
+      new Set([...sourceIds, targetId]),
+    );
+    saveChatState();
     const verified = requireSameChat(chatSignature);
     const verifiedById = new Map(verified.summary.archiveRecords.map(record => [Number(record.summaryMessageId), record]));
     const verifiedTarget = verifiedById.get(target);
     const valid = sourceRecords.every(record => verifiedById.get(Number(record.summaryMessageId))?.compressedBy === target)
       && verifiedTarget?.rangeType === 'total_grand'
-      && normalizeIds(verifiedTarget.compressedRecordIds).length === sources.length
+      && hasExactIdSet(verifiedTarget?.compressedRecordIds, sources)
       && createTotalGrandMemoryPlan(verified).freshRecords.every(item => !sources.includes(Number(item.record.summaryMessageId)));
     if (!valid) throw new Error('修复后验证失败。');
     temporaryToolNotice = `已修复第 ${target} 楼与 ${sources.length} 条来源记录的合并关系；未调用 AI，未修改消息正文。`;
@@ -175,6 +199,9 @@ export function repairTemporaryGrandRelationship({ chatSignature, targetId, sour
     current.summary.archiveRecords = snapshot;
     saveChatState();
     scanExistingSummaryState();
+    const scanned = requireSameChat(chatSignature);
+    scanned.summary.archiveRecords = restoreArchiveRecordFields(scanned.summary.archiveRecords, snapshot);
+    saveChatState();
     temporaryToolNotice = `修复失败，已恢复本次操作前的归档记录：${error.message || String(error)}`;
     throw error;
   }
@@ -186,7 +213,8 @@ export function renderTemporarySummaryTools(chatState = getChatState()) {
   const records = getTemporaryRepairRecords(chatState);
   const rows = records.map(item => {
     const record = item.record;
-    return `<label class="slx-temp-summary-record"><input type="radio" name="slx-temp-target" value="${escapeHtml(record.summaryMessageId)}" data-slx-temp-target /> <input type="checkbox" value="${escapeHtml(record.summaryMessageId)}" data-slx-temp-source /> 第 ${escapeHtml(record.summaryMessageId)} 楼｜${escapeHtml(record.id || '无记录ID')}｜记忆 ${escapeHtml(record.memoryFrom ?? '?')}-${escapeHtml(record.memoryTo ?? '?')}｜${escapeHtml(record.rangeType || 'memory')}｜${item.hidden ? '隐藏' : '显示'}｜compressedBy ${escapeHtml(record.compressedBy ?? '无')}｜${escapeHtml(item.preview)}</label>`;
+    const compressedIds = Array.isArray(record.compressedRecordIds) ? record.compressedRecordIds.join('、') : '无';
+    return `<label class="slx-temp-summary-record"><input type="radio" name="slx-temp-target" value="${escapeHtml(record.summaryMessageId)}" data-slx-temp-target /> 目标 <input type="checkbox" value="${escapeHtml(record.summaryMessageId)}" data-slx-temp-source /> 来源｜第 ${escapeHtml(record.summaryMessageId)} 楼｜${escapeHtml(record.id || '无记录ID')}｜记忆 ${escapeHtml(record.memoryFrom ?? '?')}-${escapeHtml(record.memoryTo ?? '?')}｜${escapeHtml(record.rangeType || 'memory')}｜${item.hidden ? '隐藏' : '显示'}｜compressedBy ${escapeHtml(record.compressedBy ?? '无')}｜compressedRecordIds ${escapeHtml(compressedIds)}｜${escapeHtml(item.preview)}</label>`;
   }).join('');
   return `
     <div class="slx-detail-card slx-muted-card" data-slx-temp-summary-tools data-slx-temp-chat="${escapeHtml(signature)}">
@@ -215,7 +243,7 @@ export function bindTemporarySummaryTools(panelRoot, rerender) {
     const expected = target ? `修复第${target}楼` : '';
     const confirmation = root.querySelector('[data-slx-temp-confirmation]')?.value || '';
     root.querySelector('[data-slx-temp-preview]').textContent = target
-      ? `目标总档案：第 ${target} 楼｜将标记为已合并：${sources.length} 条｜不会调用 AI、修改消息正文、删除或隐藏消息。`
+      ? `目标总档案：第 ${target} 楼｜来源楼层：${sources.length ? sources.map(id => `第 ${id} 楼`).join('、') : '未选择'}｜不会调用 AI、修改消息正文、删除或隐藏消息。`
       : '请选择目标与来源记录。';
     root.querySelector('[data-slx-temp-repair]').disabled = !(target && sources.length >= 2 && confirmation === expected);
   };
