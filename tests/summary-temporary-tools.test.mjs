@@ -112,6 +112,44 @@ test('manual historical repair is explicit, idempotent, and preserves messages',
   assert.deepEqual(context.chat, beforeMessages);
 });
 
+test('manual historical repair normalizes DOM string IDs before restoring scanned records', async () => {
+  const numericSourceIds = [1, 3, 5, 7, 9, 11, 13, 15, 17];
+  const sourceIds = numericSourceIds.map(String);
+  const context = createContext({ records: [...numericSourceIds.map(record), record(19)] });
+  context.chat = [...numericSourceIds, 19].map(grandMessage);
+  await withContext(context, async () => {
+    const chatSignature = `${getChatState().identity.characterId}::${getChatState().identity.chatId}`;
+    const result = repairTemporaryGrandRelationship({
+      chatSignature,
+      targetId: '19',
+      sourceIds,
+      confirmation: '修复第19楼',
+    });
+    assert.equal(result.changed, true);
+    const repaired = getChatState();
+    assert.equal(
+      numericSourceIds.every(id => repaired.summary.archiveRecords.find(item => item.summaryMessageId === id)?.compressedBy === 19),
+      true,
+    );
+    const target = repaired.summary.archiveRecords.find(item => item.summaryMessageId === 19);
+    assert.equal(target.rangeType, 'total_grand');
+    assert.deepEqual(target.compressedRecordIds, numericSourceIds);
+    assert.equal(createTotalGrandMemoryPlan(repaired).freshCount, 0);
+    assert.equal(createTotalGrandMemoryPlan(repaired).count, 1);
+
+    context.chatMetadata = structuredClone(context.chatMetadata);
+    scanExistingSummaryState();
+    const reloaded = getChatState();
+    assert.equal(
+      numericSourceIds.every(id => reloaded.summary.archiveRecords.find(item => item.summaryMessageId === id)?.compressedBy === 19),
+      true,
+    );
+    assert.deepEqual(reloaded.summary.archiveRecords.find(item => item.summaryMessageId === 19).compressedRecordIds, numericSourceIds);
+    assert.equal(createTotalGrandMemoryPlan(reloaded).freshCount, 0);
+    assert.equal(createTotalGrandMemoryPlan(reloaded).count, 1);
+  });
+});
+
 test('historical repair rejects conflicting source and target relations', async () => {
   const context = createContext({ records: [record(1), record(3), record(9, { compressedRecordIds: [1, 5] })] });
   context.chat = [grandMessage(1), grandMessage(3), grandMessage(9)];

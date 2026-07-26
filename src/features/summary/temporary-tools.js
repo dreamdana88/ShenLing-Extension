@@ -181,7 +181,7 @@ export function repairTemporaryGrandRelationship({ chatSignature, targetId, sour
     scanned.summary.archiveRecords = restoreArchiveRecordFields(
       scanned.summary.archiveRecords,
       snapshot,
-      new Set([...sourceIds, targetId]),
+      new Set([...sources, target]),
     );
     saveChatState();
     const verified = requireSameChat(chatSignature);
