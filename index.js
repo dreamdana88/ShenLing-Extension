@@ -1283,7 +1283,6 @@ function init() {
   configureAffectionWorkflow({
     addCommunicationLog,
     getActiveApiProfile,
-    getGenerateRawFunction,
     refreshPanel: renderFloatingPanel,
   });
   configureScheduleWorkflow({
@@ -1293,7 +1292,6 @@ function init() {
   configureCaptureWorkflow({
     addCommunicationLog,
     getActiveApiProfile,
-    getGenerateRawFunction,
   });
   configurePlotOutlineWorkflow({
     addCommunicationLog,

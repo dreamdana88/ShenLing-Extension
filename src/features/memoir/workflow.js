@@ -5,9 +5,11 @@
 //   - 已绑定但未确认/绑定已变化 -> 由 UI 询问：复用当前书，或创建蜃灵专属书并切换绑定。
 
 import { GRAND_MEMORY_BLOCK_RE, LIST_BLOCK_RE, MEMORY_BLOCK_RE } from '../../constants.js';
-import { buildApiUrl } from '../../core/api.js';
 import { getChatMessagesSafe, getContextSafe } from '../../core/chat.js';
-import { getOpenAiResponseContent } from '../../core/summary.js';
+import {
+  generateWithMainApi,
+  generateWithSecondaryApi,
+} from '../../core/generation.js';
 import {
   resolvePromptMessages,
   resolvePromptText,
@@ -1110,7 +1112,6 @@ const CAPTURE_GENERATION_TIMEOUT_MS = 180000;
 let workflowOptions = {
   addCommunicationLog: null,
   getActiveApiProfile: null,
-  getGenerateRawFunction: null,
 };
 
 export function configureCaptureWorkflow(options = {}) {
@@ -1124,17 +1125,6 @@ function getWorkflowOption(name) {
 
 function nowMs() {
   return globalThis.performance?.now?.() ?? Date.now();
-}
-
-function withTimeout(promise, timeoutMs = CAPTURE_GENERATION_TIMEOUT_MS) {
-  let timer = null;
-  const timeoutPromise = new Promise((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error('设定采集生成超时，请稍后重试。')),
-      timeoutMs,
-    );
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
 function stripMarkdownFence(text) {
@@ -1253,55 +1243,19 @@ function resolveApiMode(apiMode) {
   return getGlobalSettings().api?.mode === 'main_api' ? 'main_api' : 'secondary_api';
 }
 
-async function requestCaptureMainApi(messages) {
-  const generateRaw = getWorkflowOption('getGenerateRawFunction')?.();
-  if (typeof generateRaw !== 'function') {
-    throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
-  }
-  const requestBody = { prompt: messages };
-  const responseText = await withTimeout(Promise.resolve().then(() => generateRaw(requestBody)));
-  return {
-    profileName: '酒馆当前连接',
-    model: '酒馆主 API',
-    url: '酒馆当前连接',
-    requestBody,
-    responseText: String(responseText || ''),
-    responseJson: null,
-  };
-}
-
-async function requestCaptureSecondaryApi(messages) {
-  const profile = getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings());
-  if (!profile) throw new Error('当前环境未提供副 API 配置。');
-  if (!String(profile.model || '').trim()) throw new Error('请先在设置页选择生成模型。');
-  const url = buildApiUrl(profile);
-  const requestBody = {
-    model: String(profile.model).trim(),
-    messages,
-    stream: false,
-  };
-  const headers = { 'Content-Type': 'application/json' };
-  if (String(profile.apiKey || '').trim()) headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
-  const response = await withTimeout(
-    fetch(url, { method: 'POST', headers, body: JSON.stringify(requestBody) }),
-  );
-  const responseText = await response.text();
-  let responseJson = null;
-  try {
-    responseJson = responseText ? JSON.parse(responseText) : null;
-  } catch {}
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} ${response.statusText}: ${responseText}`);
-  }
-  return {
-    profileName: profile.name || '未命名副 API',
-    model: profile.model,
-    url,
-    httpStatus: `${response.status} ${response.statusText}`,
-    requestBody,
-    responseText,
-    responseJson,
-  };
+async function requestCaptureGeneration(messages, apiMode) {
+  return apiMode === 'main_api'
+    ? generateWithMainApi({
+      messages,
+      timeoutMs: CAPTURE_GENERATION_TIMEOUT_MS,
+      timeoutMessage: '设定采集生成超时，请稍后重试。',
+    })
+    : generateWithSecondaryApi({
+      profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
+      messages,
+      timeoutMs: CAPTURE_GENERATION_TIMEOUT_MS,
+      timeoutMessage: '设定采集生成超时，请稍后重试。',
+    });
 }
 
 function createWorkflowError(name, message, details = {}) {
@@ -1341,13 +1295,8 @@ export async function runCaptureGeneration({
         preflightErrors: prepared.errors,
       });
     }
-    apiResult = resolvedApiMode === 'main_api'
-      ? await requestCaptureMainApi(prepared.messages)
-      : await requestCaptureSecondaryApi(prepared.messages);
-    const rawContent = apiResult.responseJson
-      ? getOpenAiResponseContent(apiResult.responseJson)
-      : apiResult.responseText;
-    parseResult = parseCaptureGenerationResponse(rawContent);
+    apiResult = await requestCaptureGeneration(prepared.messages, resolvedApiMode);
+    parseResult = parseCaptureGenerationResponse(apiResult.content);
     if (!parseResult.ok) {
       throw createWorkflowError('CaptureParseError', parseResult.error.message, {
         parseError: parseResult.error,

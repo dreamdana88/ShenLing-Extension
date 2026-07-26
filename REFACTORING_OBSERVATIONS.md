@@ -154,8 +154,9 @@ Phase 4E：Generation 收尾与 timeout 策略复查。
 - **现象或能力边界**：Diary 使用副 API 时，成功路径可从 Generation Core 返回值取得 URL、请求体、模型回复等通信日志信息。若 `generateWithSecondaryApi()` 在返回结果前抛错，Diary 无法取得 `apiResult`，失败通信日志可能只保留原始错误，URL 为空且请求体为 `null`。
 - **可能涉及的错误**：HTTP 非成功状态（包括 HTTP 429）、fetch 网络错误、响应 JSON 解析错误、成功响应缺少模型正文，以及 Core 内部响应提取错误。
 - **当前影响**：不影响成功生成；不吞掉原始错误；不触发 Provider fallback；不改变用户 API 配置。但会降低副 API 故障时通信日志的完整度，未来迁移至 Generation Core 的其他 Feature 也可能出现相同情况。
+- **已确认影响范围**：Phase 4C-2 隔离测试确认，Affection 专属阶段表与 Memoir 设定采集在副 API HTTP 429 等 Core 返回前抛错的场景中，同样无法取得完整 `apiResult`；失败通信日志的 URL 为空，请求体仅保留 Feature 兜底信息或为空。
 - **为什么本阶段不处理**：Phase 4C-1 Audit Fix 仅修正 Summary 测试夹具和维护观察项；修改 Diary 或 Generation Core 会超出允许范围并改变已审查的迁移内容。
 - **触发复查条件**：启动 Generation Core 全仓收尾；需要统一副 API 失败日志；或其他迁移 Feature 复现同类诊断缺失。
 - **建议处理阶段**：Phase 4E：Generation 全仓收尾。
 - **后续设计方向**：可评估由 Generation Core 在错误对象中附带经过安全处理的结构化请求上下文，例如 URL、model、messages 数量、是否 stream、HTTP status，以及可安全记录的请求体摘要；不在本观察项中确定最终 API 设计。
-- **最终关闭记录**：关闭阶段：Phase 4C-1 Audit Fix；关闭提交：`6239ade298aca24995e1c4e32574fd566261e5f3`；提交标题：`Phase 4C-1 Audit Fix`；关闭日期：2026-07-26。
+- **最终关闭记录**：

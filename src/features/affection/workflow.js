@@ -2,11 +2,14 @@ import {
   formatTimestamp,
   isPlainObject,
 } from '../../utils/text.js';
-import { buildApiUrl } from '../../core/api.js';
 import {
   formatShenlingContextForPrompt,
   resolveShenlingContext,
 } from '../../core/context-resolver.js';
+import {
+  generateWithMainApi,
+  generateWithSecondaryApi,
+} from '../../core/generation.js';
 import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
   getAffectionSettings,
@@ -20,7 +23,6 @@ import {
 import {
   getMemoryField,
   getMemoryFields,
-  getOpenAiResponseContent,
   normalizeMemoryBlock,
 } from '../../core/summary.js';
 import { getMessageContentFingerprint } from '../../core/message-fingerprint.js';
@@ -67,7 +69,6 @@ export const AFFECTION_STATE_INJECT_DEPTH = 0;
 let workflowOptions = {
   addCommunicationLog: null,
   getActiveApiProfile: null,
-  getGenerateRawFunction: null,
   refreshPanel: null,
 };
 
@@ -314,17 +315,6 @@ function parseAffectionProfileResponse(value) {
   }
 }
 
-function withAffectionBuildTimeout(promise) {
-  let timer = null;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error('专属阶段表生成超时，请稍后重试。')),
-      AFFECTION_PROFILE_BUILD_TIMEOUT_MS,
-    );
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
-
 export function createAffectionBuildTaskKey({ chatId, messageId, fingerprint, roleName }) {
   return [chatId, messageId, fingerprint, normalizeAffectionRoleName(roleName)]
     .map(value => encodeURIComponent(String(value ?? '')))
@@ -387,68 +377,24 @@ async function resolveAffectionProfileContext(roleName) {
   });
 }
 
-async function requestAffectionProfileMainApi(messages) {
-  const generateRaw = getWorkflowOption('getGenerateRawFunction')?.();
-  if (typeof generateRaw !== 'function') {
-    throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
-  }
-  const requestBody = { prompt: messages };
-  const responseText = await withAffectionBuildTimeout(
-    Promise.resolve().then(() => generateRaw(requestBody)),
-  );
-  return {
-    profileName: '酒馆当前连接',
-    model: '酒馆主 API',
-    url: '酒馆当前连接',
-    requestBody,
-    responseText: String(responseText || ''),
-    rawContent: String(responseText || ''),
-  };
-}
-
-async function requestAffectionProfileSecondaryApi(messages) {
-  const profile = getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings());
-  if (!profile) throw new Error('当前环境未提供副 API 配置。');
-  if (!String(profile.model || '').trim()) throw new Error('请先在设置页选择生成模型。');
-  const url = buildApiUrl(profile);
-  const requestBody = {
-    model: String(profile.model).trim(),
-    messages,
-    stream: false,
-  };
-  const headers = { 'Content-Type': 'application/json' };
-  if (String(profile.apiKey || '').trim()) {
-    headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
-  }
-  const response = await withAffectionBuildTimeout(
-    fetch(url, { method: 'POST', headers, body: JSON.stringify(requestBody) }),
-  );
-  const responseText = await response.text();
-  let responseJson = null;
-  try {
-    responseJson = responseText ? JSON.parse(responseText) : null;
-  } catch {
-    responseJson = null;
-  }
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} ${response.statusText}: ${responseText}`);
-  }
-  return {
-    profileName: profile.name || '未命名副 API',
-    model: profile.model,
-    url,
-    httpStatus: `${response.status} ${response.statusText}`,
-    requestBody,
-    responseText,
-    responseJson,
-    rawContent: responseJson ? getOpenAiResponseContent(responseJson) : responseText,
-  };
-}
-
 async function requestAffectionProfileStages({ messages, apiMode }) {
-  return apiMode === 'main_api'
-    ? requestAffectionProfileMainApi(messages)
-    : requestAffectionProfileSecondaryApi(messages);
+  const apiResult = apiMode === 'main_api'
+    ? await generateWithMainApi({
+      messages,
+      timeoutMs: AFFECTION_PROFILE_BUILD_TIMEOUT_MS,
+      timeoutMessage: '专属阶段表生成超时，请稍后重试。',
+    })
+    : await generateWithSecondaryApi({
+      profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
+      messages,
+      timeoutMs: AFFECTION_PROFILE_BUILD_TIMEOUT_MS,
+      timeoutMessage: '专属阶段表生成超时，请稍后重试。',
+    });
+
+  return {
+    ...apiResult,
+    rawContent: apiResult.content,
+  };
 }
 
 function createProfileDraft(task, stages) {
