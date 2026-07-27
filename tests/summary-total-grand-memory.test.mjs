@@ -87,6 +87,8 @@ function createLifecycleHarness({ failureAt = '' } = {}) {
 async function runTotalGrandMemoryLifecycle(context, { failureAt = '' } = {}) {
   const previousSillyTavern = globalThis.SillyTavern;
   const previousWindow = globalThis.window;
+  const previousCreateChatMessages = globalThis.createChatMessages;
+  const previousSetChatMessages = globalThis.setChatMessages;
   configureSummaryWorkflow({
     addCommunicationLog: () => {},
     getApiSettings: () => ({ mode: 'main_api' }),
@@ -98,12 +100,18 @@ async function runTotalGrandMemoryLifecycle(context, { failureAt = '' } = {}) {
   });
   globalThis.SillyTavern = { getContext: () => context };
   globalThis.window = globalThis;
+  globalThis.createChatMessages = context.createChatMessages;
+  globalThis.setChatMessages = context.setChatMessages;
   try {
     await processTotalGrandMemory();
     return context.chatMetadata[CHAT_STATE_KEY];
   } finally {
     globalThis.SillyTavern = previousSillyTavern;
     globalThis.window = previousWindow;
+    if (previousCreateChatMessages === undefined) delete globalThis.createChatMessages;
+    else globalThis.createChatMessages = previousCreateChatMessages;
+    if (previousSetChatMessages === undefined) delete globalThis.setChatMessages;
+    else globalThis.setChatMessages = previousSetChatMessages;
   }
 }
 
@@ -256,7 +264,12 @@ test('manual merge button remains based on material count, not fresh threshold p
   const state = { summary: { runningTask: 'none', archiveRecords: records } };
   const context = { chat: records.map(record => grandMessage(record.summaryMessageId)) };
   const previousSillyTavern = globalThis.SillyTavern;
+  const previousGetChatMessages = globalThis.getChatMessages;
   globalThis.SillyTavern = { getContext: () => context };
+  globalThis.getChatMessages = range => {
+    if (range === undefined) return context.chat;
+    return context.chat.filter(message => Number(message.message_id) === Number(range));
+  };
   try {
     const html = renderSummarySettingsPanel({ modules: { summary: { totalGrandMemoryInterval: 3 } } }, state);
     assert.equal(createTotalGrandMemoryPlan(state).count, 2);
@@ -265,6 +278,8 @@ test('manual merge button remains based on material count, not fresh threshold p
     assert.match(html, /大总结合并[\s\S]*?1 \/ 3/);
   } finally {
     globalThis.SillyTavern = previousSillyTavern;
+    if (previousGetChatMessages === undefined) delete globalThis.getChatMessages;
+    else globalThis.getChatMessages = previousGetChatMessages;
   }
 });
 
