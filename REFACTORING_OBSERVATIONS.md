@@ -143,7 +143,7 @@ Phase 4E：Generation 收尾与 timeout 策略复查。
 - **修复方式**：将该测试的 baseline 与后续普通大总结记录改为连续的 `0`、`1`、`2`、`3`，使 `message_id` 与 `context.chat` 数组索引一致；断言、阈值与业务覆盖保持不变。
 - **验证结果**：`node tests/summary-total-grand-memory.test.mjs` 通过 5/5；第 3 项恢复验证 `freshCount` 而非总合并材料数触发自动合并。
 - **建议处理阶段**：已于 Phase 4C-1 Audit Fix 处理。
-- **最终关闭记录**：关闭阶段：Phase 4C-1 Audit Fix；关闭提交：Phase 4C-1 Audit Fix 提交；提交标题：`test(summary): align total grand memory fixture`。
+- **最终关闭记录**：关闭阶段：Phase 4C-1 Audit Fix；关闭提交：`6239ade298aca24995e1c4e32574fd566261e5f3`；提交标题：`Phase 4C-1 Audit Fix`；验证结论：Summary total-grand memory 回归测试通过，生产代码无须修改；关闭日期：2026-07-26。
 
 ---
 
