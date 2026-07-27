@@ -87,19 +87,20 @@ function createLifecycleHarness({ failureAt = '' } = {}) {
 async function runTotalGrandMemoryLifecycle(context, { failureAt = '' } = {}) {
   const previousSillyTavern = globalThis.SillyTavern;
   const previousWindow = globalThis.window;
+  const previousGenerateRaw = globalThis.generateRaw;
   const previousCreateChatMessages = globalThis.createChatMessages;
   const previousSetChatMessages = globalThis.setChatMessages;
   configureSummaryWorkflow({
     addCommunicationLog: () => {},
     getApiSettings: () => ({ mode: 'main_api' }),
-    getGenerateRawFunction: () => async () => {
-      if (failureAt === 'model') throw new Error('模型生成失败');
-      return '<grand_memory>\n[volume: 0-8]\n合并结果\n</grand_memory>';
-    },
     refreshSummaryPanel: () => {},
   });
   globalThis.SillyTavern = { getContext: () => context };
   globalThis.window = globalThis;
+  globalThis.generateRaw = async () => {
+    if (failureAt === 'model') throw new Error('模型生成失败');
+    return '<grand_memory>\n[volume: 0-8]\n合并结果\n</grand_memory>';
+  };
   globalThis.createChatMessages = context.createChatMessages;
   globalThis.setChatMessages = context.setChatMessages;
   try {
@@ -108,6 +109,8 @@ async function runTotalGrandMemoryLifecycle(context, { failureAt = '' } = {}) {
   } finally {
     globalThis.SillyTavern = previousSillyTavern;
     globalThis.window = previousWindow;
+    if (previousGenerateRaw === undefined) delete globalThis.generateRaw;
+    else globalThis.generateRaw = previousGenerateRaw;
     if (previousCreateChatMessages === undefined) delete globalThis.createChatMessages;
     else globalThis.createChatMessages = previousCreateChatMessages;
     if (previousSetChatMessages === undefined) delete globalThis.setChatMessages;

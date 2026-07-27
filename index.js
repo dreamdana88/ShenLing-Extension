@@ -16,9 +16,6 @@ import {
   parseModelListResponse,
 } from './src/core/api.js';
 import {
-  getContextSafe,
-} from './src/core/chat.js';
-import {
   registerWorldInfoContextEvents,
 } from './src/core/context-resolver.js';
 import { registerPendingCommitEvents } from './src/core/pending-commit.js';
@@ -364,11 +361,6 @@ function renderModelOptions(profile) {
     '<option value="">请选择模型</option>',
     ...options.map(model => `<option value="${escapeHtml(model)}" ${model === currentModel ? 'selected' : ''}>${escapeHtml(model)}</option>`),
   ].join('');
-}
-
-function getGenerateRawFunction() {
-  const context = getContextSafe();
-  return globalThis.generateRaw || context?.generateRaw || null;
 }
 
 async function fetchSecondaryApiModels() {
@@ -1304,7 +1296,6 @@ function init() {
     addCommunicationLog,
     getActiveApiProfile,
     getApiSettings,
-    getGenerateRawFunction,
     refreshSummaryPanel: refreshSummaryPanelAfterAction,
   });
   configureEmotionProfileWorkflow({

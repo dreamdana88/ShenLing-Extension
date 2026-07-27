@@ -7,8 +7,11 @@ import {
   formatTimestamp,
   isPlainObject,
 } from '../../utils/text.js';
-import { buildApiUrl } from '../../core/api.js';
 import { buildCharacterFoundationBlock } from '../../core/character.js';
+import {
+  generateWithMainApi,
+  generateWithSecondaryApi,
+} from '../../core/generation.js';
 import {
   replacePromptMacros,
   replacePromptMessageMacros,
@@ -70,7 +73,6 @@ import {
   forceGrandMemoryRange,
   forceMemoryNumber,
   getLegacyArchiveBatchSize,
-  getOpenAiResponseContent,
   isGrandMemoryOnly,
   normalizeMemoryBlock,
   parseMemoryNumber,
@@ -90,7 +92,6 @@ let workflowOptions = {
   addCommunicationLog: null,
   getActiveApiProfile: null,
   getApiSettings: null,
-  getGenerateRawFunction: null,
   refreshSummaryPanel: null,
 };
 
@@ -345,30 +346,24 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
   const messages = replacePromptMessageMacros(buildMemorySummaryMessages(prompt));
 
   if (resolvedApiMode === 'main_api') {
-    const requestBody = {
-      prompt: messages,
-    };
+    let apiResult = null;
     try {
-      const generateRaw = requireWorkflowOption('getGenerateRawFunction')();
-      if (typeof generateRaw !== 'function') {
-        throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
-      }
-      const result = await generateRaw(requestBody);
+      apiResult = await generateWithMainApi({ messages });
       addCommunicationLog({
         moduleName: '自动总结 / 主 API',
         taskType: type,
         status: 'success',
         startedAt: formatTimestamp(),
         durationMs: Math.round(performance.now() - startedAt),
-        profileName: '酒馆当前连接',
-        model: '酒馆主 API',
-        url: '酒馆当前连接',
+        profileName: apiResult.profileName,
+        model: apiResult.model,
+        url: apiResult.url,
         messages,
-        requestBody,
-        responseText: result,
-        parsedResult: result,
+        requestBody: apiResult.requestBody,
+        responseText: apiResult.responseText,
+        parsedResult: apiResult.content,
       });
-      return String(result || '').trim();
+      return String(apiResult.content || '').trim();
     } catch (error) {
       addCommunicationLog({
         moduleName: '自动总结 / 主 API',
@@ -376,11 +371,11 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
         status: 'failure',
         startedAt: formatTimestamp(),
         durationMs: Math.round(performance.now() - startedAt),
-        profileName: '酒馆当前连接',
-        model: '酒馆主 API',
-        url: '酒馆当前连接',
+        profileName: apiResult?.profileName || '酒馆当前连接',
+        model: apiResult?.model || '酒馆主 API',
+        url: apiResult?.url || '酒馆当前连接',
         messages,
-        requestBody,
+        requestBody: apiResult?.requestBody || null,
         errorStack: error.stack || error.message || error,
       });
       throw error;
@@ -388,40 +383,15 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
   }
 
   const profile = requireWorkflowOption('getActiveApiProfile')(settings);
-  let url = '';
-  let requestBody = null;
+  let apiResult = null;
   try {
-    url = buildApiUrl(profile);
-    if (!String(profile.model || '').trim()) {
-      throw new Error('请先在设置页选择总结模型。');
+    apiResult = await generateWithSecondaryApi({ profile, messages });
+    if (apiResult.responseJson === null) {
+      throw new Error(`接口返回成功，但没有读取到回复正文：${apiResult.responseText}`);
     }
-    requestBody = {
-      model: String(profile.model).trim(),
-      messages,
-      stream: false,
-    };
-    const headers = { 'Content-Type': 'application/json' };
-    if (String(profile.apiKey || '').trim()) {
-      headers.Authorization = `Bearer ${String(profile.apiKey).trim()}`;
-    }
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody),
-    });
-    const responseText = await response.text();
-    let parsedResult = null;
-    try {
-      parsedResult = responseText ? JSON.parse(responseText) : null;
-    } catch {
-      parsedResult = null;
-    }
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} ${response.statusText}: ${responseText}`);
-    }
-    const content = getOpenAiResponseContent(parsedResult).trim();
+    const content = String(apiResult.content || '').trim();
     if (!content) {
-      throw new Error(`接口返回成功，但没有读取到回复正文：${responseText}`);
+      throw new Error(`接口返回成功，但没有读取到回复正文：${apiResult.responseText}`);
     }
     addCommunicationLog({
       moduleName: '自动总结 / 副 API',
@@ -429,13 +399,13 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
       status: 'success',
       startedAt: formatTimestamp(),
       durationMs: Math.round(performance.now() - startedAt),
-      profileName: profile.name,
-      model: profile.model,
-      url,
-      httpStatus: response.status,
+      profileName: apiResult.profileName,
+      model: apiResult.model,
+      url: apiResult.url,
+      httpStatus: Number.parseInt(String(apiResult.httpStatus), 10),
       messages,
-      requestBody,
-      responseText,
+      requestBody: apiResult.requestBody,
+      responseText: apiResult.responseText,
       parsedResult: content,
     });
     return content;
@@ -446,11 +416,11 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
       status: 'failure',
       startedAt: formatTimestamp(),
       durationMs: Math.round(performance.now() - startedAt),
-      profileName: profile.name,
-      model: profile.model,
-      url,
+      profileName: apiResult?.profileName || profile?.name,
+      model: apiResult?.model || profile?.model,
+      url: apiResult?.url || '',
       messages,
-      requestBody,
+      requestBody: apiResult?.requestBody || null,
       errorStack: error.stack || error.message || error,
     });
     throw error;
