@@ -151,12 +151,12 @@ Phase 4E：Generation 收尾与 timeout 策略复查。
 
 - **来源 Phase**：Phase 4C-1 审查后复核。
 - **当前状态**：观察中。
-- **现象或能力边界**：Diary 使用副 API 时，成功路径可从 Generation Core 返回值取得 URL、请求体、模型回复等通信日志信息。若 `generateWithSecondaryApi()` 在返回结果前抛错，Diary 无法取得 `apiResult`，失败通信日志可能只保留原始错误，URL 为空且请求体为 `null`。
-- **可能涉及的错误**：HTTP 非成功状态（包括 HTTP 429）、fetch 网络错误、响应 JSON 解析错误、成功响应缺少模型正文，以及 Core 内部响应提取错误。
-- **当前影响**：不影响成功生成；不吞掉原始错误；不触发 Provider fallback；不改变用户 API 配置。但会降低副 API 故障时通信日志的完整度，未来迁移至 Generation Core 的其他 Feature 也可能出现相同情况。
-- **已确认影响范围**：Phase 4C-2 隔离测试确认，Affection 专属阶段表与 Memoir 设定采集在副 API HTTP 429 等 Core 返回前抛错的场景中，同样无法取得完整 `apiResult`；失败通信日志的 URL 为空，请求体仅保留 Feature 兜底信息或为空。Phase 4D Summary 主/副 API Transport 迁移确认相同边界：Core 返回前抛错时，Summary 仍能保留原始错误与 Feature 上下文，但无法从 `apiResult` 取得完整 URL、请求体和响应正文。
-- **为什么本阶段不处理**：Phase 4C-1 Audit Fix 仅修正 Summary 测试夹具和维护观察项；修改 Diary 或 Generation Core 会超出允许范围并改变已审查的迁移内容。
-- **触发复查条件**：启动 Generation Core 全仓收尾；需要统一副 API 失败日志；或其他迁移 Feature 复现同类诊断缺失。
-- **建议处理阶段**：Phase 4E：Generation 全仓收尾。
+- **现象或能力边界**：Generation Core 只有成功返回值携带 URL、请求体、HTTP 状态和模型响应。若主/副 API Core 在返回结果前抛错，Feature 无法取得 `apiResult`，失败通信日志只能使用各自的局部兜底字段。当前 Error 没有稳定的 `code`、`stage`、`diagnostics` 或 `cause`。
+- **可能涉及的错误**：主 API Provider 缺失或执行失败；副 API Profile/model/URL 构建失败、fetch 网络错误、timeout、`response.text()` 失败、HTTP 非成功状态（包括 HTTP 429）以及成功响应缺少模型正文。当前 Core 会捕获 `JSON.parse(responseText)` 失败并将 `responseJson` 置空，非空纯文本仍作为正文返回；因此“非 JSON”本身不是 Core 返回前错误，Summary 对 HTTP 200 非 JSON 的拒绝发生在 Core 成功返回后的 Feature 契约层。
+- **当前影响**：不影响成功生成；不吞掉原始错误；不触发 Provider fallback；不改变用户 API 配置。但会降低全部七个 Core 调用方在主/副 API 故障时的通信日志完整度。
+- **已确认影响范围**：Phase 4E-1 全仓审计确认七个直接调用方均受影响：Schedule、Mini Theater、Plot Outline、Diary、Affection 专属阶段表、Memoir 设定采集、Summary。Core 返回前失败时，七者都无法取得副 API URL、HTTP 状态或响应正文；Schedule、Mini Theater、Plot Outline 仅保留上下文类请求兜底，Diary 与 Summary 的副 API 请求体为 `null`，Memoir Capture 为 `{}`，Affection 仅保留任务元数据且当前外层 catch 还会丢失已经构造的 messages。各调用方仍保留原始错误且不触发 Provider fallback。
+- **为什么本阶段不处理**：Phase 4E-1 只允许全仓审计与治理设计，禁止直接新增 Generation Error、diagnostics 或批量修改 Feature failure catch。
+- **触发复查条件**：Phase 4E-2A 建立 Core 错误诊断契约，并由 Phase 4E-2B 完成七个 Feature 失败日志接入与真实环境错误注入验证。
+- **建议处理阶段**：Phase 4E-2A / Phase 4E-2B。
 - **后续设计方向**：可评估由 Generation Core 在错误对象中附带经过安全处理的结构化请求上下文，例如 URL、model、messages 数量、是否 stream、HTTP status，以及可安全记录的请求体摘要；不在本观察项中确定最终 API 设计。
 - **最终关闭记录**：
