@@ -39,7 +39,7 @@ let workflowOptions = {
   getActiveApiProfile: null,
 };
 
-const SCHEDULE_GENERATION_TIMEOUT_MS = 180000;
+const SCHEDULE_GENERATION_TIMEOUT_MS = 300000;
 
 export function configureScheduleWorkflow(options = {}) {
   workflowOptions = { ...workflowOptions, ...options };
@@ -183,17 +183,22 @@ export async function runScheduleGeneration({ userDirection } = {}) {
     const outlineMaterial = buildOutlineMaterial();
     messages = buildScheduleMessages({ userDirection, contextMaterial, outlineMaterial });
 
+    // 主 API timeout 仅 wait-only；副 API timeout 会真正 abort。文案必须区分语义。
+    const timeoutMessage = apiMode === 'secondary_api'
+      ? '日程表生成等待超过 300 秒，副 API 请求已取消，请稍后重试。'
+      : '日程表生成等待超过 300 秒，已停止等待；主 API 生成可能仍在后台继续。';
+
     apiResult = apiMode === 'main_api'
       ? await generateWithMainApi({
         messages,
         timeoutMs: SCHEDULE_GENERATION_TIMEOUT_MS,
-        timeoutMessage: '日程表生成超时，请稍后重试。',
+        timeoutMessage,
       })
       : await generateWithSecondaryApi({
         profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
         messages,
         timeoutMs: SCHEDULE_GENERATION_TIMEOUT_MS,
-        timeoutMessage: '日程表生成超时，请稍后重试。',
+        timeoutMessage,
       });
 
     const rawContent = apiResult.content;

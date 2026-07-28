@@ -402,7 +402,7 @@ test('Schedule secondary body timeout keeps Phase 4E-2B failure diagnostics', as
   let fetchSignal = null;
   globalThis.setTimeout = (callback, timeoutMs, ...args) => originalSetTimeout(
     callback,
-    timeoutMs === 180000 ? 5 : timeoutMs,
+    timeoutMs === 300000 ? 5 : timeoutMs,
     ...args,
   );
 
