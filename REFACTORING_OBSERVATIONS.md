@@ -55,11 +55,11 @@
 ## OBS-004：Schedule 生成超时可能偏短
 
 - 来源 Phase：Phase 4A 后续用户反馈
-- 当前状态：观察中
+- 当前状态：已关闭
 
 ### 现象
 
-Schedule / 日程表当前生成超时为：
+Schedule / 日程表曾使用：
 
 `180000 ms`
 
@@ -71,64 +71,21 @@ Schedule / 日程表当前生成超时为：
 
 > 日程表有时还没有生成完成，就会因为超时而失败。
 
-日程表通常需要一次生成完整 7 天的结构化内容，输出量较大。对于：
+### 处理结果（Phase 4E-2C / 4E-2D）
 
-- 响应较慢的模型；
-- 推理模型；
-- API 高峰期；
-- 网络较慢的副 API；
-
-180 秒可能不足。
-
-### 当前影响
-
-可能出现：
-
-1. 模型仍在正常生成；
-2. 插件已经先判定超时；
-3. 用户看到生成失败；
-4. 底层请求实际上可能仍继续执行。
-
-当前 Generation Core 的 timeout 使用 `Promise.race()`。
-
-该机制只负责停止上层等待，不代表底层请求已真正取消。
-
-对于副 API，当前 timeout 主要覆盖等待 `fetch()` 返回响应的阶段，后续 `response.text()` 与解析不完全处于同一超时控制范围内。
-
-### 为什么当前阶段不处理
-
-Phase 4A 与 Phase 4B 的目标是统一 Generation Transport，并保持原有业务行为。
-
-当前不应在迁移过程中同时修改 Schedule 的产品级超时策略，以免把“架构迁移”和“行为调整”混在同一个 Phase。
-
-### 触发复查条件
-
-在以下阶段必须重新评估：
-
-- Phase 4E Generation 收尾；
-- Generation timeout / cancellation 统一治理；
-- 后续收到更多 Schedule 超时用户反馈时。
-
-### 建议处理方向
-
-Phase 4E 重新评估：
-
-- Schedule 默认超时是否从 180 秒提高至 300 秒或更高；
-- 是否允许不同 Feature 保留不同默认超时；
-- 是否需要提供用户可配置超时；
-- 副 API timeout 是否应覆盖完整的请求、正文读取与处理流程；
-- 能安全取消的请求是否使用真正的 cancellation；
-- 主 API 与副 API 是否能够采用一致且真实的超时语义。
-
-不得为了接口形式统一，强制所有 Feature 使用同一个超时时间。
-
-### 建议处理阶段
-
-Phase 4E：Generation 收尾与 timeout 策略复查。
+1. Phase 4E-2C：副 API timeout 覆盖 `fetch` + `response.text()`，并通过 AbortController 真实取消；主 API 保持 wait-only。
+2. Phase 4E-2D：Schedule timeout 调整为 `300000` ms（300 秒）；主 API timeout 文案诚实表达“已停止等待 / 可能仍在后台继续”；副 API timeout 文案表达“请求已取消，可稍后重试”。
+3. 迟到结果隔离测试确认主 API timeout 后迟到成功/失败不会二次 settle、不写 Schedule 成功状态。
+4. 其他 Feature timeout 未因本观察项被统一改写；Diary / Summary 仍无主动 timeout。
 
 ### 最终关闭记录
 
-暂未关闭。
+- 关闭阶段：Phase 4E-2D / Phase 4E-2E Final Audit
+- Schedule timeout 调整提交：`e0376fdb3f49ec75d7edfa3f0d5d5d67cca7e71e`（`Phase 4E-2D`）
+- 副 API 完整 timeout/cancellation 实现提交：`4ebb3e706e5e921ae4eabfa18cac5ae96ce7846e`（`Phase 4E-2C: complete secondary API timeout coverage`）
+- 2C 相关后续提交 / 验收基线 HEAD：`f52c3163e111a9f27a91ffaf57f02c8e5a6a4a82`（`4E-2C`）
+- 测试结论：`tests/schedule-generation-timeout.test.mjs` 与 `tests/generation-core.test.mjs` 覆盖 300 秒传参、主副文案语义、迟到 Promise、body 阶段 timeout；全仓相关测试全绿
+- 关闭日期：2026-07-28
 
 ---
 
@@ -150,35 +107,46 @@ Phase 4E：Generation 收尾与 timeout 策略复查。
 ## OBS-006：Generation Core 抛错路径缺少结构化请求诊断信息
 
 - **来源 Phase**：Phase 4C-1 审查后复核。
-- **当前状态**：观察中。
-- **现象或能力边界**：Generation Core 只有成功返回值携带 URL、请求体、HTTP 状态和模型响应。若主/副 API Core 在返回结果前抛错，Feature 无法取得 `apiResult`，失败通信日志只能使用各自的局部兜底字段。当前 Error 没有稳定的 `code`、`stage`、`diagnostics` 或 `cause`。
-- **可能涉及的错误**：主 API Provider 缺失或执行失败；副 API Profile/model/URL 构建失败、fetch 网络错误、timeout、`response.text()` 失败、HTTP 非成功状态（包括 HTTP 429）以及成功响应缺少模型正文。当前 Core 会捕获 `JSON.parse(responseText)` 失败并将 `responseJson` 置空，非空纯文本仍作为正文返回；因此“非 JSON”本身不是 Core 返回前错误，Summary 对 HTTP 200 非 JSON 的拒绝发生在 Core 成功返回后的 Feature 契约层。
-- **当前影响**：不影响成功生成；不吞掉原始错误；不触发 Provider fallback；不改变用户 API 配置。但会降低全部七个 Core 调用方在主/副 API 故障时的通信日志完整度。
-- **已确认影响范围**：Phase 4E-1 全仓审计确认七个直接调用方均受影响：Schedule、Mini Theater、Plot Outline、Diary、Affection 专属阶段表、Memoir 设定采集、Summary。Core 返回前失败时，七者都无法取得副 API URL、HTTP 状态或响应正文；Schedule、Mini Theater、Plot Outline 仅保留上下文类请求兜底，Diary 与 Summary 的副 API 请求体为 `null`，Memoir Capture 为 `{}`，Affection 仅保留任务元数据且当前外层 catch 还会丢失已经构造的 messages。各调用方仍保留原始错误且不触发 Provider fallback。
-- **为什么本阶段不处理**：Phase 4E-1 只允许全仓审计与治理设计，禁止直接新增 Generation Error、diagnostics 或批量修改 Feature failure catch。
-- **触发复查条件**：Phase 4E-2A 建立 Core 错误诊断契约，并由 Phase 4E-2B 完成七个 Feature 失败日志接入与真实环境错误注入验证。
-- **建议处理阶段**：Phase 4E-2A / Phase 4E-2B。
-- **后续设计方向**：可评估由 Generation Core 在错误对象中附带经过安全处理的结构化请求上下文，例如 URL、model、messages 数量、是否 stream、HTTP status，以及可安全记录的请求体摘要；不在本观察项中确定最终 API 设计。
+- **当前状态**：已关闭。
+- **现象或能力边界**：Generation Core 曾只有成功返回值携带 URL、请求体、HTTP 状态和模型响应。若主/副 API Core 在返回结果前抛错，Feature 无法取得 `apiResult`，失败通信日志只能使用各自的局部兜底字段；Error 也没有稳定的 `code`、`stage`、`diagnostics` 或 `cause`。
+- **处理结果**：
+
+  1. Phase 4E-2A：建立 `GenerationTransportError` 与 `getGenerationErrorContext()`，提供白名单 `code / stage / diagnostics` 与 `cause`；敏感 URL / responseText 脱敏截断。
+  2. Phase 4E-2B：七个直接 Core 调用方全部接入失败日志；Affection Core 返回前失败时 messages 不再丢失；普通 Feature Error 不伪装 Transport code。
+  3. Phase 4E-2C：副 API 完整 timeout/cancellation；浏览器实机错误注入确认结构化 Error 与 stage 语义。
+  4. Phase 4E-2E Final Audit：全仓复核七 Feature 接入、测试与安全边界。
 - **最终关闭记录**：
+
+  - 关闭阶段：Phase 4E-2A 至 2E Final Audit
+  - 2A 提交：`bfbddb74da893622ea48987736d597e528116ade`（`Phase 4E-2A`）
+  - 2B 提交：`89601ea8394e8953d6f8d61173eab22e78cf655e`（`Phase 4E-2B`）
+  - 2C 提交：`4ebb3e706e5e921ae4eabfa18cac5ae96ce7846e`（`Phase 4E-2C: complete secondary API timeout coverage`）
+  - 浏览器实机验收相关 HEAD：`f52c3163e111a9f27a91ffaf57f02c8e5a6a4a82`（`4E-2C`）
+  - 七 Feature 测试：`tests/generation-feature-failure-logs.test.mjs` 全绿；Core 契约 `tests/generation-core.test.mjs` 全绿
+  - 敏感信息结论：失败 diagnostics / 通信日志不记录 API Key、Authorization、headers、完整 profile 或 cause
+  - 关闭日期：2026-07-28
 
 ## OBS-007：主 API Provider 解析异常尚未纳入统一 Generation 错误契约
 
 - **来源 Phase**：Phase 4E-2A GitHub 实际提交审查。
-- **当前状态**：观察中。
-- **现象或能力边界**：`generateWithMainApi()` 优先使用 `globalThis.generateRaw`。当该入口不存在时，Core 会继续调用 `globalThis.SillyTavern?.getContext?.()` 获取备用的原生 `generateRaw`。如果 `getContext()` 函数存在但自身执行抛错，该异常发生在主 API Provider 解析过程中，目前会以普通 `Error` 直接向上抛出，尚未包装为 `GenerationTransportError`，因此不会携带稳定的 `code`、`stage` 和安全 `diagnostics`。
+- **当前状态**：处理中。
+- **现象或能力边界**：`generateWithMainApi()` 优先使用 `globalThis.generateRaw`。当该入口不存在时，Core 会继续调用 `globalThis.SillyTavern?.getContext?.()` 获取备用的原生 `generateRaw`。如果 `getContext()` 函数存在但自身执行抛错，该异常发生在主 API Provider 解析过程中；Phase 4E-2E 施工前会以普通 `Error` 直接向上抛出，`getGenerationErrorContext(error)` 返回 `null`。
 - **当前影响**：
 
   - 当前 SillyTavern 1.18.0 实际环境优先命中 `globalThis.generateRaw`，该异常分支触发概率较低。
   - 不影响主 API 正常成功路径。
   - 不会吞掉原始错误，也不会自动切换到副 API。
-  - 若未来运行环境、加载顺序或宿主接口发生变化并触发该分支，Feature 失败日志无法通过 `getGenerationErrorContext()` 取得统一错误上下文。
-- **当前处理**：本问题不阻塞 Phase 4E-2B。2B 只负责让七个 Feature 接入已建立的错误契约，不修改 Generation Core，也不新增 Provider 解析错误分类。
-- **建议复查阶段**：Phase 4E-2E 全仓最终清算。
-- **复查要求**：
+- **Phase 4E-2E 处理**：
 
-  1. 通过隔离测试确认 `globalThis.generateRaw` 缺失且 `SillyTavern.getContext()` 抛错时的真实行为。
-  2. 判断该异常应使用现有错误分类，或是否确有必要增加独立的 Provider 解析错误 code。
-  3. 保留原始 `cause`，不得将异常压缩为模糊错误。
-  4. 不得因此增加主副 API fallback。
-- **关闭条件**：完成真实行为测试，并将该异常纳入稳定、安全且无 fallback 的 Generation 错误契约，或通过可靠证据确认当前支持环境中该分支不可能发生。
+  1. 隔离测试复现旧行为：全局 `generateRaw` 缺失且 `getContext()` 抛错 → 普通 Error 逸出。
+  2. Core 将 Provider 解析异常包装为 `GenerationTransportError`：
+     - code：`MAIN_PROVIDER_RESOLUTION_FAILED`
+     - stage：`resolve_provider`
+     - diagnostics：`provider / messageCount / durationMs`
+     - `cause` 保留原始错误身份
+  3. Provider 优先级不变：全局 `generateRaw` 优先；存在时不调用 `getContext()`。
+  4. `getContext()` 正常但无 `generateRaw` 仍为 `MAIN_PROVIDER_MISSING`。
+  5. 无主副 API fallback。
+- **当前处理状态说明**：代码与隔离测试已完成，等待用户提交后 GitHub 审查及最终 SHA 补录；不得伪造实现提交 SHA。
+- **关闭条件**：GitHub 审查通过后，以纯文档提交将状态改为“已关闭”，并补录真实实现 SHA 与审查结论。
 - **最终关闭记录**：

@@ -192,7 +192,26 @@ export async function generateWithMainApi({
 }) {
   const startedAt = Date.now();
   const messageCount = Array.isArray(messages) ? messages.length : 0;
-  const generateRaw = getMainGenerateRaw();
+  let generateRaw;
+  try {
+    generateRaw = getMainGenerateRaw();
+  } catch (error) {
+    // Provider 解析阶段异常（例如 getContext() 自身抛错），不得伪装成 Provider 缺失，也不回退副 API。
+    const originalMessage = sanitizeSensitiveText(error?.message || String(error));
+    throw new GenerationTransportError(
+      `解析酒馆主 API Provider 失败：${originalMessage}`,
+      {
+        code: 'MAIN_PROVIDER_RESOLUTION_FAILED',
+        stage: 'resolve_provider',
+        diagnostics: {
+          provider: 'main',
+          messageCount,
+          durationMs: getDurationMs(startedAt),
+        },
+        cause: error,
+      },
+    );
+  }
   if (typeof generateRaw !== 'function') {
     throw new GenerationTransportError(
       '当前环境未发现 generateRaw，无法调用酒馆主 API。',

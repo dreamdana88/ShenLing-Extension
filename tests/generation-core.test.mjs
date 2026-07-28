@@ -55,6 +55,7 @@ function createResponse({
 async function withGlobals({
   generateRaw = ABSENT,
   contextGenerateRaw = ABSENT,
+  getContext = ABSENT,
   fetch = ABSENT,
 } = {}, run) {
   const previous = new Map();
@@ -68,13 +69,17 @@ async function withGlobals({
   if (generateRaw === ABSENT) delete globalThis.generateRaw;
   else globalThis.generateRaw = generateRaw;
 
-  globalThis.SillyTavern = {
-    getContext: () => (
-      contextGenerateRaw === ABSENT
-        ? {}
-        : { generateRaw: contextGenerateRaw }
-    ),
-  };
+  if (getContext !== ABSENT) {
+    globalThis.SillyTavern = { getContext };
+  } else {
+    globalThis.SillyTavern = {
+      getContext: () => (
+        contextGenerateRaw === ABSENT
+          ? {}
+          : { generateRaw: contextGenerateRaw }
+      ),
+    };
+  }
 
   if (fetch === ABSENT) delete globalThis.fetch;
   else globalThis.fetch = fetch;
@@ -458,6 +463,70 @@ test('main API uses the SillyTavern context provider only when the global provid
     const result = await generateWithMainApi({ messages });
     assert.equal(result.content, 'context result');
     assert.equal(contextCalls, 1);
+  });
+});
+
+test('main API prefers global generateRaw and never calls getContext when it exists', async () => {
+  let contextCalls = 0;
+  let generateCalls = 0;
+  await withGlobals({
+    generateRaw: async ({ prompt }) => {
+      generateCalls += 1;
+      assert.strictEqual(prompt, messages);
+      return 'global result';
+    },
+    getContext: () => {
+      contextCalls += 1;
+      throw new Error('getContext must not be called when global generateRaw exists');
+    },
+  }, async () => {
+    const result = await generateWithMainApi({ messages });
+    assert.equal(result.content, 'global result');
+    assert.equal(generateCalls, 1);
+    assert.equal(contextCalls, 0);
+  });
+});
+
+test('main API getContext resolution failure becomes MAIN_PROVIDER_RESOLUTION_FAILED without fallback', async () => {
+  // 使用现有 sanitizer 可识别的 Authorization 形态，验证 message 清洗而非臆造新脱敏规则。
+  const original = new Error(`context resolution failed Authorization: Bearer ${SECRET}`);
+  let secondaryCalls = 0;
+  await withGlobals({
+    getContext: () => {
+      throw original;
+    },
+    fetch: async () => {
+      secondaryCalls += 1;
+      return createResponse();
+    },
+  }, async () => {
+    const error = await getRejection(generateWithMainApi({ messages }));
+    assertTransportError(error, 'MAIN_PROVIDER_RESOLUTION_FAILED', 'resolve_provider');
+    assert.equal(error.cause, original);
+    assert.match(error.message, /解析酒馆主 API Provider 失败/);
+    assert.match(error.message, /Authorization:\s*\[REDACTED\]/);
+    assert.equal(error.message.includes(SECRET), false);
+    assert.equal(error.message.includes(`Bearer ${SECRET}`), false);
+    assert.equal(error.diagnostics.provider, 'main');
+    assert.equal(error.diagnostics.messageCount, 2);
+    assert.equal(Object.hasOwn(error.diagnostics, 'url'), false);
+    assert.equal(Object.hasOwn(error.diagnostics, 'profileName'), false);
+    assert.equal(getGenerationErrorContext(error)?.code, 'MAIN_PROVIDER_RESOLUTION_FAILED');
+    // cause 保留原始身份（可含敏感原文）；对外 message / diagnostics 不得泄漏。
+    assert.equal(String(error.cause?.message || '').includes(SECRET), true);
+    assert.equal(JSON.stringify(error.diagnostics).includes(SECRET), false);
+    assert.equal(secondaryCalls, 0);
+  });
+});
+
+test('main API missing provider remains MAIN_PROVIDER_MISSING when getContext returns no generateRaw', async () => {
+  await withGlobals({
+    getContext: () => ({ someOtherField: true }),
+  }, async () => {
+    const error = await getRejection(generateWithMainApi({ messages }));
+    assertTransportError(error, 'MAIN_PROVIDER_MISSING', 'resolve_provider');
+    assert.notEqual(error.code, 'MAIN_PROVIDER_RESOLUTION_FAILED');
+    assert.equal(getGenerationErrorContext(error)?.stage, 'resolve_provider');
   });
 });
 

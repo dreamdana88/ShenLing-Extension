@@ -259,17 +259,6 @@ export function buildMemorySummaryMessages(prompt) {
   ];
 }
 
-export function getOpenAiResponseContent(data) {
-  const firstChoice = data?.choices?.[0];
-  const messageContent = firstChoice?.message?.content;
-  if (typeof messageContent === 'string') return messageContent;
-  if (Array.isArray(messageContent)) {
-    return messageContent.map(item => (typeof item === 'string' ? item : item?.text || '')).join('');
-  }
-  if (typeof firstChoice?.text === 'string') return firstChoice.text;
-  return '';
-}
-
 export function buildSummaryPromptContent(aiContent, userContent = '') {
   const cleanAiContent = String(aiContent || '').trim();
   const cleanUserContent = String(userContent || '').trim();
