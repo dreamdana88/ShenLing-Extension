@@ -160,3 +160,25 @@ Phase 4E：Generation 收尾与 timeout 策略复查。
 - **建议处理阶段**：Phase 4E-2A / Phase 4E-2B。
 - **后续设计方向**：可评估由 Generation Core 在错误对象中附带经过安全处理的结构化请求上下文，例如 URL、model、messages 数量、是否 stream、HTTP status，以及可安全记录的请求体摘要；不在本观察项中确定最终 API 设计。
 - **最终关闭记录**：
+
+## OBS-007：主 API Provider 解析异常尚未纳入统一 Generation 错误契约
+
+- **来源 Phase**：Phase 4E-2A GitHub 实际提交审查。
+- **当前状态**：观察中。
+- **现象或能力边界**：`generateWithMainApi()` 优先使用 `globalThis.generateRaw`。当该入口不存在时，Core 会继续调用 `globalThis.SillyTavern?.getContext?.()` 获取备用的原生 `generateRaw`。如果 `getContext()` 函数存在但自身执行抛错，该异常发生在主 API Provider 解析过程中，目前会以普通 `Error` 直接向上抛出，尚未包装为 `GenerationTransportError`，因此不会携带稳定的 `code`、`stage` 和安全 `diagnostics`。
+- **当前影响**：
+
+  - 当前 SillyTavern 1.18.0 实际环境优先命中 `globalThis.generateRaw`，该异常分支触发概率较低。
+  - 不影响主 API 正常成功路径。
+  - 不会吞掉原始错误，也不会自动切换到副 API。
+  - 若未来运行环境、加载顺序或宿主接口发生变化并触发该分支，Feature 失败日志无法通过 `getGenerationErrorContext()` 取得统一错误上下文。
+- **当前处理**：本问题不阻塞 Phase 4E-2B。2B 只负责让七个 Feature 接入已建立的错误契约，不修改 Generation Core，也不新增 Provider 解析错误分类。
+- **建议复查阶段**：Phase 4E-2E 全仓最终清算。
+- **复查要求**：
+
+  1. 通过隔离测试确认 `globalThis.generateRaw` 缺失且 `SillyTavern.getContext()` 抛错时的真实行为。
+  2. 判断该异常应使用现有错误分类，或是否确有必要增加独立的 Provider 解析错误 code。
+  3. 保留原始 `cause`，不得将异常压缩为模糊错误。
+  4. 不得因此增加主副 API fallback。
+- **关闭条件**：完成真实行为测试，并将该异常纳入稳定、安全且无 fallback 的 Generation 错误契约，或通过可靠证据确认当前支持环境中该分支不可能发生。
+- **最终关闭记录**：
