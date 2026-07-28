@@ -11,6 +11,7 @@ import { buildCharacterFoundationBlock } from '../../core/character.js';
 import {
   generateWithMainApi,
   generateWithSecondaryApi,
+  getGenerationErrorContext,
 } from '../../core/generation.js';
 import {
   replacePromptMacros,
@@ -365,17 +366,25 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
       });
       return String(apiResult.content || '').trim();
     } catch (error) {
+      const generationErrorContext = getGenerationErrorContext(error);
+      const errorCode = generationErrorContext?.code || '';
+      const errorStage = generationErrorContext?.stage || '';
+      const diagnostics = generationErrorContext?.diagnostics || null;
       addCommunicationLog({
         moduleName: '自动总结 / 主 API',
         taskType: type,
         status: 'failure',
         startedAt: formatTimestamp(),
-        durationMs: Math.round(performance.now() - startedAt),
-        profileName: apiResult?.profileName || '酒馆当前连接',
-        model: apiResult?.model || '酒馆主 API',
-        url: apiResult?.url || '酒馆当前连接',
+        durationMs: diagnostics?.durationMs ?? Math.round(performance.now() - startedAt),
+        profileName: diagnostics?.profileName || apiResult?.profileName || '酒馆当前连接',
+        model: diagnostics?.model || apiResult?.model || '酒馆主 API',
+        url: diagnostics?.url || apiResult?.url || '酒馆当前连接',
+        httpStatus: diagnostics?.httpStatus ?? '',
         messages,
         requestBody: apiResult?.requestBody || null,
+        responseText: diagnostics?.responseText || '',
+        errorCode,
+        errorStage,
         errorStack: error.stack || error.message || error,
       });
       throw error;
@@ -410,17 +419,25 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
     });
     return content;
   } catch (error) {
+    const generationErrorContext = getGenerationErrorContext(error);
+    const errorCode = generationErrorContext?.code || '';
+    const errorStage = generationErrorContext?.stage || '';
+    const diagnostics = generationErrorContext?.diagnostics || null;
     addCommunicationLog({
       moduleName: '自动总结 / 副 API',
       taskType: type,
       status: 'failure',
       startedAt: formatTimestamp(),
-      durationMs: Math.round(performance.now() - startedAt),
-      profileName: apiResult?.profileName || profile?.name,
-      model: apiResult?.model || profile?.model,
-      url: apiResult?.url || '',
+      durationMs: diagnostics?.durationMs ?? Math.round(performance.now() - startedAt),
+      profileName: diagnostics?.profileName || apiResult?.profileName || profile?.name,
+      model: diagnostics?.model || apiResult?.model || profile?.model,
+      url: diagnostics?.url || apiResult?.url || '',
+      httpStatus: diagnostics?.httpStatus ?? '',
       messages,
       requestBody: apiResult?.requestBody || null,
+      responseText: diagnostics?.responseText || '',
+      errorCode,
+      errorStage,
       errorStack: error.stack || error.message || error,
     });
     throw error;

@@ -9,6 +9,7 @@ import { getChatMessagesSafe, getContextSafe } from '../../core/chat.js';
 import {
   generateWithMainApi,
   generateWithSecondaryApi,
+  getGenerationErrorContext,
 } from '../../core/generation.js';
 import {
   resolvePromptMessages,
@@ -1338,6 +1339,10 @@ export async function runCaptureGeneration({
       drafts: targetCapture.drafts,
     };
   } catch (error) {
+    const generationErrorContext = getGenerationErrorContext(error);
+    const errorCode = generationErrorContext?.code || '';
+    const errorStage = generationErrorContext?.stage || '';
+    const diagnostics = generationErrorContext?.diagnostics || null;
     const rawResponse = error.rawResponse || parseResult?.rawResponse || apiResult?.responseText || '';
     if (persist) saveCaptureError(error.message || String(error), rawResponse);
     getWorkflowOption('addCommunicationLog')?.({
@@ -1345,15 +1350,23 @@ export async function runCaptureGeneration({
       taskType: '设定采集草稿生成',
       status: 'failure',
       startedAt,
-      durationMs: Math.round(nowMs() - startedMs),
-      profileName: apiResult?.profileName || (resolvedApiMode === 'main_api' ? '酒馆当前连接' : ''),
-      model: apiResult?.model || (resolvedApiMode === 'main_api' ? '酒馆主 API' : ''),
-      url: apiResult?.url || (resolvedApiMode === 'main_api' ? '酒馆当前连接' : ''),
-      httpStatus: apiResult?.httpStatus || '',
+      durationMs: diagnostics?.durationMs ?? Math.round(nowMs() - startedMs),
+      profileName: diagnostics?.profileName
+        || apiResult?.profileName
+        || (resolvedApiMode === 'main_api' ? '酒馆当前连接' : ''),
+      model: diagnostics?.model
+        || apiResult?.model
+        || (resolvedApiMode === 'main_api' ? '酒馆主 API' : ''),
+      url: diagnostics?.url
+        || apiResult?.url
+        || (resolvedApiMode === 'main_api' ? '酒馆当前连接' : ''),
+      httpStatus: diagnostics?.httpStatus ?? apiResult?.httpStatus ?? '',
       messages: prepared?.messages || [],
       requestBody: apiResult?.requestBody || {},
-      responseText: apiResult?.responseText || rawResponse,
+      responseText: diagnostics?.responseText || apiResult?.responseText || rawResponse,
       parsedResult: parseResult || null,
+      errorCode,
+      errorStage,
       errorStack: error.stack || error.message || error,
     });
     throw error;

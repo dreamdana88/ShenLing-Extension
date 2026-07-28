@@ -9,6 +9,7 @@ import {
 import {
   generateWithMainApi,
   generateWithSecondaryApi,
+  getGenerationErrorContext,
 } from '../../core/generation.js';
 import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
@@ -603,6 +604,10 @@ function logAffectionProfileBuild({
   error = null,
 }) {
   if (!enabled) return;
+  const generationErrorContext = status === 'failure' ? getGenerationErrorContext(error) : null;
+  const errorCode = generationErrorContext?.code || '';
+  const errorStage = generationErrorContext?.stage || '';
+  const diagnostics = generationErrorContext?.diagnostics || null;
   getWorkflowOption('addCommunicationLog')?.({
     moduleName: task.apiMode === 'main_api' ? '好感度建档 / 主 API' : '好感度建档 / 副 API',
     taskType: task.operation === 'regenerate'
@@ -610,11 +615,17 @@ function logAffectionProfileBuild({
       : task.buildMode === 'generic' ? '通用阶段表预建档' : '专属阶段表预建档',
     status,
     startedAt,
-    durationMs: Math.round(performance.now() - startedMs),
-    profileName: apiResult?.profileName || (task.apiMode === 'main_api' ? '酒馆当前连接' : ''),
-    model: apiResult?.model || (task.apiMode === 'main_api' ? '酒馆主 API' : ''),
-    url: apiResult?.url || (task.apiMode === 'main_api' ? '酒馆当前连接' : ''),
-    httpStatus: apiResult?.httpStatus || '',
+    durationMs: diagnostics?.durationMs ?? Math.round(performance.now() - startedMs),
+    profileName: diagnostics?.profileName
+      || apiResult?.profileName
+      || (task.apiMode === 'main_api' ? '酒馆当前连接' : ''),
+    model: diagnostics?.model
+      || apiResult?.model
+      || (task.apiMode === 'main_api' ? '酒馆主 API' : ''),
+    url: diagnostics?.url
+      || apiResult?.url
+      || (task.apiMode === 'main_api' ? '酒馆当前连接' : ''),
+    httpStatus: diagnostics?.httpStatus ?? apiResult?.httpStatus ?? '',
     messages,
     requestBody: apiResult?.requestBody || {
       buildRequestId: task.buildRequestId,
@@ -625,9 +636,10 @@ function logAffectionProfileBuild({
       initialValueTenths: task.initialValueTenths,
       buildMode: task.buildMode,
     },
-    responseText: apiResult?.responseText || '',
+    responseText: diagnostics?.responseText || apiResult?.responseText || '',
     rawResultContent: apiResult?.rawContent || '',
     parsedResult,
+    ...(status === 'failure' ? { errorCode, errorStage } : {}),
     errorStack: error?.stack || error?.message || error || '',
   });
 }
@@ -635,6 +647,7 @@ function logAffectionProfileBuild({
 async function executeCustomAffectionProfileBuild(task, {
   requestCustomProfile,
   resolveContextMaterial,
+  onMessagesReady = null,
 }) {
   const contextMaterial = await resolveContextMaterial(task.roleName);
   const messages = buildAffectionProfileMessages({
@@ -643,6 +656,9 @@ async function executeCustomAffectionProfileBuild(task, {
     userRequirement: task.userRequirement,
     contextMaterial,
   });
+  if (typeof onMessagesReady === 'function') {
+    onMessagesReady(messages);
+  }
   const apiResult = requestCustomProfile
     ? await requestCustomProfile({ task: { ...task }, messages, contextMaterial })
     : await requestAffectionProfileStages({ messages, apiMode: task.apiMode });
@@ -742,10 +758,14 @@ async function runAffectionBuildCandidate(candidate, pending, options) {
 
   saveAffectionBuildState(persist);
   let result = null;
+  let requestMessages = [];
   try {
     result = await executeCustomAffectionProfileBuild(task, {
       requestCustomProfile,
       resolveContextMaterial,
+      onMessagesReady: messages => {
+        requestMessages = messages;
+      },
     });
     const validation = getCurrentTaskState(task, { getCurrentSnapshot, getCurrentChatState });
     if (!validation.valid) {
@@ -807,7 +827,7 @@ async function runAffectionBuildCandidate(candidate, pending, options) {
       status: 'failure',
       startedAt,
       startedMs,
-      messages: result?.messages || [],
+      messages: result?.messages || requestMessages,
       apiResult: result?.apiResult || null,
       error,
     });
@@ -870,10 +890,14 @@ export async function runAffectionProfileBuildApiPreview({ roleName, initialValu
   const startedAt = formatTimestamp();
   const startedMs = performance.now();
   let result = null;
+  let requestMessages = [];
   try {
     result = await executeCustomAffectionProfileBuild(task, {
       requestCustomProfile: null,
       resolveContextMaterial: resolveAffectionProfileContext,
+      onMessagesReady: messages => {
+        requestMessages = messages;
+      },
     });
     const profileDraft = createProfileDraft(task, result.stages);
     logAffectionProfileBuild({
@@ -892,7 +916,7 @@ export async function runAffectionProfileBuildApiPreview({ roleName, initialValu
       status: 'failure',
       startedAt,
       startedMs,
-      messages: result?.messages || [],
+      messages: result?.messages || requestMessages,
       apiResult: result?.apiResult || null,
       error,
     });

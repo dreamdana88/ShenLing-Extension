@@ -5,6 +5,7 @@ import {
 import {
   generateWithMainApi,
   generateWithSecondaryApi,
+  getGenerationErrorContext,
 } from "../../core/generation.js";
 import { replacePromptMessageMacros } from "../../core/macros.js";
 import {
@@ -588,24 +589,37 @@ async function runMiniTheaterGeneration() {
 
     return result;
   } catch (error) {
+    const generationErrorContext = getGenerationErrorContext(error);
+    const errorCode = generationErrorContext?.code || "";
+    const errorStage = generationErrorContext?.stage || "";
+    const diagnostics = generationErrorContext?.diagnostics || null;
     getPanelOption("addCommunicationLog")?.({
       moduleName:
         apiMode === "main_api" ? "小剧场 / 主 API" : "小剧场 / 副 API",
       taskType: "小剧场生成",
       status: "failure",
       startedAt,
-      durationMs: Math.round(performance.now() - startedMs),
+      durationMs: diagnostics?.durationMs ?? Math.round(performance.now() - startedMs),
       profileName:
+        diagnostics?.profileName ||
         apiResult?.profileName ||
         (apiMode === "main_api" ? "酒馆当前连接" : ""),
-      model: apiResult?.model || (apiMode === "main_api" ? "酒馆主 API" : ""),
-      url: apiResult?.url || (apiMode === "main_api" ? "酒馆当前连接" : ""),
-      httpStatus: apiResult?.httpStatus || "",
+      model:
+        diagnostics?.model ||
+        apiResult?.model ||
+        (apiMode === "main_api" ? "酒馆主 API" : ""),
+      url:
+        diagnostics?.url ||
+        apiResult?.url ||
+        (apiMode === "main_api" ? "酒馆当前连接" : ""),
+      httpStatus: diagnostics?.httpStatus ?? apiResult?.httpStatus ?? "",
       messages,
       requestBody: requestBody
         ? { ...requestBody, contextDiagnostics, selectedStyle }
         : { contextDiagnostics, selectedStyle },
-      responseText: apiResult?.responseText || "",
+      responseText: diagnostics?.responseText || apiResult?.responseText || "",
+      errorCode,
+      errorStage,
       errorStack: error.stack || error.message || error,
     });
     throw error;

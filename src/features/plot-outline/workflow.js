@@ -10,6 +10,7 @@ import {
 import {
   generateWithMainApi,
   generateWithSecondaryApi,
+  getGenerationErrorContext,
 } from '../../core/generation.js';
 import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
@@ -682,21 +683,33 @@ export async function runPlotOutlineGeneration({ userDirection } = {}) {
 
     return { draft, replacements, contextDiagnostics };
   } catch (error) {
+    const generationErrorContext = getGenerationErrorContext(error);
+    const errorCode = generationErrorContext?.code || '';
+    const errorStage = generationErrorContext?.stage || '';
+    const diagnostics = generationErrorContext?.diagnostics || null;
     getWorkflowOption('addCommunicationLog')?.({
       moduleName: apiMode === 'main_api' ? '剧情大纲 / 主 API' : '剧情大纲 / 副 API',
       taskType: '剧情大纲生成',
       status: 'failure',
       startedAt,
-      durationMs: Math.round(performance.now() - startedMs),
-      profileName: apiResult?.profileName || (apiMode === 'main_api' ? '酒馆当前连接' : ''),
-      model: apiResult?.model || (apiMode === 'main_api' ? '酒馆主 API' : ''),
-      url: apiResult?.url || (apiMode === 'main_api' ? '酒馆当前连接' : ''),
-      httpStatus: apiResult?.httpStatus || '',
+      durationMs: diagnostics?.durationMs ?? Math.round(performance.now() - startedMs),
+      profileName: diagnostics?.profileName
+        || apiResult?.profileName
+        || (apiMode === 'main_api' ? '酒馆当前连接' : ''),
+      model: diagnostics?.model
+        || apiResult?.model
+        || (apiMode === 'main_api' ? '酒馆主 API' : ''),
+      url: diagnostics?.url
+        || apiResult?.url
+        || (apiMode === 'main_api' ? '酒馆当前连接' : ''),
+      httpStatus: diagnostics?.httpStatus ?? apiResult?.httpStatus ?? '',
       messages,
       requestBody: apiResult?.requestBody
         ? { ...apiResult.requestBody, contextDiagnostics }
         : { contextDiagnostics },
-      responseText: apiResult?.responseText || '',
+      responseText: diagnostics?.responseText || apiResult?.responseText || '',
+      errorCode,
+      errorStage,
       errorStack: error.stack || error.message || error,
     });
     throw error;

@@ -6,6 +6,7 @@ import {
 import {
   generateWithMainApi,
   generateWithSecondaryApi,
+  getGenerationErrorContext,
 } from '../../core/generation.js';
 import {
   getChatState,
@@ -1019,17 +1020,25 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
       }
       return parsedResult;
     } catch (error) {
+      const generationErrorContext = getGenerationErrorContext(error);
+      const errorCode = generationErrorContext?.code || '';
+      const errorStage = generationErrorContext?.stage || '';
+      const diagnostics = generationErrorContext?.diagnostics || null;
       addCommunicationLog?.({
         moduleName: '日程日记 / 主 API',
         taskType,
         status: 'failure',
         startedAt: formatTimestamp(),
-        durationMs: Math.round(performance.now() - startedAt),
-        profileName: '酒馆当前连接',
-        model: '酒馆主 API',
-        url: '酒馆当前连接',
+        durationMs: diagnostics?.durationMs ?? Math.round(performance.now() - startedAt),
+        profileName: diagnostics?.profileName || '酒馆当前连接',
+        model: diagnostics?.model || '酒馆主 API',
+        url: diagnostics?.url || '酒馆当前连接',
+        httpStatus: diagnostics?.httpStatus ?? '',
         messages,
         requestBody: { prompt: messages },
+        responseText: diagnostics?.responseText || '',
+        errorCode,
+        errorStage,
         errorStack: error.stack || error.message || error,
       });
       throw error;
@@ -1065,17 +1074,25 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
     }
     return parsedResult;
   } catch (error) {
+    const generationErrorContext = getGenerationErrorContext(error);
+    const errorCode = generationErrorContext?.code || '';
+    const errorStage = generationErrorContext?.stage || '';
+    const diagnostics = generationErrorContext?.diagnostics || null;
     addCommunicationLog?.({
       moduleName: '日程日记 / 副 API',
       taskType,
       status: 'failure',
       startedAt: formatTimestamp(),
-      durationMs: Math.round(performance.now() - startedAt),
-      profileName: profile?.name,
-      model: profile?.model,
-      url: apiResult?.url || '',
+      durationMs: diagnostics?.durationMs ?? Math.round(performance.now() - startedAt),
+      profileName: diagnostics?.profileName || profile?.name,
+      model: diagnostics?.model || profile?.model,
+      url: diagnostics?.url || apiResult?.url || '',
+      httpStatus: diagnostics?.httpStatus ?? '',
       messages,
       requestBody: apiResult?.requestBody || null,
+      responseText: diagnostics?.responseText || '',
+      errorCode,
+      errorStage,
       errorStack: error.stack || error.message || error,
     });
     throw error;

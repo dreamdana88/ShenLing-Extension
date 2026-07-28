@@ -181,7 +181,10 @@ test('Summary exposes provider errors and never falls back between APIs', async 
       return true;
     });
     assert.equal(logs[0].status, 'failure');
-    assert.equal(logs[0].url, '');
+    // Phase 4E-2B：Transport diagnostics 会补入安全 URL；requestBody 在 Core 返回前仍为 null。
+    assert.equal(logs[0].url, 'https://example.invalid/chat/completions');
+    assert.equal(logs[0].errorCode, 'SECONDARY_FETCH_FAILED');
+    assert.equal(logs[0].errorStage, 'send_request');
     assert.equal(logs[0].requestBody, null);
     assert.equal(mainCalls, 0);
   });
