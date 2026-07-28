@@ -337,36 +337,80 @@ export async function generateWithSecondaryApi({
   }
 
   let response;
-  try {
-    response = await runWithTimeout(
-      () => fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestBody),
-      }),
-      timeoutMs,
-      () => new GenerationTransportError(
-        sanitizeSensitiveText(timeoutMessage, [apiKey]),
-        {
-          code: 'SECONDARY_TIMEOUT',
-          stage: 'send_request',
-          diagnostics: {
-            provider: 'secondary',
-            profileName,
-            model,
-            url: safeUrl,
-            messageCount,
-            stream: false,
-            durationMs: getDurationMs(startedAt),
+  let responseText;
+  let currentStage = 'send_request';
+  let didTimeout = false;
+  let timeoutStage = 'send_request';
+  let timeoutTimer = null;
+  const timeoutEnabled = Number.isFinite(timeoutMs) && timeoutMs > 0;
+  const controller = timeoutEnabled ? new AbortController() : null;
+  const fetchOptions = {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(requestBody),
+  };
+  if (controller) {
+    fetchOptions.signal = controller.signal;
+  }
+
+  const networkTask = Promise.resolve().then(async () => {
+    response = await fetch(url, fetchOptions);
+    currentStage = 'read_response';
+    responseText = await response.text();
+  });
+
+  let timeoutPromise = null;
+  if (timeoutEnabled) {
+    timeoutPromise = new Promise((_, reject) => {
+      timeoutTimer = setTimeout(() => {
+        if (didTimeout) return;
+
+        didTimeout = true;
+        timeoutStage = currentStage;
+        let abortCause;
+        try {
+          controller.abort();
+        } catch (error) {
+          abortCause = error;
+        }
+
+        reject(new GenerationTransportError(
+          sanitizeSensitiveText(timeoutMessage, [apiKey]),
+          {
+            code: 'SECONDARY_TIMEOUT',
+            stage: timeoutStage,
+            diagnostics: {
+              provider: 'secondary',
+              profileName,
+              model,
+              url: safeUrl,
+              httpStatus: (
+                timeoutStage === 'read_response'
+                && Number.isFinite(response?.status)
+              )
+                ? response.status
+                : null,
+              messageCount,
+              stream: false,
+              responseText: '',
+              responseTextTruncated: false,
+              durationMs: getDurationMs(startedAt),
+            },
+            cause: abortCause,
           },
-        },
-      ),
-    );
+        ));
+      }, timeoutMs);
+    });
+  }
+
+  try {
+    if (timeoutPromise) {
+      await Promise.race([networkTask, timeoutPromise]);
+    } else {
+      await networkTask;
+    }
   } catch (error) {
-    if (
-      error instanceof GenerationTransportError
-      && error.code === 'SECONDARY_TIMEOUT'
-    ) {
+    if (didTimeout) {
       throw error;
     }
 
@@ -374,6 +418,27 @@ export async function generateWithSecondaryApi({
       error?.message || String(error),
       [apiKey],
     );
+    if (currentStage === 'read_response') {
+      throw new GenerationTransportError(
+        `读取副 API 响应正文失败：${originalMessage}`,
+        {
+          code: 'SECONDARY_BODY_READ_FAILED',
+          stage: 'read_response',
+          diagnostics: {
+            provider: 'secondary',
+            profileName,
+            model,
+            url: safeUrl,
+            httpStatus: Number.isFinite(response?.status) ? response.status : null,
+            messageCount,
+            stream: false,
+            durationMs: getDurationMs(startedAt),
+          },
+          cause: error,
+        },
+      );
+    }
+
     throw new GenerationTransportError(
       `副 API 请求发送失败：${originalMessage}`,
       {
@@ -391,35 +456,12 @@ export async function generateWithSecondaryApi({
         cause: error,
       },
     );
+  } finally {
+    if (timeoutTimer !== null) {
+      clearTimeout(timeoutTimer);
+    }
   }
 
-  let responseText;
-  try {
-    responseText = await response.text();
-  } catch (error) {
-    const originalMessage = sanitizeSensitiveText(
-      error?.message || String(error),
-      [apiKey],
-    );
-    throw new GenerationTransportError(
-      `读取副 API 响应正文失败：${originalMessage}`,
-      {
-        code: 'SECONDARY_BODY_READ_FAILED',
-        stage: 'read_response',
-        diagnostics: {
-          provider: 'secondary',
-          profileName,
-          model,
-          url: safeUrl,
-          httpStatus: Number.isFinite(response?.status) ? response.status : null,
-          messageCount,
-          stream: false,
-          durationMs: getDurationMs(startedAt),
-        },
-        cause: error,
-      },
-    );
-  }
   let responseJson = null;
   try {
     responseJson = responseText ? JSON.parse(responseText) : null;

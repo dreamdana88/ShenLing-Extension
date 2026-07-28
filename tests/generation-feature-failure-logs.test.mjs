@@ -397,6 +397,51 @@ test('Schedule secondary fetch failure enriches failure log and rethrows origina
   });
 });
 
+test('Schedule secondary body timeout keeps Phase 4E-2B failure diagnostics', async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  let fetchSignal = null;
+  globalThis.setTimeout = (callback, timeoutMs, ...args) => originalSetTimeout(
+    callback,
+    timeoutMs === 180000 ? 5 : timeoutMs,
+    ...args,
+  );
+
+  try {
+    await withHarness({
+      fetchImpl: async (_url, options) => {
+        fetchSignal = options.signal;
+        return createResponse({
+          status: 200,
+          text: async () => new Promise(() => {}),
+        });
+      },
+      configure: options => configureScheduleWorkflow(options),
+    }, async ({ logs }) => {
+      await assert.rejects(
+        runScheduleGeneration({ userDirection: '正文超时日志' }),
+        error => {
+          assert.equal(error.code, 'SECONDARY_TIMEOUT');
+          assert.equal(error.stage, 'read_response');
+          return true;
+        },
+      );
+      assert.equal(fetchSignal.aborted, true);
+      assert.equal(logs.length, 1);
+      assertTransportFailureLog(logs[0], {
+        code: 'SECONDARY_TIMEOUT',
+        stage: 'read_response',
+      });
+      assert.equal(logs[0].profileName, 'Feature Secondary');
+      assert.equal(logs[0].model, 'feature-model');
+      assert.equal(logs[0].url, 'https://example.invalid/chat/completions');
+      assert.equal(logs[0].httpStatus, 200);
+      assert.ok(Number.isFinite(logs[0].durationMs));
+    });
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
 test('Schedule success path does not write errorCode or errorStage', async () => {
   const scheduleJson = JSON.stringify({
     title: '测试七日',
