@@ -1,5 +1,149 @@
 import { buildApiUrl } from './api.js';
 
+const RESPONSE_TEXT_LIMIT = 16384;
+const SENSITIVE_QUERY_KEYS = new Set([
+  'key',
+  'api_key',
+  'apikey',
+  'token',
+  'access_token',
+  'auth',
+  'authorization',
+  'cookie',
+  'session',
+]);
+
+function getDurationMs(startedAt) {
+  const durationMs = Date.now() - startedAt;
+  return Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
+}
+
+function sanitizeSensitiveText(value, knownSecrets = []) {
+  let sanitized = String(value ?? '');
+
+  for (const secret of knownSecrets) {
+    const normalized = String(secret || '');
+    if (normalized) {
+      sanitized = sanitized.split(normalized).join('[REDACTED]');
+    }
+  }
+
+  return sanitized
+    .replace(
+      /(["']?(?:authorization|auth)["']?\s*[:=]\s*["']?)(?:Bearer\s+)?([^"'\s,;&}\]]+)/gi,
+      '$1[REDACTED]',
+    )
+    .replace(
+      /(["']?(?:api[_-]?key|apikey|access[_-]?token|token|cookie|session)["']?\s*[:=]\s*["']?)([^"'\s,;&}\]]+)/gi,
+      '$1[REDACTED]',
+    )
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]');
+}
+
+function sanitizeUrl(value, knownSecrets = []) {
+  try {
+    const url = new URL(String(value || ''));
+    url.username = '';
+    url.password = '';
+    url.hash = '';
+    for (const key of [...url.searchParams.keys()]) {
+      if (SENSITIVE_QUERY_KEYS.has(key.toLowerCase())) {
+        url.searchParams.set(key, '[REDACTED]');
+      }
+    }
+    return sanitizeSensitiveText(url.toString(), knownSecrets);
+  } catch {
+    return '';
+  }
+}
+
+function sanitizeResponseText(value, knownSecrets = []) {
+  const sanitized = sanitizeSensitiveText(value, knownSecrets);
+  return {
+    responseText: sanitized.slice(0, RESPONSE_TEXT_LIMIT),
+    responseTextTruncated: sanitized.length > RESPONSE_TEXT_LIMIT,
+  };
+}
+
+function buildSafeDiagnostics(source = {}) {
+  const diagnostics = {};
+
+  if (source.provider === 'main' || source.provider === 'secondary') {
+    diagnostics.provider = source.provider;
+  }
+  if (typeof source.profileName === 'string') {
+    diagnostics.profileName = source.profileName;
+  }
+  if (typeof source.model === 'string') {
+    diagnostics.model = source.model;
+  }
+  if (typeof source.url === 'string') {
+    diagnostics.url = sanitizeUrl(source.url);
+  }
+  if (source.httpStatus === null || Number.isFinite(source.httpStatus)) {
+    diagnostics.httpStatus = source.httpStatus;
+  }
+  if (Number.isFinite(source.messageCount) && source.messageCount >= 0) {
+    diagnostics.messageCount = Math.floor(source.messageCount);
+  }
+  if (typeof source.stream === 'boolean') {
+    diagnostics.stream = source.stream;
+  }
+  if (typeof source.responseText === 'string') {
+    const safeResponse = sanitizeResponseText(source.responseText);
+    diagnostics.responseText = safeResponse.responseText;
+    diagnostics.responseTextTruncated = (
+      source.responseTextTruncated === true
+      || safeResponse.responseTextTruncated
+    );
+  }
+  if (Number.isFinite(source.durationMs) && source.durationMs >= 0) {
+    diagnostics.durationMs = source.durationMs;
+  }
+
+  return Object.freeze(diagnostics);
+}
+
+export class GenerationTransportError extends Error {
+  constructor(
+    message,
+    {
+      code,
+      stage,
+      diagnostics,
+      cause,
+    } = {},
+  ) {
+    const hasCause = cause !== undefined;
+    super(message, hasCause ? { cause } : undefined);
+
+    this.name = 'GenerationTransportError';
+    this.code = code;
+    this.stage = stage;
+    this.diagnostics = buildSafeDiagnostics(diagnostics);
+
+    if (hasCause && this.cause !== cause) {
+      Object.defineProperty(this, 'cause', {
+        configurable: true,
+        value: cause,
+        writable: true,
+      });
+    }
+  }
+}
+
+export function getGenerationErrorContext(error) {
+  if (!(error instanceof GenerationTransportError)) return null;
+
+  return Object.freeze({
+    code: error.code,
+    stage: error.stage,
+    diagnostics: Object.freeze({
+      ...error.diagnostics,
+    }),
+  });
+}
+
 function getMainGenerateRaw() {
   if (typeof globalThis.generateRaw === 'function') {
     return globalThis.generateRaw;
@@ -9,7 +153,7 @@ function getMainGenerateRaw() {
   return typeof context?.generateRaw === 'function' ? context.generateRaw : null;
 }
 
-function runWithTimeout(task, timeoutMs, timeoutMessage) {
+function runWithTimeout(task, timeoutMs, createTimeoutError) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return Promise.resolve().then(task);
   }
@@ -17,7 +161,7 @@ function runWithTimeout(task, timeoutMs, timeoutMessage) {
   let timer = null;
   const timeoutPromise = new Promise((_, reject) => {
     timer = setTimeout(
-      () => reject(new Error(timeoutMessage)),
+      () => reject(createTimeoutError()),
       timeoutMs,
     );
   });
@@ -46,17 +190,66 @@ export async function generateWithMainApi({
   timeoutMs,
   timeoutMessage = '生成超时，请稍后重试。',
 }) {
+  const startedAt = Date.now();
+  const messageCount = Array.isArray(messages) ? messages.length : 0;
   const generateRaw = getMainGenerateRaw();
   if (typeof generateRaw !== 'function') {
-    throw new Error('当前环境未发现 generateRaw，无法调用酒馆主 API。');
+    throw new GenerationTransportError(
+      '当前环境未发现 generateRaw，无法调用酒馆主 API。',
+      {
+        code: 'MAIN_PROVIDER_MISSING',
+        stage: 'resolve_provider',
+        diagnostics: {
+          provider: 'main',
+          messageCount,
+          durationMs: getDurationMs(startedAt),
+        },
+      },
+    );
   }
 
   const requestBody = { prompt: messages };
-  const responseText = await runWithTimeout(
-    () => generateRaw(requestBody),
-    timeoutMs,
-    timeoutMessage,
-  );
+  let responseText;
+  try {
+    responseText = await runWithTimeout(
+      () => generateRaw(requestBody),
+      timeoutMs,
+      () => new GenerationTransportError(
+        sanitizeSensitiveText(timeoutMessage),
+        {
+          code: 'MAIN_TIMEOUT',
+          stage: 'send_request',
+          diagnostics: {
+            provider: 'main',
+            messageCount,
+            durationMs: getDurationMs(startedAt),
+          },
+        },
+      ),
+    );
+  } catch (error) {
+    if (
+      error instanceof GenerationTransportError
+      && error.code === 'MAIN_TIMEOUT'
+    ) {
+      throw error;
+    }
+
+    const originalMessage = sanitizeSensitiveText(error?.message || String(error));
+    throw new GenerationTransportError(
+      `酒馆主 API 生成失败：${originalMessage}`,
+      {
+        code: 'MAIN_PROVIDER_FAILED',
+        stage: 'send_request',
+        diagnostics: {
+          provider: 'main',
+          messageCount,
+          durationMs: getDurationMs(startedAt),
+        },
+        cause: error,
+      },
+    );
+  }
 
   return {
     profileName: '酒馆当前连接',
@@ -74,33 +267,159 @@ export async function generateWithSecondaryApi({
   timeoutMs,
   timeoutMessage = '生成超时，请稍后重试。',
 }) {
-  if (!profile) throw new Error('当前环境未提供副 API 配置。');
+  const startedAt = Date.now();
+  const messageCount = Array.isArray(messages) ? messages.length : 0;
+  if (!profile) {
+    throw new GenerationTransportError('当前环境未提供副 API 配置。', {
+      code: 'SECONDARY_PROFILE_MISSING',
+      stage: 'resolve_provider',
+      diagnostics: {
+        provider: 'secondary',
+        messageCount,
+        stream: false,
+        durationMs: getDurationMs(startedAt),
+      },
+    });
+  }
 
+  const profileName = profile.name || '未命名副 API';
   const model = String(profile.model || '').trim();
-  if (!model) throw new Error('请先在设置页选择生成模型。');
+  if (!model) {
+    throw new GenerationTransportError('请先在设置页选择生成模型。', {
+      code: 'SECONDARY_MODEL_MISSING',
+      stage: 'build_request',
+      diagnostics: {
+        provider: 'secondary',
+        profileName,
+        messageCount,
+        stream: false,
+        durationMs: getDurationMs(startedAt),
+      },
+    });
+  }
 
-  const url = buildApiUrl(profile);
+  const apiKey = String(profile.apiKey || '').trim();
+  let url;
+  try {
+    url = buildApiUrl(profile);
+  } catch (error) {
+    const originalMessage = sanitizeSensitiveText(
+      error?.message || String(error),
+      [apiKey],
+    );
+    throw new GenerationTransportError(
+      `无法构建副 API 请求地址：${originalMessage}`,
+      {
+        code: 'SECONDARY_URL_BUILD_FAILED',
+        stage: 'build_request',
+        diagnostics: {
+          provider: 'secondary',
+          profileName,
+          model,
+          url: '',
+          messageCount,
+          stream: false,
+          durationMs: getDurationMs(startedAt),
+        },
+        cause: error,
+      },
+    );
+  }
+  const safeUrl = sanitizeUrl(url, [apiKey]);
   const requestBody = {
     model,
     messages,
     stream: false,
   };
   const headers = { 'Content-Type': 'application/json' };
-  const apiKey = String(profile.apiKey || '').trim();
   if (apiKey) {
     headers.Authorization = `Bearer ${apiKey}`;
   }
 
-  const response = await runWithTimeout(
-    () => fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody),
-    }),
-    timeoutMs,
-    timeoutMessage,
-  );
-  const responseText = await response.text();
+  let response;
+  try {
+    response = await runWithTimeout(
+      () => fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
+      }),
+      timeoutMs,
+      () => new GenerationTransportError(
+        sanitizeSensitiveText(timeoutMessage, [apiKey]),
+        {
+          code: 'SECONDARY_TIMEOUT',
+          stage: 'send_request',
+          diagnostics: {
+            provider: 'secondary',
+            profileName,
+            model,
+            url: safeUrl,
+            messageCount,
+            stream: false,
+            durationMs: getDurationMs(startedAt),
+          },
+        },
+      ),
+    );
+  } catch (error) {
+    if (
+      error instanceof GenerationTransportError
+      && error.code === 'SECONDARY_TIMEOUT'
+    ) {
+      throw error;
+    }
+
+    const originalMessage = sanitizeSensitiveText(
+      error?.message || String(error),
+      [apiKey],
+    );
+    throw new GenerationTransportError(
+      `副 API 请求发送失败：${originalMessage}`,
+      {
+        code: 'SECONDARY_FETCH_FAILED',
+        stage: 'send_request',
+        diagnostics: {
+          provider: 'secondary',
+          profileName,
+          model,
+          url: safeUrl,
+          messageCount,
+          stream: false,
+          durationMs: getDurationMs(startedAt),
+        },
+        cause: error,
+      },
+    );
+  }
+
+  let responseText;
+  try {
+    responseText = await response.text();
+  } catch (error) {
+    const originalMessage = sanitizeSensitiveText(
+      error?.message || String(error),
+      [apiKey],
+    );
+    throw new GenerationTransportError(
+      `读取副 API 响应正文失败：${originalMessage}`,
+      {
+        code: 'SECONDARY_BODY_READ_FAILED',
+        stage: 'read_response',
+        diagnostics: {
+          provider: 'secondary',
+          profileName,
+          model,
+          url: safeUrl,
+          httpStatus: Number.isFinite(response?.status) ? response.status : null,
+          messageCount,
+          stream: false,
+          durationMs: getDurationMs(startedAt),
+        },
+        cause: error,
+      },
+    );
+  }
   let responseJson = null;
   try {
     responseJson = responseText ? JSON.parse(responseText) : null;
@@ -109,18 +428,61 @@ export async function generateWithSecondaryApi({
   }
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} ${response.statusText}: ${responseText}`);
+    const safeResponse = sanitizeResponseText(responseText, [apiKey]);
+    const safeStatusText = sanitizeSensitiveText(
+      response.statusText || '',
+      [apiKey],
+    ).slice(0, 128);
+    const statusSummary = safeStatusText
+      ? `${response.status} ${safeStatusText}`
+      : String(response.status);
+    throw new GenerationTransportError(
+      `副 API 请求失败（HTTP ${statusSummary}）。`,
+      {
+        code: 'SECONDARY_HTTP_ERROR',
+        stage: 'read_response',
+        diagnostics: {
+          provider: 'secondary',
+          profileName,
+          model,
+          url: safeUrl,
+          httpStatus: Number.isFinite(response.status) ? response.status : null,
+          messageCount,
+          stream: false,
+          ...safeResponse,
+          durationMs: getDurationMs(startedAt),
+        },
+      },
+    );
   }
 
   const content = responseJson
     ? getOpenAiChatCompletionContent(responseJson)
     : responseText;
   if (!String(content || '').trim()) {
-    throw new Error(`副 API 响应缺少模型正文：${responseText}`);
+    const safeResponse = sanitizeResponseText(responseText, [apiKey]);
+    throw new GenerationTransportError(
+      '副 API 接口响应中缺少可用模型正文。',
+      {
+        code: 'SECONDARY_CONTENT_MISSING',
+        stage: 'extract_content',
+        diagnostics: {
+          provider: 'secondary',
+          profileName,
+          model,
+          url: safeUrl,
+          httpStatus: Number.isFinite(response.status) ? response.status : null,
+          messageCount,
+          stream: false,
+          ...safeResponse,
+          durationMs: getDurationMs(startedAt),
+        },
+      },
+    );
   }
 
   return {
-    profileName: profile.name || '未命名副 API',
+    profileName,
     model,
     url,
     httpStatus: `${response.status} ${response.statusText}`,

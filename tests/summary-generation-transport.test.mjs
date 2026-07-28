@@ -155,7 +155,13 @@ test('Summary exposes provider errors and never falls back between APIs', async 
     generateRaw: async () => { throw mainFailure; },
     fetch: async () => { secondaryCalls += 1; return createResponse(); },
   }, async ({ logs }) => {
-    await assert.rejects(generateSummaryMemory('main failure'), error => error === mainFailure);
+    await assert.rejects(generateSummaryMemory('main failure'), error => {
+      assert.equal(error.name, 'GenerationTransportError');
+      assert.equal(error.code, 'MAIN_PROVIDER_FAILED');
+      assert.equal(error.stage, 'send_request');
+      assert.equal(error.cause, mainFailure);
+      return true;
+    });
     assert.equal(logs[0].status, 'failure');
     assert.equal(secondaryCalls, 0);
   });
@@ -167,7 +173,13 @@ test('Summary exposes provider errors and never falls back between APIs', async 
     generateRaw: async () => { mainCalls += 1; return 'unexpected'; },
     fetch: async () => { throw fetchFailure; },
   }, async ({ logs }) => {
-    await assert.rejects(generateSummaryMemory('secondary fetch failure'), error => error === fetchFailure);
+    await assert.rejects(generateSummaryMemory('secondary fetch failure'), error => {
+      assert.equal(error.name, 'GenerationTransportError');
+      assert.equal(error.code, 'SECONDARY_FETCH_FAILED');
+      assert.equal(error.stage, 'send_request');
+      assert.equal(error.cause, fetchFailure);
+      return true;
+    });
     assert.equal(logs[0].status, 'failure');
     assert.equal(logs[0].url, '');
     assert.equal(logs[0].requestBody, null);
@@ -187,6 +199,9 @@ test('Summary exposes secondary HTTP and missing-content errors without an activ
     mode: 'secondary_api',
     fetch: async () => createResponse({ body: JSON.stringify({ choices: [{ message: { content: '' } }] }) }),
   }, async () => {
-    await assert.rejects(generateSummaryMemory('missing content'), /副 API 响应缺少模型正文/);
+    await assert.rejects(
+      generateSummaryMemory('missing content'),
+      /接口响应中缺少可用模型正文/,
+    );
   });
 });
