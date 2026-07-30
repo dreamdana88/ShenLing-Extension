@@ -54,13 +54,18 @@ export function createConfirmedSummaryConsumer(options = {}) {
   const formatTimestamp = options.formatTimestamp || nowTimestamp;
   const defer = options.defer || (callback => window.setTimeout(callback, 0));
   const maxIdleDefers = Number.isInteger(options.maxIdleDefers) ? options.maxIdleDefers : 3;
+  const maxGenerationIdleRecoveryChecks = Number.isInteger(options.maxGenerationIdleRecoveryChecks)
+    ? Math.max(1, options.maxGenerationIdleRecoveryChecks)
+    : 3;
   let scheduled = false;
   let running = false;
   let idleDefers = 0;
   let sequence = 0;
   const deferredRecoveries = new Map();
+  const generationGates = new Map();
   const cancelledExecutionTokens = new Set();
   let activeExecution = null;
+  let generationIdleRecoveryScheduled = false;
 
   function createExecutionKey(chatIdentity, taskKey, executionToken) {
     return [chatIdentity, taskKey, executionToken].join('\u001f');
@@ -78,7 +83,83 @@ export function createConfirmedSummaryConsumer(options = {}) {
     task.status = 'CANCELLED';
     task.updatedAt = formatTimestamp();
     delete task.executionToken;
+    generationGates.delete(task.taskKey);
     if (reasonCode) task.reasonCode = reasonCode;
+  }
+
+  function holdConfirmedTaskUntilGenerationTerminal(task) {
+    if (!task?.taskKey || !task.chatIdentity || task.status !== 'PENDING') return false;
+    generationGates.set(task.taskKey, {
+      chatIdentity: task.chatIdentity,
+      observedGenerationStart: false,
+      observedGenerating: false,
+      idleRecoveryChecks: 0,
+    });
+    return true;
+  }
+
+  function isAwaitingGenerationTerminal(task) {
+    return generationGates.has(task?.taskKey);
+  }
+
+  function scheduleGenerationIdleRecovery() {
+    if (generationIdleRecoveryScheduled) return false;
+    generationIdleRecoveryScheduled = true;
+    defer(() => {
+      generationIdleRecoveryScheduled = false;
+      recoverAwaitingGenerationAfterIdle();
+    });
+    return true;
+  }
+
+  function handleMainGenerationStarted() {
+    const identity = getIdentity();
+    let changed = false;
+    generationGates.forEach(gate => {
+      if (gate.chatIdentity !== identity) return;
+      gate.observedGenerationStart = true;
+      gate.idleRecoveryChecks = 0;
+      changed = true;
+    });
+    if (changed) scheduleGenerationIdleRecovery();
+    return changed;
+  }
+
+  function handleMainGenerationTerminal() {
+    const identity = getIdentity();
+    let released = false;
+    generationGates.forEach((gate, taskKey) => {
+      if (gate.chatIdentity !== identity) return;
+      generationGates.delete(taskKey);
+      released = true;
+    });
+    if (released) scheduleConfirmedQueueDrain();
+    return released;
+  }
+
+  function recoverAwaitingGenerationAfterIdle() {
+    const identity = getIdentity();
+    let awaitingFurtherRecovery = false;
+    let released = false;
+    generationGates.forEach((gate, taskKey) => {
+      if (gate.chatIdentity !== identity || !gate.observedGenerationStart) return;
+      if (isGenerating()) {
+        gate.observedGenerating = true;
+        gate.idleRecoveryChecks = 0;
+        awaitingFurtherRecovery = true;
+        return;
+      }
+      gate.idleRecoveryChecks += 1;
+      if (gate.observedGenerating || gate.idleRecoveryChecks >= maxGenerationIdleRecoveryChecks) {
+        generationGates.delete(taskKey);
+        released = true;
+      } else {
+        awaitingFurtherRecovery = true;
+      }
+    });
+    if (released) scheduleConfirmedQueueDrain();
+    if (awaitingFurtherRecovery) scheduleGenerationIdleRecovery();
+    return released;
   }
 
   function restoreDeferredRecovery() {
@@ -167,6 +248,7 @@ export function createConfirmedSummaryConsumer(options = {}) {
       .filter(item => item.createdAt >= state.summary.confirmedQueueActivatedAt)
       .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)))[0];
     if (!task) return;
+    if (isAwaitingGenerationTerminal(task)) return;
     if (!isTargetValid(task)) {
       task.status = 'CANCELLED';
       task.updatedAt = formatTimestamp();
@@ -285,6 +367,10 @@ export function createConfirmedSummaryConsumer(options = {}) {
   return {
     activateQueue,
     handleAutoSummaryEnabledChanged,
+    holdConfirmedTaskUntilGenerationTerminal,
+    handleMainGenerationStarted,
+    handleMainGenerationTerminal,
+    recoverAwaitingGenerationAfterIdle,
     scheduleConfirmedQueueDrain,
     drainConfirmedQueue,
     isRunning: () => running,
@@ -305,13 +391,19 @@ export function registerConfirmedSummaryConsumer(options = {}) {
   runtimeConsumer.activateQueue(getChatState());
   const events = getTavernEventsSafe();
   [
+    events.GENERATION_STARTED,
     events.GENERATION_ENDED,
     events.GENERATION_STOPPED,
     events.MESSAGE_RECEIVED,
     events.CHARACTER_MESSAGE_RENDERED,
     events.CHAT_CHANGED,
   ].filter(Boolean).forEach(eventName => {
-    const stop = registerTavernEvent(eventName, () => runtimeConsumer.scheduleConfirmedQueueDrain());
+    const handler = eventName === events.GENERATION_STARTED
+      ? () => runtimeConsumer.handleMainGenerationStarted()
+      : (eventName === events.GENERATION_ENDED || eventName === events.GENERATION_STOPPED)
+        ? () => runtimeConsumer.handleMainGenerationTerminal()
+        : () => runtimeConsumer.scheduleConfirmedQueueDrain();
+    const stop = registerTavernEvent(eventName, handler);
     if (stop) consumerEventStops.push(stop);
   });
   consumerEventsRegistered = true;

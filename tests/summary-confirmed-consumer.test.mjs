@@ -44,6 +44,7 @@ function createHarness(tasks, options = {}) {
     }),
     formatTimestamp: () => '2026-07-30T00:00:01.000Z',
     defer: () => {},
+    maxGenerationIdleRecoveryChecks: options.maxGenerationIdleRecoveryChecks,
   });
   return { state, calls, consumer };
 }
@@ -273,4 +274,70 @@ test('generation-in-progress defers consumption without changing a pending task'
   await harness.consumer.drainConfirmedQueue();
   assert.equal(harness.state.summary.confirmedTasks[0].status, 'PENDING');
   assert.deepEqual(harness.calls.generate, []);
+});
+
+test('a freshly confirmed task waits for GENERATION_ENDED even while isGenerating is briefly false', async () => {
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')]);
+  assert.equal(harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]), true);
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generate, []);
+  assert.deepEqual(harness.calls.write, []);
+
+  harness.consumer.handleMainGenerationTerminal();
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generate, [1]);
+  assert.deepEqual(harness.calls.write, [[1, 'summary:1']]);
+});
+
+test('GENERATION_STOPPED releases the confirmed task once', async () => {
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')]);
+  harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]);
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generate, []);
+
+  harness.consumer.handleMainGenerationTerminal();
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generate, [1]);
+});
+
+test('a started generation that fails without a terminal event releases after bounded idle recovery', async () => {
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
+    maxGenerationIdleRecoveryChecks: 1,
+  });
+  harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]);
+  harness.consumer.handleMainGenerationStarted();
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generate, []);
+
+  assert.equal(harness.consumer.recoverAwaitingGenerationAfterIdle(), true);
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generate, [1]);
+});
+
+test('repeated terminal and render wakeups keep a confirmed Summary idempotent', async () => {
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')]);
+  harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]);
+  harness.consumer.handleMainGenerationTerminal();
+  harness.consumer.handleMainGenerationTerminal();
+  harness.consumer.scheduleConfirmedQueueDrain();
+  harness.consumer.scheduleConfirmedQueueDrain();
+  await harness.consumer.drainConfirmedQueue();
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generate, [1]);
+  assert.deepEqual(harness.calls.write, [[1, 'summary:1']]);
+});
+
+test('a B generation gate keeps Summary writes at zero until it terminates', async () => {
+  let generating = true;
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
+    isGenerating: () => generating,
+  });
+  harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]);
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.write, []);
+
+  generating = false;
+  harness.consumer.handleMainGenerationTerminal();
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.write, [[1, 'summary:1']]);
 });

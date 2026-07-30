@@ -1324,7 +1324,7 @@ function init() {
   });
   registerConfirmedLifecycleEvents({
     shouldCreateTask: shouldRunAutoSummary,
-    onTaskCreated: () => confirmedConsumer.scheduleConfirmedQueueDrain(),
+    onTaskCreated: task => confirmedConsumer.holdConfirmedTaskUntilGenerationTerminal(task),
   });
   registerEmotionProfileEvents();
   registerPendingCommitEvents();
