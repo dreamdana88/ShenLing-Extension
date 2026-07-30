@@ -1366,16 +1366,62 @@ export async function processAutoSummary(messageId, expectedFingerprint) {
   }
 }
 
+export async function processImmediateWordReplace(messageId) {
+  const settings = getGlobalSettings();
+  const wordReplace = getWordReplaceSettings(settings);
+  if (!shouldRunWordReplace(settings) || summaryWriteIgnoreIds.has(Number(messageId))) return false;
+
+  const chatMessage = getChatMessageById(Number(messageId));
+  if (!chatMessage || chatMessage.role !== 'assistant' || chatMessage.is_hidden) return false;
+  if (GRAND_MEMORY_BLOCK_RE.test(chatMessage.message)) return false;
+
+  const replacementResult = applyReplacementRulesByScope(chatMessage.message, wordReplace);
+  if (replacementResult.errors.length > 0) {
+    console.warn(`[蜃灵助手] 词汇替换规则错误：${replacementResult.errors.join('；')}`);
+    return false;
+  }
+  if (!replacementResult.changed) return false;
+
+  markSummaryWriteIgnored(Number(messageId));
+  await setChatMessageContent(Number(messageId), replacementResult.text);
+  refreshSummaryPanelAfterAction();
+  return true;
+}
+
+export async function generateConfirmedSummaryForTask(messageId) {
+  const settings = getGlobalSettings();
+  const summary = getSummarySettings(settings);
+  const material = createSummarySourceMaterial(Number(messageId), summary);
+  if (!material) throw new Error(`第 ${Number(messageId)} 楼没有可总结的正文。`);
+  const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
+  const prompt = buildMemorySummaryPrompt(material.promptContent, priorMemories, summary);
+  const result = await generateSummaryMemory(prompt, { type: 'confirmed 自动小总结' });
+  const memory = normalizeMemoryBlock(result);
+  const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings(settings));
+  if (memoryReplacementResult.errors.length > 0) {
+    throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
+  }
+  return {
+    fingerprint: material.fingerprint,
+    memory: memoryReplacementResult.text,
+  };
+}
+
+export async function writeConfirmedSummaryForTask(messageId, expectedFingerprint, memory) {
+  const material = createSummarySourceMaterial(Number(messageId));
+  if (!material || material.fingerprint !== expectedFingerprint) return false;
+  markSummaryWriteIgnored(Number(messageId));
+  await setChatMessageContent(Number(messageId), `${material.body}\n\n${memory}`);
+  return true;
+}
+
 export function scheduleAutoSummary(messageId) {
   const numericMessageId = Number(messageId);
   if (!Number.isFinite(numericMessageId)) return;
   if (numericMessageId <= 0) return;
-  if (!shouldRunMessagePostprocess()) return;
+  if (!shouldRunWordReplace()) return;
   if (summaryWriteIgnoreIds.has(numericMessageId)) return;
   if (!isLatestMessage(numericMessageId)) return;
-
-  const expectedFingerprint = getAutoSummaryFingerprint(numericMessageId);
-  if (!expectedFingerprint) return;
 
   const oldTimer = summaryProcessTimers.get(numericMessageId);
   if (oldTimer !== undefined) {
@@ -1383,7 +1429,7 @@ export function scheduleAutoSummary(messageId) {
   }
   const timer = window.setTimeout(() => {
     summaryProcessTimers.delete(numericMessageId);
-    void processAutoSummary(numericMessageId, expectedFingerprint);
+    void processImmediateWordReplace(numericMessageId);
   }, SUMMARY_EVENT_DELAY_MS);
   summaryProcessTimers.set(numericMessageId, timer);
 }

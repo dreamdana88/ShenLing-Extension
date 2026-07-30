@@ -322,6 +322,7 @@ export const defaultChatState = Object.freeze({
     runningTask: 'none',
     lastError: '',
     confirmedTasks: [],
+    confirmedQueueActivatedAt: '',
   },
   outline: {
     enabled: false,
@@ -444,6 +445,9 @@ export function normalizeConfirmedSummaryTasks(value) {
       status: normalizeConfirmedTaskStatus(rawTask.status),
       createdAt: normalizeConfirmedTaskTimestamp(rawTask.createdAt),
       updatedAt: normalizeConfirmedTaskTimestamp(rawTask.updatedAt),
+      ...(String(rawTask.executionToken ?? '').trim()
+        ? { executionToken: String(rawTask.executionToken).trim().slice(0, 128) }
+        : {}),
     });
   });
   return tasks;

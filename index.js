@@ -46,7 +46,11 @@ import {
   notifySummary,
   registerAutoSummaryEvents,
   scanExistingSummaryState,
+  generateConfirmedSummaryForTask,
+  shouldRunAutoSummary,
+  writeConfirmedSummaryForTask,
 } from './src/features/summary/workflow.js';
+import { registerConfirmedSummaryConsumer } from './src/features/summary/confirmed-consumer.js';
 import {
   bindSummaryPanelEvents,
   configureSummaryPanel,
@@ -1309,7 +1313,14 @@ function init() {
   clearStaleSummaryRunningTask('插件重新加载');
   scanExistingSummaryState();
   registerAutoSummaryEvents();
-  registerConfirmedLifecycleEvents();
+  const confirmedConsumer = registerConfirmedSummaryConsumer({
+    generate: generateConfirmedSummaryForTask,
+    write: writeConfirmedSummaryForTask,
+  });
+  registerConfirmedLifecycleEvents({
+    shouldCreateTask: shouldRunAutoSummary,
+    onTaskCreated: () => confirmedConsumer.scheduleConfirmedQueueDrain(),
+  });
   registerEmotionProfileEvents();
   registerPendingCommitEvents();
   registerPromptStateLineSanitizerEvents();

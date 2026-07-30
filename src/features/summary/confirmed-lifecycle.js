@@ -145,6 +145,12 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
   const getUserFingerprint = typeof options.getUserFingerprint === 'function'
     ? options.getUserFingerprint
     : message => createMessageContentFingerprint(message?.message ?? message?.mes ?? '');
+  const shouldCreateTask = typeof options.shouldCreateTask === 'function'
+    ? options.shouldCreateTask
+    : () => true;
+  const onTaskCreated = typeof options.onTaskCreated === 'function'
+    ? options.onTaskCreated
+    : () => {};
   const contextTtlMs = Number.isFinite(options.contextTtlMs)
     ? Math.max(0, Number(options.contextTtlMs))
     : CONFIRMED_SEND_CONTEXT_TTL_MS;
@@ -224,6 +230,7 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
     );
     pendingSendContext = null;
     if (!isFreshTailUser) return null;
+    if (!shouldCreateTask()) return null;
 
     const confirmingUserFingerprint = getUserFingerprint(tail.message);
     const assistant = findLatestVisibleAssistantBefore(snapshot.records, tail.index);
@@ -258,6 +265,7 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
     };
     tasks.push(task);
     persist();
+    onTaskCreated(task);
     return task;
   }
 
@@ -365,9 +373,9 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
   };
 }
 
-export function registerConfirmedLifecycleEvents() {
+export function registerConfirmedLifecycleEvents(options = {}) {
   if (lifecycleEventsRegistered) return true;
-  runtimeCoordinator = createConfirmedLifecycleCoordinator();
+  runtimeCoordinator = createConfirmedLifecycleCoordinator(options);
   runtimeCoordinator.recoverCurrentChatTasks();
 
   const events = getTavernEventsSafe();
