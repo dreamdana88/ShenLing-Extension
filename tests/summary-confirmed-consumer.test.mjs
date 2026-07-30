@@ -182,6 +182,90 @@ test('disabling Summary while RUNNING discards the returned result without writi
   assert.deepEqual(harness.calls.write, []);
 });
 
+test('a RUNNING request cancelled while disabled stays cancelled after an immediate reopen', async () => {
+  let enabled = true;
+  let resolveGenerate;
+  const pendingGenerate = new Promise(resolve => { resolveGenerate = resolve; });
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
+    isEnabled: () => enabled,
+    generate: async messageId => {
+      harness.calls.generate.push(messageId);
+      await pendingGenerate;
+      return { fingerprint: `summary:${messageId}`, memory: '<memory>late</memory>' };
+    },
+  });
+  const drain = harness.consumer.drainConfirmedQueue();
+  await Promise.resolve();
+  assert.equal(harness.state.summary.confirmedTasks[0].status, 'RUNNING');
+  enabled = false;
+  harness.consumer.handleAutoSummaryEnabledChanged(false);
+  enabled = true;
+  harness.consumer.handleAutoSummaryEnabledChanged(true);
+  resolveGenerate();
+  await drain;
+
+  assert.equal(harness.state.summary.confirmedTasks[0].status, 'CANCELLED');
+  assert.equal(harness.state.summary.confirmedTasks[0].reasonCode, 'SUMMARY_DISABLED');
+  assert.deepEqual(harness.calls.write, []);
+});
+
+test('a cross-chat RUNNING request retains its disable cancellation intent after reopening', async () => {
+  const stateA = { summary: { confirmedQueueActivatedAt: '2026-07-30T00:00:00.000Z', confirmedTasks: [task('1', '2026-07-30T00:00:01.000Z')], processedMessageFingerprints: {} } };
+  const stateB = { summary: { confirmedQueueActivatedAt: '2026-07-30T00:00:00.000Z', confirmedTasks: [], processedMessageFingerprints: {} } };
+  let currentChat = 'chat-a';
+  let enabled = true;
+  let resolveGenerate;
+  const pendingGenerate = new Promise(resolve => { resolveGenerate = resolve; });
+  const writes = [];
+  const consumer = createConfirmedSummaryConsumer({
+    getChatState: () => currentChat === 'chat-a' ? stateA : stateB,
+    saveChatState: () => {},
+    getChatIdentity: () => currentChat,
+    isEnabled: () => enabled,
+    isGenerating: () => false,
+    isTargetValid: () => true,
+    getSummaryFingerprint: () => 'summary:1',
+    generate: async () => {
+      currentChat = 'chat-b';
+      await pendingGenerate;
+      return { fingerprint: 'summary:1', memory: '<memory>late</memory>' };
+    },
+    write: async (...args) => { writes.push(args); return true; },
+    formatTimestamp: () => '2026-07-30T00:00:01.000Z',
+    defer: () => {},
+  });
+  const drain = consumer.drainConfirmedQueue();
+  await Promise.resolve();
+  enabled = false;
+  consumer.handleAutoSummaryEnabledChanged(false);
+  enabled = true;
+  consumer.handleAutoSummaryEnabledChanged(true);
+  resolveGenerate();
+  await drain;
+
+  assert.deepEqual(stateB.summary.confirmedTasks, []);
+  assert.deepEqual(writes, []);
+  currentChat = 'chat-a';
+  await consumer.drainConfirmedQueue();
+  assert.equal(stateA.summary.confirmedTasks[0].status, 'CANCELLED');
+  assert.equal(stateA.summary.confirmedTasks[0].reasonCode, 'SUMMARY_DISABLED');
+});
+
+for (const timeoutCode of ['MAIN_TIMEOUT', 'SECONDARY_TIMEOUT']) {
+  test(`${timeoutCode} is persisted as the safe Summary transport timeout code`, async () => {
+    const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
+      generate: async () => {
+        const error = new Error('transport timeout');
+        error.code = timeoutCode;
+        throw error;
+      },
+    });
+    await harness.consumer.drainConfirmedQueue();
+    assert.equal(harness.state.summary.confirmedTasks[0].status, 'FAILED');
+    assert.equal(harness.state.summary.confirmedTasks[0].lastErrorCode, 'SUMMARY_TRANSPORT_TIMEOUT');
+  });
+}
+
 test('generation-in-progress defers consumption without changing a pending task', async () => {
   const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
     isGenerating: () => true,

@@ -31,7 +31,11 @@ import {
   getTavernEventsSafe,
   registerTavernEvent,
 } from '../../core/tavern-events.js';
-import { synchronizeConfirmedTaskAfterReplacement } from './confirmed-lifecycle.js';
+import {
+  abortConfirmedTaskReplacement,
+  prepareConfirmedTaskForReplacement,
+  synchronizeConfirmedTaskAfterReplacement,
+} from './confirmed-lifecycle.js';
 import {
   getChatState,
   getGlobalSettings,
@@ -1383,8 +1387,14 @@ export async function processImmediateWordReplace(messageId) {
   }
   if (!replacementResult.changed) return false;
 
+  const hasControlledReplacement = prepareConfirmedTaskForReplacement(Number(messageId), replacementResult.text);
   markSummaryWriteIgnored(Number(messageId));
-  await setChatMessageContent(Number(messageId), replacementResult.text);
+  try {
+    await setChatMessageContent(Number(messageId), replacementResult.text);
+  } catch (error) {
+    if (hasControlledReplacement) abortConfirmedTaskReplacement(Number(messageId));
+    throw error;
+  }
   synchronizeConfirmedTaskAfterReplacement(Number(messageId));
   refreshSummaryPanelAfterAction();
   return true;

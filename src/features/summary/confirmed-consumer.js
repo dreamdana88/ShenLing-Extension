@@ -59,6 +59,20 @@ export function createConfirmedSummaryConsumer(options = {}) {
   let idleDefers = 0;
   let sequence = 0;
   const deferredRecoveries = new Map();
+  const cancelledExecutionTokens = new Set();
+  let activeExecution = null;
+
+  function createExecutionKey(chatIdentity, taskKey, executionToken) {
+    return [chatIdentity, taskKey, executionToken].join('\u001f');
+  }
+
+  function hasCancellationIntent(chatIdentity, taskKey, executionToken) {
+    return cancelledExecutionTokens.has(createExecutionKey(chatIdentity, taskKey, executionToken));
+  }
+
+  function clearCancellationIntent(chatIdentity, taskKey, executionToken) {
+    cancelledExecutionTokens.delete(createExecutionKey(chatIdentity, taskKey, executionToken));
+  }
 
   function cancelTask(task, reasonCode = '') {
     task.status = 'CANCELLED';
@@ -94,6 +108,19 @@ export function createConfirmedSummaryConsumer(options = {}) {
     });
     if (changed) saveState();
     return changed;
+  }
+
+  function handleAutoSummaryEnabledChanged(enabled) {
+    if (enabled) return scheduleConfirmedQueueDrain();
+    if (activeExecution) {
+      cancelledExecutionTokens.add(createExecutionKey(
+        activeExecution.chatIdentity,
+        activeExecution.taskKey,
+        activeExecution.executionToken,
+      ));
+    }
+    const state = getState();
+    return cancelPendingTasksWhenDisabled(state, getIdentity());
   }
 
   function activateQueue(state) {
@@ -169,23 +196,31 @@ export function createConfirmedSummaryConsumer(options = {}) {
     task.updatedAt = formatTimestamp();
     saveState();
     running = true;
+    activeExecution = {
+      chatIdentity: task.chatIdentity,
+      taskKey: task.taskKey,
+      executionToken,
+    };
     try {
       const result = await generate(task.originalMessageId);
       const latestState = getState();
+      const cancellationRequested = hasCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
       if (getIdentity() !== task.chatIdentity) {
         deferredRecoveries.set(task.chatIdentity, {
           taskKey: task.taskKey,
           executionToken,
-          summaryDisabled: !isEnabled(),
+          summaryDisabled: cancellationRequested || !isEnabled(),
         });
+        clearCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
         return;
       }
       const latestTask = getConfirmedSummaryTasks(latestState).find(item => item.taskKey === task.taskKey);
-      if (!isEnabled()) {
+      if (cancellationRequested || !isEnabled()) {
         if (latestTask?.status === 'RUNNING' && latestTask.executionToken === executionToken) {
           cancelTask(latestTask, 'SUMMARY_DISABLED');
           saveState();
         }
+        clearCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
         return;
       }
       if (
@@ -215,35 +250,53 @@ export function createConfirmedSummaryConsumer(options = {}) {
       delete latestTask.executionToken;
       saveState();
     } catch (error) {
+      const cancellationRequested = hasCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
       if (getIdentity() !== task.chatIdentity) {
         deferredRecoveries.set(task.chatIdentity, {
           taskKey: task.taskKey,
           executionToken,
-          summaryDisabled: !isEnabled(),
+          summaryDisabled: cancellationRequested || !isEnabled(),
         });
+        clearCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
         return;
       }
       const latestTask = getConfirmedSummaryTasks(getState()).find(item => item.taskKey === task.taskKey);
       if (latestTask?.status === 'RUNNING' && latestTask.executionToken === executionToken) {
-        latestTask.status = 'FAILED';
-        latestTask.lastErrorCode = error?.code === 'SUMMARY_TRANSPORT_TIMEOUT'
-          ? 'SUMMARY_TRANSPORT_TIMEOUT'
-          : 'SUMMARY_GENERATION_FAILED';
-        latestTask.updatedAt = formatTimestamp();
-        delete latestTask.executionToken;
+        if (cancellationRequested || !isEnabled()) {
+          cancelTask(latestTask, 'SUMMARY_DISABLED');
+        } else {
+          latestTask.status = 'FAILED';
+          latestTask.lastErrorCode = ['MAIN_TIMEOUT', 'SECONDARY_TIMEOUT', 'SUMMARY_TRANSPORT_TIMEOUT'].includes(error?.code)
+            ? 'SUMMARY_TRANSPORT_TIMEOUT'
+            : 'SUMMARY_GENERATION_FAILED';
+          latestTask.updatedAt = formatTimestamp();
+          delete latestTask.executionToken;
+        }
         saveState();
       }
+      clearCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
     } finally {
+      if (activeExecution?.executionToken === executionToken) activeExecution = null;
       running = false;
       scheduleConfirmedQueueDrain();
     }
   }
 
-  return { activateQueue, scheduleConfirmedQueueDrain, drainConfirmedQueue, isRunning: () => running };
+  return {
+    activateQueue,
+    handleAutoSummaryEnabledChanged,
+    scheduleConfirmedQueueDrain,
+    drainConfirmedQueue,
+    isRunning: () => running,
+  };
 }
 
 export function scheduleConfirmedQueueDrain() {
   return runtimeConsumer?.scheduleConfirmedQueueDrain() ?? false;
+}
+
+export function handleAutoSummaryEnabledChanged(enabled) {
+  return runtimeConsumer?.handleAutoSummaryEnabledChanged(Boolean(enabled)) ?? false;
 }
 
 export function registerConfirmedSummaryConsumer(options = {}) {

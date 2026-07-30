@@ -365,6 +365,79 @@ for (const [name, mutateUser] of [
   });
 }
 
+test('a registered word replacement survives an early MESSAGE_UPDATED only when every expected value matches', () => {
+  const harness = createHarness();
+  const task = confirmTailUser(harness);
+  assert.equal(harness.coordinator.prepareControlledReplacement(1, 'A 的替换版本'), true);
+  harness.current.messages[1] = assistant('A 的替换版本');
+  harness.coordinator.reconcileCurrentChatTasks();
+  assert.equal(harness.taskList()[0].status, 'PENDING');
+  assert.equal(harness.taskList()[0].assistantFingerprint, fingerprint(harness.current.messages[1]));
+
+  const mismatchedHarness = createHarness();
+  confirmTailUser(mismatchedHarness);
+  assert.equal(mismatchedHarness.coordinator.prepareControlledReplacement(1, '预期替换版本'), true);
+  mismatchedHarness.current.messages[1] = assistant('手动改成了其他版本');
+  mismatchedHarness.coordinator.reconcileCurrentChatTasks();
+  assert.equal(mismatchedHarness.taskList()[0].status, 'CANCELLED');
+  assert.notEqual(task.assistantFingerprint, harness.taskList()[0].assistantFingerprint);
+});
+
+test('a pending setChatMessageContent replacement survives MESSAGE_UPDATED and summarizes the replacement once', async () => {
+  const harness = createHarness();
+  const confirmed = confirmTailUser(harness);
+  const originalTaskKey = confirmed.taskKey;
+  harness.current.state.summary.confirmedQueueActivatedAt = 't:0';
+  let resolveSetMessage;
+  const pendingSetMessage = new Promise(resolve => { resolveSetMessage = resolve; });
+
+  assert.equal(harness.coordinator.prepareControlledReplacement(1, 'A 的最终替换版本'), true);
+  const simulatedSetChatMessageContent = (async () => {
+    await pendingSetMessage;
+    harness.coordinator.finishControlledReplacement(1);
+  })();
+  harness.current.messages[1] = assistant('A 的最终替换版本');
+  harness.coordinator.reconcileCurrentChatTasks();
+  assert.equal(harness.taskList()[0].status, 'PENDING');
+  assert.equal(harness.taskList()[0].taskKey, originalTaskKey);
+  assert.equal(harness.taskList().length, 1);
+  assert.equal(harness.taskList()[0].assistantFingerprint, fingerprint(harness.current.messages[1]));
+
+  resolveSetMessage();
+  await simulatedSetChatMessageContent;
+  const writes = [];
+  const consumer = createConfirmedSummaryConsumer({
+    getChatState: () => harness.current.state,
+    saveChatState: () => {},
+    getChatIdentity: () => 'chat-a',
+    isEnabled: () => true,
+    isGenerating: () => false,
+    isTargetValid: task => task.assistantFingerprint === fingerprint(harness.current.messages[1]),
+    getSummaryFingerprint: () => 'summary:replacement',
+    generate: async () => ({ fingerprint: 'summary:replacement', memory: '<memory>replacement</memory>' }),
+    write: async (...args) => { writes.push(args); return true; },
+    formatTimestamp: () => 't:2',
+    defer: () => {},
+  });
+  await consumer.drainConfirmedQueue();
+  await consumer.drainConfirmedQueue();
+  assert.equal(harness.taskList()[0].status, 'SUMMARIZED');
+  assert.equal(writes.length, 1);
+});
+
+test('a failed controlled replacement clears its exemption and retains the original fingerprint', () => {
+  const harness = createHarness();
+  const confirmed = confirmTailUser(harness);
+  const originalFingerprint = confirmed.assistantFingerprint;
+  assert.equal(harness.coordinator.prepareControlledReplacement(1, '不会写入的替换版本'), true);
+  assert.equal(harness.coordinator.abortControlledReplacement(1), true);
+  assert.equal(harness.taskList()[0].assistantFingerprint, originalFingerprint);
+
+  harness.current.messages[1] = assistant('不会写入的替换版本');
+  harness.coordinator.reconcileCurrentChatTasks();
+  assert.equal(harness.taskList()[0].status, 'CANCELLED');
+});
+
 test('old metadata loads safely and persisted tasks never retain body, prompt, API key, or error payloads', () => {
   const legacyState = { summary: { smallSummaryCount: 3 } };
   assert.deepEqual(getConfirmedSummaryTasks(legacyState), []);

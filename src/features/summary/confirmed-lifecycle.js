@@ -156,6 +156,7 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
     : CONFIRMED_SEND_CONTEXT_TTL_MS;
   let pendingSendContext = null;
   const recoveredChatIdentities = new Set();
+  const controlledReplacements = new Map();
 
   function getCurrentSnapshot() {
     const snapshot = getSnapshot() || {};
@@ -280,6 +281,94 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
     ));
   }
 
+  function prepareControlledReplacement(messageId, replacementText) {
+    const snapshot = getCurrentSnapshot();
+    const task = getTasks(snapshot).find(item => (
+      item.chatIdentity === snapshot.chatIdentity
+      && item.status === 'PENDING'
+      && Number(item.originalMessageId) === Number(messageId)
+    ));
+    const original = snapshot.records.find(record => record.messageId === Number(messageId));
+    if (!task || !hasMatchingAssistant(original, task, getAssistantFingerprint)) return false;
+    const expectedFingerprint = getAssistantFingerprint({
+      ...original.message,
+      message: replacementText,
+      mes: replacementText,
+    });
+    if (!expectedFingerprint || expectedFingerprint === task.assistantFingerprint) return false;
+    controlledReplacements.set(task.taskKey, {
+      chatIdentity: snapshot.chatIdentity,
+      originalMessageId: task.originalMessageId,
+      selectedSwipeId: task.selectedSwipeId,
+      oldAssistantFingerprint: task.assistantFingerprint,
+      expectedAssistantFingerprint: expectedFingerprint,
+      applied: false,
+    });
+    return true;
+  }
+
+  function applyControlledReplacement(snapshot, task, original, confirmation, timestamp) {
+    const replacement = controlledReplacements.get(task.taskKey);
+    if (!replacement) return false;
+    const exactMatch = (
+      replacement.chatIdentity === snapshot.chatIdentity
+      && replacement.originalMessageId === task.originalMessageId
+      && replacement.selectedSwipeId === task.selectedSwipeId
+      && replacement.oldAssistantFingerprint === task.assistantFingerprint
+      && isVisibleAssistant(original)
+      && getSelectedSwipeId(original.message) === replacement.selectedSwipeId
+      && getAssistantFingerprint(original.message) === replacement.expectedAssistantFingerprint
+      && hasMatchingConfirmingUser(confirmation, task, getUserFingerprint)
+    );
+    if (!exactMatch) {
+      controlledReplacements.delete(task.taskKey);
+      return false;
+    }
+    task.assistantFingerprint = replacement.expectedAssistantFingerprint;
+    task.updatedAt = timestamp;
+    replacement.applied = true;
+    return true;
+  }
+
+  function finishControlledReplacement(messageId) {
+    const snapshot = getCurrentSnapshot();
+    const task = getTasks(snapshot).find(item => (
+      item.chatIdentity === snapshot.chatIdentity
+      && item.status === 'PENDING'
+      && Number(item.originalMessageId) === Number(messageId)
+    ));
+    const replacement = task && controlledReplacements.get(task.taskKey);
+    if (!replacement || !replacement.applied || task.assistantFingerprint !== replacement.expectedAssistantFingerprint) {
+      return false;
+    }
+    controlledReplacements.delete(task.taskKey);
+    return true;
+  }
+
+  function abortControlledReplacement(messageId) {
+    const snapshot = getCurrentSnapshot();
+    const replacementEntry = Array.from(controlledReplacements.entries()).find(([, replacement]) => (
+      replacement.chatIdentity === snapshot.chatIdentity
+      && Number(replacement.originalMessageId) === Number(messageId)
+    ));
+    if (!replacementEntry) return false;
+    const [taskKey, replacement] = replacementEntry;
+    controlledReplacements.delete(taskKey);
+    if (!replacement.applied) return true;
+    const task = getTasks(snapshot).find(item => item.taskKey === taskKey);
+    if (
+      !task
+      || task.status !== 'PENDING'
+      || Number(task.originalMessageId) !== Number(replacement.originalMessageId)
+      || Number(task.selectedSwipeId) !== Number(replacement.selectedSwipeId)
+      || task.assistantFingerprint !== replacement.expectedAssistantFingerprint
+    ) return true;
+    task.assistantFingerprint = replacement.oldAssistantFingerprint;
+    task.updatedAt = createTimestamp(now());
+    persist();
+    return true;
+  }
+
   function reconcileCurrentChatTasks() {
     const snapshot = getCurrentSnapshot();
     if (!snapshot.chatIdentity) return { changed: false, cancelled: 0, relocated: 0 };
@@ -302,6 +391,11 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
           task.updatedAt = timestamp;
           changed = true;
         }
+        return;
+      }
+
+      if (applyControlledReplacement(snapshot, task, original, originalConfirmation, timestamp)) {
+        changed = true;
         return;
       }
 
@@ -364,6 +458,9 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
   return {
     captureGenerationAfterCommands,
     createConfirmedTaskFromMessageSent,
+    prepareControlledReplacement,
+    finishControlledReplacement,
+    abortControlledReplacement,
     reconcileCurrentChatTasks,
     recoverCurrentChatTasks,
     handleChatChanged,
@@ -373,7 +470,19 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
   };
 }
 
+export function prepareConfirmedTaskForReplacement(messageId, replacementText) {
+  return runtimeCoordinator?.prepareControlledReplacement(messageId, replacementText) ?? false;
+}
+
+export function abortConfirmedTaskReplacement(messageId) {
+  return runtimeCoordinator?.abortControlledReplacement(messageId) ?? false;
+}
+
 export function synchronizeConfirmedTaskAfterReplacement(messageId) {
+  if (runtimeCoordinator) {
+    runtimeCoordinator.reconcileCurrentChatTasks();
+    runtimeCoordinator.finishControlledReplacement(messageId);
+  }
   const chatState = getChatState();
   const task = getConfirmedSummaryTasks(chatState).find(item => (
     item.status === 'PENDING' && Number(item.originalMessageId) === Number(messageId)
