@@ -82,6 +82,7 @@ export function createConfirmedEffectsCoordinator(options = {}) {
         messageId: task.originalMessageId,
         chatState: state,
         chatId: task.chatIdentity,
+        isCurrentChat: () => getIdentity() === task.chatIdentity,
       });
       return;
     }

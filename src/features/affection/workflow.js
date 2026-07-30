@@ -1350,7 +1350,7 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
 }
 
 export function storePendingAffectionUpdate(
-  { messageId, fingerprint, analysis } = {},
+  { messageId, fingerprint, analysis, origin = 'legacy' } = {},
   { chatState = getChatState(), persist = true } = {},
 ) {
   const numericMessageId = Number(messageId);
@@ -1374,6 +1374,7 @@ export function storePendingAffectionUpdate(
     firsts: Array.isArray(analysis.firsts) ? analysis.firsts.map(item => ({ ...item })) : [],
     diagnostics: Array.isArray(analysis.diagnostics) ? analysis.diagnostics.map(item => ({ ...item })) : [],
     raw: isPlainObject(analysis.raw) ? { ...analysis.raw } : {},
+    origin: ['legacy', 'manual'].includes(origin) ? origin : 'legacy',
     updatedAt,
   };
   items[cleanFingerprint] = pending;
@@ -1442,31 +1443,96 @@ export async function commitAffectionUpdateFromConfirmedSummary(
     chatState = getChatState(),
     chatId = getContextInfo().chatId,
     persist = true,
+    isCurrentChat = () => true,
   } = {},
 ) {
-  const prepared = processAffectionUpdateFromSummaryResult(result, {
-    messageId,
-    settings,
-    chatState,
-    persist,
-    startBuild: false,
-  });
-  if (!prepared?.pending) return prepared;
+  if (!isAffectionAnalysisActive(settings)) return { active: false };
+  const prepared = prepareAffectionUpdateFromSummaryResult(result, { settings, chatState });
+  if (!prepared) return null;
+  const numericMessageId = Number(messageId);
+  const fingerprint = getMessageContentFingerprint(numericMessageId, settings);
+  if (!fingerprint || !isCurrentChat()) return { ...prepared, fingerprint: '' };
 
-  await startAffectionProfileBuildsForPending(prepared.pending, {
-    settings,
-    chatState,
-    chatId,
-    persist,
+  const store = getAffectionSystemState(chatState);
+  const timestamp = formatTimestamp();
+  const summary = {
+    committedRoleNames: [],
+    createdRoleNames: [],
+  };
+  let changed = false;
+
+  prepared.changes.forEach(change => {
+    const roleName = normalizeAffectionRoleName(change?.roleName);
+    const profile = isPlainObject(store.profiles?.[roleName]) ? store.profiles[roleName] : null;
+    if (!profile) return;
+    if (applyPendingAffectionChange(profile, change, {
+      messageId: numericMessageId,
+      fingerprint,
+      timestamp,
+    })) {
+      changed = true;
+    }
+    if (Number(change?.deltaTenths) !== 0) summary.committedRoleNames.push(roleName);
   });
-  const commit = await commitSelectedPendingAffectionUpdates({
-    settings,
-    chatState,
-    chatId,
-    persist,
-    messageIds: [Number(messageId)],
-  });
-  return { ...prepared, commit };
+
+  const firsts = Array.isArray(prepared.firsts) ? prepared.firsts : [];
+  if (firsts.length) {
+    const buildPending = {
+      messageId: numericMessageId,
+      fingerprint,
+      changes: [],
+      firsts,
+    };
+    await startAffectionProfileBuildsForPending(buildPending, {
+      settings,
+      chatState,
+      chatId,
+      persist,
+    });
+    if (!isCurrentChat()) return { ...prepared, fingerprint, ...summary };
+
+    for (const first of firsts) {
+      const roleName = normalizeAffectionRoleName(first?.roleName);
+      if (!roleName || isPlainObject(store.profiles?.[roleName])) continue;
+      const task = getMatchingAffectionBuildTask(store, {
+        chatId,
+        messageId: numericMessageId,
+        fingerprint,
+        roleName,
+      });
+      if (!isMatchingReadyProfileDraft(task, first)) {
+        throw new Error(`好感首次建档未完成：${roleName || '未知角色'}`);
+      }
+      const ledger = recalculateAffectionLedger(task.profileDraft.initialValueTenths, task.profileDraft.records);
+      store.profiles[roleName] = {
+        ...task.profileDraft,
+        roleName,
+        initialValueTenths: ledger.initialValueTenths,
+        valueTenths: ledger.valueTenths,
+        records: ledger.records,
+        sourceMessageId: numericMessageId,
+        sourceFingerprint: fingerprint,
+        buildStatus: 'ready',
+        updatedAt: timestamp,
+      };
+      delete store.buildTasks[task.taskKey];
+      summary.createdRoleNames.push(roleName);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    store.lastUpdatedAt = timestamp;
+    if (persist) saveChatState();
+    if (persist && isCurrentChat()) await syncAffectionInjection({ settings, chatState });
+    getWorkflowOption('refreshPanel')?.();
+  }
+  return {
+    ...prepared,
+    fingerprint,
+    committedRoleNames: [...new Set(summary.committedRoleNames)],
+    createdRoleNames: [...new Set(summary.createdRoleNames)],
+  };
 }
 
 export async function commitSelectedPendingAffectionUpdates({
@@ -1517,6 +1583,7 @@ export async function commitSelectedPendingAffectionUpdates({
       stateChanged = true;
       continue;
     }
+    if (selected.origin === 'confirmed') continue;
 
     summary.discardedSwipeCount += Math.max(0, Object.keys(bucket.items).length - 1);
     const selectedChanges = Array.isArray(selected.changes) ? selected.changes : [];

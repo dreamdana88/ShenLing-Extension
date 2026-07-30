@@ -44,7 +44,7 @@ import {
   clearStaleSummaryRunningTask,
   configureSummaryWorkflow,
   notifySummary,
-  registerAutoSummaryEvents,
+  registerImmediateWordReplaceEvents,
   scanExistingSummaryState,
   generateConfirmedSummaryForTask,
   shouldRunAutoSummary,
@@ -1033,7 +1033,7 @@ function openFloatingPanel() {
   saveGlobalSettings();
   syncViewportSize();
   scanExistingSummaryState();
-  registerAutoSummaryEvents();
+  registerImmediateWordReplaceEvents();
   registerConfirmedLifecycleEvents();
   registerEmotionProfileEvents();
   registerAffectionWorkflowEvents();
@@ -1318,7 +1318,7 @@ function init() {
   getChatState();
   clearStaleSummaryRunningTask('插件重新加载');
   scanExistingSummaryState();
-  registerAutoSummaryEvents();
+  registerImmediateWordReplaceEvents();
   const confirmedEffects = registerConfirmedEffects();
   const confirmedConsumer = registerConfirmedSummaryConsumer({
     generate: generateConfirmedSummaryForTask,

@@ -206,7 +206,7 @@ function normalizePendingBucket(store, messageId) {
 }
 
 function storePendingEmotionUpdate(
-  { messageId, fingerprint, changed, updates, raw },
+  { messageId, fingerprint, changed, updates, raw, origin = 'legacy' },
   { chatState = getChatState(), persist = true } = {},
 ) {
   const numericMessageId = Number(messageId);
@@ -222,6 +222,7 @@ function storePendingEmotionUpdate(
     changed: Boolean(changed),
     profiles: Array.isArray(updates) ? updates : [],
     raw: isPlainObject(raw) ? raw : null,
+    origin: ['legacy', 'manual'].includes(origin) ? origin : 'legacy',
     updatedAt,
   };
   bucket.items[cleanFingerprint] = item;
@@ -574,6 +575,7 @@ export async function commitSelectedPendingEmotionUpdates({
     if (!fingerprint) continue;
     const item = bucket.items[fingerprint];
     if (!isPlainObject(item)) continue;
+    if (item.origin === 'confirmed') continue;
 
     removeEmotionProfileRecordsForMessage(messageId, { save: false, chatState });
     if (item.changed === true && Array.isArray(item.profiles) && item.profiles.length) {
@@ -609,20 +611,29 @@ export async function commitEmotionUpdateFromConfirmedSummary(
     isCurrentChat = () => true,
   } = {},
 ) {
-  await processEmotionUpdateFromSummaryResult(result, {
-    messageId,
-    fingerprint,
-    settings,
-    chatState,
-    sync: false,
-  });
+  if (!shouldAnalyzeEmotionProfile(settings)) return false;
+  const parsed = parseEmotionUpdateFromBracketLines(sanitizeMemoryForEmotionAnalysis(result));
+  if (!parsed) return true;
+  const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
+  const selectedFingerprint = String(fingerprint || getMessageContentFingerprint(messageId, settings)).trim();
+  if (!selectedFingerprint || !isCurrentChat()) return false;
+  const updates = changed ? normalizeProfileItems(parsed) : [];
+  if (updates.length) {
+    removeEmotionProfileRecordsForMessage(messageId, { save: false, chatState });
+    appendEmotionProfileRecords(updates, {
+      messageId: Number(messageId),
+      fingerprint: selectedFingerprint,
+      sourceType: 'confirmed_summary',
+      save: false,
+      chatState,
+    });
+    const store = getEmotionProfileStore(chatState);
+    store.lastUpdatedAt = formatTimestamp();
+    saveChatState();
+  }
   if (!isCurrentChat()) return false;
-  await commitSelectedPendingEmotionUpdates({
-    messageIds: [messageId],
-    chatState,
-    settings,
-    getSelectedFingerprint: () => fingerprint || getMessageContentFingerprint(messageId, settings),
-  });
+  await syncEmotionProfileInjection();
+  refreshPanel();
   return true;
 }
 

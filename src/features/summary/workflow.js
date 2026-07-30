@@ -57,7 +57,6 @@ import {
 import {
   buildAffectionUpdatePromptSection,
   prepareAffectionUpdateFromSummaryResult,
-  processAffectionUpdateFromSummaryResult,
 } from '../affection/workflow.js';
 import {
   applyPlotOutlineProgressUpdate,
@@ -92,11 +91,11 @@ import {
   stripMemoryBlock,
 } from '../../core/summary.js';
 
-const summaryEventStops = [];
-const summaryProcessTimers = new Map();
-const summaryWriteIgnoreIds = new Set();
+const immediateWordReplaceEventStops = [];
+const immediateWordReplaceTimers = new Map();
+const summaryWriteIgnores = new Map();
 const deferredGrandRecoveries = new Set();
-let summaryEventsRegistered = false;
+let immediateWordReplaceEventsRegistered = false;
 
 let workflowOptions = {
   addCommunicationLog: null,
@@ -214,16 +213,41 @@ async function processPlotOutlineProgressFromMemory(memoryText, { messageId = nu
   refreshSummaryPanelAfterAction();
   return result;
 }
-export function markSummaryWriteIgnored(messageId, durationMs = 1500) {
+function createSummaryWriteIgnoreKey(messageId, chatIdentity = getContextInfo().chatId) {
   const numericMessageId = Number(messageId);
-  summaryWriteIgnoreIds.add(numericMessageId);
-  if (durationMs > 0) {
-    window.setTimeout(() => summaryWriteIgnoreIds.delete(numericMessageId), durationMs);
-  }
+  const identity = String(chatIdentity || '').trim();
+  return Number.isInteger(numericMessageId) && numericMessageId >= 0 && identity
+    ? `${identity}\u001f${numericMessageId}`
+    : '';
 }
 
-export function clearSummaryWriteIgnored(messageId) {
-  summaryWriteIgnoreIds.delete(Number(messageId));
+function isSummaryWriteIgnored(messageId, chatIdentity = getContextInfo().chatId) {
+  const key = createSummaryWriteIgnoreKey(messageId, chatIdentity);
+  return Boolean(key && summaryWriteIgnores.has(key));
+}
+
+export function markSummaryWriteIgnored(messageId, durationMs = 1500, chatIdentity = getContextInfo().chatId) {
+  const numericMessageId = Number(messageId);
+  const key = createSummaryWriteIgnoreKey(numericMessageId, chatIdentity);
+  if (!key) return false;
+  const previousTimer = summaryWriteIgnores.get(key);
+  if (previousTimer !== undefined) window.clearTimeout(previousTimer);
+  summaryWriteIgnores.set(key, null);
+  if (durationMs > 0) {
+    const timer = window.setTimeout(() => {
+      if (summaryWriteIgnores.get(key) === timer) summaryWriteIgnores.delete(key);
+    }, durationMs);
+    summaryWriteIgnores.set(key, timer);
+  }
+  return true;
+}
+
+export function clearSummaryWriteIgnored(messageId, chatIdentity = getContextInfo().chatId) {
+  const key = createSummaryWriteIgnoreKey(messageId, chatIdentity);
+  if (!key) return false;
+  const timer = summaryWriteIgnores.get(key);
+  if (timer !== undefined) window.clearTimeout(timer);
+  return summaryWriteIgnores.delete(key);
 }
 
 export function createSimpleFingerprint(content) {
@@ -1362,134 +1386,10 @@ export async function processLegacyGrandArchive() {
   }
 }
 
-export async function processAutoSummary(messageId, expectedFingerprint) {
-  const settings = getGlobalSettings();
-  const summary = getSummarySettings(settings);
-  const wordReplace = getWordReplaceSettings(settings);
-  const chatState = getChatState();
-  const shouldSummarize = shouldRunAutoSummary(settings);
-  const shouldReplace = shouldRunWordReplace(settings);
-  if (!shouldSummarize && !shouldReplace) return;
-  if (summaryWriteIgnoreIds.has(Number(messageId))) return;
-  if (chatState.summary.runningTask !== 'none') return;
-  if (!isLatestMessage(Number(messageId))) return;
-
-  const chatMessage = getChatMessageById(Number(messageId));
-  if (!chatMessage || chatMessage.role !== 'assistant' || chatMessage.is_hidden) return;
-  if (GRAND_MEMORY_BLOCK_RE.test(chatMessage.message)) return;
-
-  const material = createSummarySourceMaterial(Number(messageId), summary);
-  if (!material && shouldSummarize) {
-    notifySummary('info', '已跳过第 ' + Number(messageId) + ' 楼：没有可总结正文。');
-    return;
-  }
-  if (!material && !shouldReplace) return;
-
-  const fingerprint = material?.fingerprint || createSimpleFingerprint(chatMessage.message);
-  if (expectedFingerprint && fingerprint !== expectedFingerprint) return;
-  if (shouldSummarize && (chatState.summary.processedMessageFingerprints || {})[messageId] === fingerprint) return;
-
-  const replacementResult = applyReplacementRulesByScope(chatMessage.message, wordReplace);
-  if (replacementResult.errors.length > 0) {
-    const message = `词汇替换规则错误：${replacementResult.errors.join('；')}`;
-    chatState.summary.lastError = message;
-    saveChatState();
-    notifySummary('error', message, '词汇替换失败');
-    refreshSummaryPanelAfterAction();
-    return;
-  }
-
-  const replacedBody = stripMemoryBlock(replacementResult.text);
-  const replacedAiContent = extractSummarySourceContent(replacedBody, summary).trim();
-
-  if (!shouldSummarize) {
-    if (replacementResult.changed) {
-      markSummaryWriteIgnored(Number(messageId));
-      await setChatMessageContent(Number(messageId), replacementResult.text);
-      notifySummary('success', `已替换 ${replacementResult.replacements} 处词汇。`, '词汇替换');
-      refreshSummaryPanelAfterAction();
-    }
-    return;
-  }
-
-  if (!replacedAiContent) {
-    notifySummary('warning', '正文净化后没有可总结内容，已跳过自动小总结。', '自动总结');
-    return;
-  }
-
-  chatState.summary.runningTask = 'memory';
-  chatState.summary.lastError = '';
-  saveChatState();
-  notifySummary('info', '小总结生成中。');
-
-  try {
-    const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
-    const userContent = summary.includeUserInput ? getPreviousUserSummarySource(Number(messageId), summary) : '';
-    const promptContent = buildSummaryPromptContent(replacedAiContent, userContent);
-    const emotionPromptSection = buildEmotionUpdatePromptSection(settings);
-    const affectionPromptSection = buildAffectionUpdatePromptSection(settings, chatState);
-    const plotOutlineProgressSection = buildPlotOutlineProgressPromptSection(chatState);
-    const prompt = buildMemorySummaryPrompt(promptContent, priorMemories, summary, {
-      extraInstructions: joinSummaryExtraInstructions(
-        emotionPromptSection,
-        affectionPromptSection,
-        plotOutlineProgressSection,
-      ),
-    });
-    const result = await generateSummaryMemory(prompt, { type: '自动小总结' });
-    const affectionAnalysis = prepareAffectionUpdateFromSummaryResult(result, { settings, chatState });
-    const memory = stripMemoryChangedControlLines(
-      affectionAnalysis?.normalizedMemory || normalizeMemoryBlock(result),
-    );
-    const memoryReplacementResult = applyReplacementRulesByScope(memory, wordReplace);
-    if (memoryReplacementResult.errors.length > 0) {
-      throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
-    }
-    const nextMessage = `${replacedBody}\n\n${memoryReplacementResult.text}`;
-
-    markSummaryWriteIgnored(Number(messageId));
-    await setChatMessageContent(Number(messageId), nextMessage);
-
-    const alreadyCounted = hasMessageBeenCountedForMemory(chatState, Number(messageId));
-    chatState.summary.runningTask = 'none';
-    chatState.summary.lastSummaryMessageId = Number(messageId);
-    chatState.summary.lastSummaryAt = formatTimestamp();
-    chatState.summary.lastError = '';
-    chatState.summary.processedMessageFingerprints = {
-      ...(chatState.summary.processedMessageFingerprints || {}),
-      [messageId]: fingerprint,
-    };
-    if (!alreadyCounted) {
-      chatState.summary.memoryCountedMessageIds = [...chatState.summary.memoryCountedMessageIds, Number(messageId)];
-      chatState.summary.memoryCountSinceArchive += 1;
-      chatState.summary.smallSummaryCount += 1;
-    }
-    saveChatState();
-    notifySummary('success', `已为第 ${Number(messageId)} 楼写入小总结。`);
-    processAffectionUpdateFromSummaryResult(result, {
-      messageId: Number(messageId),
-      analysis: affectionAnalysis,
-      settings,
-      chatState,
-    });
-    await processEmotionUpdateFromSummaryResult(result, { messageId: Number(messageId) });
-    await processPlotOutlineProgressFromMemory(result, { messageId: Number(messageId) });
-    await processAutoGrandMemory();
-    refreshSummaryPanelAfterAction();
-  } catch (error) {
-    clearSummaryWriteIgnored(Number(messageId));
-    chatState.summary.runningTask = 'none';
-    chatState.summary.lastError = error.message || String(error);
-    saveChatState();
-    notifySummary('error', error.message || String(error));
-    console.error('[蜃灵助手] 自动小总结失败。', error);
-  }
-}
-
 export async function processImmediateWordReplace(messageId) {
   const settings = getGlobalSettings();
   const wordReplace = getWordReplaceSettings(settings);
-  if (!shouldRunWordReplace(settings) || summaryWriteIgnoreIds.has(Number(messageId))) return false;
+  if (!shouldRunWordReplace(settings) || isSummaryWriteIgnored(Number(messageId))) return false;
 
   const chatMessage = getChatMessageById(Number(messageId));
   if (!chatMessage || chatMessage.role !== 'assistant' || chatMessage.is_hidden) return false;
@@ -1553,23 +1453,23 @@ export async function writeConfirmedSummaryForTask(messageId, expectedFingerprin
   return true;
 }
 
-export function scheduleAutoSummary(messageId) {
+export function scheduleImmediateWordReplace(messageId) {
   const numericMessageId = Number(messageId);
   if (!Number.isFinite(numericMessageId)) return;
   if (numericMessageId <= 0) return;
   if (!shouldRunWordReplace()) return;
-  if (summaryWriteIgnoreIds.has(numericMessageId)) return;
+  if (isSummaryWriteIgnored(numericMessageId)) return;
   if (!isLatestMessage(numericMessageId)) return;
 
-  const oldTimer = summaryProcessTimers.get(numericMessageId);
+  const oldTimer = immediateWordReplaceTimers.get(numericMessageId);
   if (oldTimer !== undefined) {
     window.clearTimeout(oldTimer);
   }
   const timer = window.setTimeout(() => {
-    summaryProcessTimers.delete(numericMessageId);
+    immediateWordReplaceTimers.delete(numericMessageId);
     void processImmediateWordReplace(numericMessageId);
   }, SUMMARY_EVENT_DELAY_MS);
-  summaryProcessTimers.set(numericMessageId, timer);
+  immediateWordReplaceTimers.set(numericMessageId, timer);
 }
 
 export function resolveEventMessageId(payload) {
@@ -1582,22 +1482,22 @@ export function resolveEventMessageId(payload) {
   return latestId >= 0 ? latestId : null;
 }
 
-export function registerAutoSummaryEvents() {
-  if (summaryEventsRegistered) return;
+export function registerImmediateWordReplaceEvents() {
+  if (immediateWordReplaceEventsRegistered) return;
   const tavernEvents = getTavernEventsSafe();
   const eventNames = [tavernEvents.MESSAGE_RECEIVED, tavernEvents.CHARACTER_MESSAGE_RENDERED].filter(Boolean);
   if (eventNames.length === 0) {
-    console.warn('[蜃灵助手] 未发现 SillyTavern 事件接口，自动小总结暂不能监听新楼层。');
+    console.warn('[蜃灵助手] 未发现 SillyTavern 事件接口，词汇替换暂不能监听新楼层。');
     return;
   }
 
   const handleMessage = payload => {
     const messageId = resolveEventMessageId(payload);
-    if (messageId !== null) scheduleAutoSummary(messageId);
+    if (messageId !== null) scheduleImmediateWordReplace(messageId);
   };
   const handleChatChanged = () => {
-    summaryProcessTimers.forEach(timer => window.clearTimeout(timer));
-    summaryProcessTimers.clear();
+    immediateWordReplaceTimers.forEach(timer => window.clearTimeout(timer));
+    immediateWordReplaceTimers.clear();
     clearStaleSummaryRunningTask('聊天切换');
     recoverDeferredGrandMemoryForCurrentChat();
     scanExistingSummaryState();
@@ -1605,13 +1505,13 @@ export function registerAutoSummaryEvents() {
 
   eventNames.forEach(eventName => {
     const stop = registerTavernEvent(eventName, handleMessage);
-    if (stop) summaryEventStops.push(stop);
+    if (stop) immediateWordReplaceEventStops.push(stop);
   });
   const chatChangedStop = registerTavernEvent(tavernEvents.CHAT_CHANGED, handleChatChanged);
-  if (chatChangedStop) summaryEventStops.push(chatChangedStop);
+  if (chatChangedStop) immediateWordReplaceEventStops.push(chatChangedStop);
 
-  summaryEventsRegistered = summaryEventStops.length > 0;
-  if (!summaryEventsRegistered) {
-    console.warn('[蜃灵助手] 找到了事件名称，但未能注册监听器，自动小总结暂不会运行。');
+  immediateWordReplaceEventsRegistered = immediateWordReplaceEventStops.length > 0;
+  if (!immediateWordReplaceEventsRegistered) {
+    console.warn('[蜃灵助手] 找到了事件名称，但未能注册词汇替换监听器。');
   }
 }

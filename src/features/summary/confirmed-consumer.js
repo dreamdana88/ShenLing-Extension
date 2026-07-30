@@ -229,7 +229,7 @@ export function createConfirmedSummaryConsumer(options = {}) {
     state.summary.confirmedQueueActivatedAt = formatTimestamp();
     getConfirmedSummaryTasks(state).forEach(task => {
       if (task.status === 'PENDING' && task.createdAt < state.summary.confirmedQueueActivatedAt) {
-        task.status = 'CANCELLED';
+        cancelTask(task, 'PRE_ACTIVATION');
         task.updatedAt = state.summary.confirmedQueueActivatedAt;
       }
     });

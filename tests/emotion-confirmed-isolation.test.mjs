@@ -3,7 +3,7 @@ import test from 'node:test';
 import { commitEmotionUpdateFromConfirmedSummary } from '../src/features/emotion-profile/workflow.js';
 import { CHAT_STATE_KEY } from '../src/constants.js';
 
-test('confirmed Emotion keeps A state isolated when the chat changes between pending preparation and commit', async () => {
+test('confirmed Emotion keeps A state isolated without writing legacy pending when the chat changes', async () => {
   const previousSillyTavern = globalThis.SillyTavern;
   const previousWindow = globalThis.window;
   const stateA = { emotionProfiles: { profiles: {}, pendingByMessage: {} } };
@@ -38,7 +38,7 @@ test('confirmed Emotion keeps A state isolated when the chat changes between pen
     });
     assert.equal(committedWhileSwitched, false);
     assert.deepEqual(stateB.emotionProfiles, { profiles: { Existing: { name: 'Existing', records: [] } }, pendingByMessage: {} });
-    assert.ok(stateA.emotionProfiles.pendingByMessage['0']);
+    assert.deepEqual(stateA.emotionProfiles.pendingByMessage, {});
 
     current = contextA;
     const committedAfterReturn = await commitEmotionUpdateFromConfirmedSummary(result, {

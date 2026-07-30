@@ -321,6 +321,7 @@ export const defaultChatState = Object.freeze({
     },
     runningTask: 'none',
     lastError: '',
+    lifecycleSchemaVersion: 1,
     confirmedTasks: [],
     confirmedQueueActivatedAt: '',
   },
@@ -397,7 +398,7 @@ export const CONFIRMED_SUMMARY_EFFECT_STATUSES = Object.freeze([
   'SKIPPED',
 ]);
 export const CONFIRMED_SUMMARY_EFFECT_NAMES = Object.freeze(['emotion', 'affection', 'plot']);
-const CONFIRMED_SUMMARY_REASON_CODES = new Set(['SUMMARY_DISABLED']);
+const CONFIRMED_SUMMARY_REASON_CODES = new Set(['SUMMARY_DISABLED', 'PRE_ACTIVATION']);
 const CONFIRMED_SUMMARY_ERROR_CODES = new Set([
   'SUMMARY_GENERATION_FAILED',
   'SUMMARY_TRANSPORT_TIMEOUT',
@@ -406,6 +407,7 @@ const CONFIRMED_SUMMARY_ERROR_CODES = new Set([
 const CONFIRMED_SUMMARY_EFFECT_REASON_CODES = new Set(['CONFIRMED_EFFECT_FAILED']);
 
 function normalizeConfirmedTaskMessageId(value) {
+  if (value === null || value === undefined || value === '') return null;
   const messageId = Number(value);
   return Number.isInteger(messageId) && messageId >= 0 ? messageId : null;
 }
@@ -434,6 +436,79 @@ function normalizeConfirmedTaskEffects(value) {
     effects[name] = normalizeConfirmedTaskEffectStatus(value[name]);
   });
   return effects;
+}
+
+function normalizeProcessedMessageFingerprints(value) {
+  if (!isPlainObject(value)) return {};
+  return Object.entries(value).reduce((fingerprints, [messageId, fingerprint]) => {
+    const numericMessageId = normalizeConfirmedTaskMessageId(messageId);
+    const normalizedFingerprint = String(fingerprint ?? '').trim();
+    if (numericMessageId === null || !normalizedFingerprint) return fingerprints;
+    if (!/^[0-9]+:-?[0-9]+$/.test(normalizedFingerprint)) return fingerprints;
+    fingerprints[numericMessageId] = normalizedFingerprint;
+    return fingerprints;
+  }, {});
+}
+
+function normalizeMemoryCountedMessageIds(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  return value.reduce((messageIds, item) => {
+    const messageId = normalizeConfirmedTaskMessageId(item);
+    if (messageId === null || seen.has(messageId)) return messageIds;
+    seen.add(messageId);
+    messageIds.push(messageId);
+    return messageIds;
+  }, []);
+}
+
+function getLatestArchiveBoundary(summary) {
+  const archiveTos = Array.isArray(summary.archiveRecords)
+    ? summary.archiveRecords
+      .map(record => normalizeConfirmedTaskMessageId(record?.archiveTo))
+      .filter(messageId => messageId !== null)
+    : [];
+  const fallback = normalizeConfirmedTaskMessageId(summary.lastArchivedMessageId);
+  return Math.max(-1, ...archiveTos, fallback ?? -1);
+}
+
+function hasCompletedConfirmedEffects(task) {
+  if (!isPlainObject(task.effects)) return false;
+  return CONFIRMED_SUMMARY_EFFECT_NAMES.every(name => (
+    ['SUCCEEDED', 'SKIPPED'].includes(task.effects[name])
+  ));
+}
+
+export function normalizeSummaryLifecycleMetadata(chatState = getChatState()) {
+  if (!isPlainObject(chatState.summary)) {
+    chatState.summary = cloneData(defaultChatState.summary);
+  }
+  chatState.summary = mergeDefaults(chatState.summary, cloneData(defaultChatState.summary));
+  const summary = chatState.summary;
+  summary.lifecycleSchemaVersion = 1;
+  summary.processedMessageFingerprints = normalizeProcessedMessageFingerprints(summary.processedMessageFingerprints);
+  summary.memoryCountedMessageIds = normalizeMemoryCountedMessageIds(summary.memoryCountedMessageIds);
+  delete summary.pending;
+  summary.confirmedTasks = normalizeConfirmedSummaryTasks(summary.confirmedTasks);
+
+  if (summary.confirmedQueueActivatedAt) {
+    summary.confirmedTasks.forEach(task => {
+      if (task.status !== 'PENDING' || task.createdAt >= summary.confirmedQueueActivatedAt) return;
+      task.status = 'CANCELLED';
+      task.reasonCode = 'PRE_ACTIVATION';
+      task.updatedAt = task.updatedAt || summary.confirmedQueueActivatedAt;
+    });
+  }
+
+  const archiveBoundary = getLatestArchiveBoundary(summary);
+  if (archiveBoundary >= 0) {
+    summary.confirmedTasks = summary.confirmedTasks.filter(task => {
+      if (task.originalMessageId > archiveBoundary) return true;
+      if (task.status === 'CANCELLED') return false;
+      return task.status !== 'SUMMARIZED' || !hasCompletedConfirmedEffects(task);
+    });
+  }
+  return summary;
 }
 
 function normalizeConfirmedTaskEffectReasonCodes(value) {
@@ -503,11 +578,7 @@ export function normalizeConfirmedSummaryTasks(value) {
 }
 
 export function getConfirmedSummaryTasks(chatState = getChatState()) {
-  if (!isPlainObject(chatState.summary)) {
-    chatState.summary = cloneData(defaultChatState.summary);
-  }
-  chatState.summary = mergeDefaults(chatState.summary, cloneData(defaultChatState.summary));
-  chatState.summary.confirmedTasks = normalizeConfirmedSummaryTasks(chatState.summary.confirmedTasks);
+  normalizeSummaryLifecycleMetadata(chatState);
   return chatState.summary.confirmedTasks;
 }
 
@@ -586,6 +657,7 @@ export function getChatState() {
   state.schemaVersion = STORAGE_VERSION;
   state.identity = info;
   delete state.parallel;
+  normalizeSummaryLifecycleMetadata(state);
   return state;
 }
 
