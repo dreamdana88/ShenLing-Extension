@@ -321,6 +321,7 @@ export const defaultChatState = Object.freeze({
     },
     runningTask: 'none',
     lastError: '',
+    confirmedTasks: [],
   },
   outline: {
     enabled: false,
@@ -379,6 +380,84 @@ export const defaultChatState = Object.freeze({
     lastSavedAt: '',
   },
 });
+
+export const CONFIRMED_SUMMARY_TASK_STATUSES = Object.freeze([
+  'PENDING',
+  'RUNNING',
+  'SUMMARIZED',
+  'FAILED',
+  'CANCELLED',
+]);
+
+function normalizeConfirmedTaskMessageId(value) {
+  const messageId = Number(value);
+  return Number.isInteger(messageId) && messageId >= 0 ? messageId : null;
+}
+
+function normalizeConfirmedTaskFingerprint(value) {
+  const fingerprint = String(value ?? '').trim();
+  return /^[0-9]+:[0-9]+$/.test(fingerprint) ? fingerprint : '';
+}
+
+function normalizeConfirmedTaskTimestamp(value) {
+  return String(value ?? '').trim().slice(0, 64);
+}
+
+function normalizeConfirmedTaskStatus(value) {
+  if (value === 'RUNNING') return 'PENDING';
+  return CONFIRMED_SUMMARY_TASK_STATUSES.includes(value) ? value : 'CANCELLED';
+}
+
+export function normalizeConfirmedSummaryTasks(value) {
+  if (!Array.isArray(value)) return [];
+
+  const taskKeys = new Set();
+  const tasks = [];
+  value.forEach(rawTask => {
+    if (!isPlainObject(rawTask)) return;
+    const taskKey = String(rawTask.taskKey ?? '').trim();
+    const chatIdentity = String(rawTask.chatIdentity ?? '').trim();
+    const originalMessageId = normalizeConfirmedTaskMessageId(rawTask.originalMessageId);
+    const confirmingUserMessageId = normalizeConfirmedTaskMessageId(rawTask.confirmingUserMessageId);
+    const assistantFingerprint = normalizeConfirmedTaskFingerprint(rawTask.assistantFingerprint);
+    const confirmingUserFingerprint = normalizeConfirmedTaskFingerprint(rawTask.confirmingUserFingerprint);
+    const selectedSwipeId = normalizeConfirmedTaskMessageId(rawTask.selectedSwipeId);
+    if (
+      !taskKey
+      || taskKeys.has(taskKey)
+      || !chatIdentity
+      || originalMessageId === null
+      || confirmingUserMessageId === null
+      || selectedSwipeId === null
+      || !assistantFingerprint
+      || !confirmingUserFingerprint
+    ) return;
+
+    taskKeys.add(taskKey);
+    tasks.push({
+      taskKey,
+      chatIdentity,
+      originalMessageId,
+      assistantFingerprint,
+      selectedSwipeId,
+      confirmingUserMessageId,
+      confirmingUserFingerprint,
+      status: normalizeConfirmedTaskStatus(rawTask.status),
+      createdAt: normalizeConfirmedTaskTimestamp(rawTask.createdAt),
+      updatedAt: normalizeConfirmedTaskTimestamp(rawTask.updatedAt),
+    });
+  });
+  return tasks;
+}
+
+export function getConfirmedSummaryTasks(chatState = getChatState()) {
+  if (!isPlainObject(chatState.summary)) {
+    chatState.summary = cloneData(defaultChatState.summary);
+  }
+  chatState.summary = mergeDefaults(chatState.summary, cloneData(defaultChatState.summary));
+  chatState.summary.confirmedTasks = normalizeConfirmedSummaryTasks(chatState.summary.confirmedTasks);
+  return chatState.summary.confirmedTasks;
+}
 
 export function getContextInfo() {
   const context = getContextSafe();

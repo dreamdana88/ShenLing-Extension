@@ -19,6 +19,7 @@ import {
   registerWorldInfoContextEvents,
 } from './src/core/context-resolver.js';
 import { registerPendingCommitEvents } from './src/core/pending-commit.js';
+import { registerConfirmedLifecycleEvents } from './src/features/summary/confirmed-lifecycle.js';
 import { registerPromptStateLineSanitizerEvents } from './src/core/prompt-state-lines.js';
 import {
   copyText,
@@ -1025,6 +1026,7 @@ function openFloatingPanel() {
   syncViewportSize();
   scanExistingSummaryState();
   registerAutoSummaryEvents();
+  registerConfirmedLifecycleEvents();
   registerEmotionProfileEvents();
   registerAffectionWorkflowEvents();
   registerPendingCommitEvents();
@@ -1307,6 +1309,7 @@ function init() {
   clearStaleSummaryRunningTask('插件重新加载');
   scanExistingSummaryState();
   registerAutoSummaryEvents();
+  registerConfirmedLifecycleEvents();
   registerEmotionProfileEvents();
   registerPendingCommitEvents();
   registerPromptStateLineSanitizerEvents();
