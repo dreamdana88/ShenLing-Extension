@@ -205,12 +205,14 @@ function normalizePendingBucket(store, messageId) {
   return store.pendingByMessage[key];
 }
 
-function storePendingEmotionUpdate({ messageId, fingerprint, changed, updates, raw }) {
+function storePendingEmotionUpdate(
+  { messageId, fingerprint, changed, updates, raw },
+  { chatState = getChatState(), persist = true } = {},
+) {
   const numericMessageId = Number(messageId);
   const cleanFingerprint = String(fingerprint || '').trim();
   if (!Number.isFinite(numericMessageId) || !cleanFingerprint) return null;
 
-  const chatState = getChatState();
   const store = getEmotionProfileStore(chatState);
   const bucket = normalizePendingBucket(store, numericMessageId);
   const updatedAt = formatTimestamp();
@@ -225,7 +227,7 @@ function storePendingEmotionUpdate({ messageId, fingerprint, changed, updates, r
   bucket.items[cleanFingerprint] = item;
   bucket.updatedAt = updatedAt;
   store.lastPendingAt = updatedAt;
-  saveChatState();
+  if (persist) saveChatState();
   return item;
 }
 
@@ -355,9 +357,14 @@ ${lines.join('\n\n')}
 </character_profile_state>`;
 }
 
-export function appendEmotionProfileRecords(updates, { messageId, fingerprint = '', sourceType = '', save = true } = {}) {
+export function appendEmotionProfileRecords(updates, {
+  messageId,
+  fingerprint = '',
+  sourceType = '',
+  save = true,
+  chatState = getChatState(),
+} = {}) {
   if (!Array.isArray(updates) || !updates.length) return [];
-  const chatState = getChatState();
   const store = getEmotionProfileStore(chatState);
   const createdAt = formatTimestamp();
   const changedRoleNames = [];
@@ -394,11 +401,13 @@ export function appendEmotionProfileRecords(updates, { messageId, fingerprint = 
   return changedRoleNames;
 }
 
-export function removeEmotionProfileRecordsForMessage(messageId, { save = true } = {}) {
+export function removeEmotionProfileRecordsForMessage(messageId, {
+  save = true,
+  chatState = getChatState(),
+} = {}) {
   const numericMessageId = Number(messageId);
   if (!Number.isFinite(numericMessageId)) return false;
 
-  const chatState = getChatState();
   const store = getEmotionProfileStore(chatState);
   let changed = false;
 
@@ -471,8 +480,15 @@ export async function deleteEmotionProfileByRole(roleName) {
   return true;
 }
 
-export async function processEmotionUpdateFromSummaryResult(result, { messageId } = {}) {
-  if (!shouldAnalyzeEmotionProfile()) return;
+export async function processEmotionUpdateFromSummaryResult(result, {
+  messageId,
+  settings = getGlobalSettings(),
+  chatState = getChatState(),
+  fingerprint = '',
+  persist = true,
+  sync = true,
+} = {}) {
+  if (!shouldAnalyzeEmotionProfile(settings)) return;
   try {
     const parsed = parseEmotionUpdateFromBracketLines(sanitizeMemoryForEmotionAnalysis(result));
     if (!parsed) {
@@ -480,20 +496,20 @@ export async function processEmotionUpdateFromSummaryResult(result, { messageId 
       return;
     }
     const changed = parsed?.changed === true || String(parsed?.changed || '').toLowerCase() === 'true';
-    const fingerprint = getMessageContentFingerprint(messageId);
-    if (!fingerprint) return;
+    const selectedFingerprint = String(fingerprint || getMessageContentFingerprint(messageId, settings)).trim();
+    if (!selectedFingerprint) return;
     const updates = changed ? normalizeProfileItems(parsed) : [];
     const pending = storePendingEmotionUpdate({
       messageId,
-      fingerprint,
+      fingerprint: selectedFingerprint,
       changed: Boolean(changed && updates.length),
       updates,
       raw: parsed,
-    });
+    }, { chatState, persist });
     if (pending?.changed) {
       notifyEmotion('info', `检测到待确认情感变化：${updates.map(item => item.roleName).join('、')}`);
     }
-    await syncEmotionProfileInjection();
+    if (sync) await syncEmotionProfileInjection();
     refreshPanel();
   } catch (error) {
     console.error('[蜃灵助手] 情感档案解析失败。', error);
@@ -527,8 +543,15 @@ export async function processEmotionUpdateFromArchiveResult(result, { messageId,
   }
 }
 
-export async function commitSelectedPendingEmotionUpdates({ notify = false, messageIds = null } = {}) {
-  const chatState = getChatState();
+export async function commitSelectedPendingEmotionUpdates({
+  notify = false,
+  messageIds = null,
+  chatState = getChatState(),
+  settings = getGlobalSettings(),
+  getSelectedFingerprint = messageId => getMessageContentFingerprint(messageId, settings),
+  persist = true,
+  sync = true,
+} = {}) {
   const store = getEmotionProfileStore(chatState);
   const pendingEntries = Object.entries(store.pendingByMessage || {});
   if (!pendingEntries.length) return;
@@ -547,17 +570,18 @@ export async function commitSelectedPendingEmotionUpdates({ notify = false, mess
       continue;
     }
 
-    const fingerprint = getMessageContentFingerprint(messageId);
+    const fingerprint = String(getSelectedFingerprint(messageId) || '').trim();
     if (!fingerprint) continue;
     const item = bucket.items[fingerprint];
     if (!isPlainObject(item)) continue;
 
-    removeEmotionProfileRecordsForMessage(messageId, { save: false });
+    removeEmotionProfileRecordsForMessage(messageId, { save: false, chatState });
     if (item.changed === true && Array.isArray(item.profiles) && item.profiles.length) {
       committedRoleNames.push(...appendEmotionProfileRecords(item.profiles, {
         messageId: Number(messageId),
         fingerprint,
         save: false,
+        chatState,
       }));
     }
 
@@ -567,12 +591,39 @@ export async function commitSelectedPendingEmotionUpdates({ notify = false, mess
 
   if (!changed) return;
   store.lastUpdatedAt = formatTimestamp();
-  saveChatState();
-  await syncEmotionProfileInjection();
+  if (persist) saveChatState();
+  if (sync) await syncEmotionProfileInjection();
   refreshPanel();
   if (notify && committedRoleNames.length) {
     notifyEmotion('success', `情感档案已确认：${[...new Set(committedRoleNames)].join('、')}`);
   }
+}
+
+export async function commitEmotionUpdateFromConfirmedSummary(
+  result,
+  {
+    messageId,
+    fingerprint = '',
+    chatState = getChatState(),
+    settings = getGlobalSettings(),
+    isCurrentChat = () => true,
+  } = {},
+) {
+  await processEmotionUpdateFromSummaryResult(result, {
+    messageId,
+    fingerprint,
+    settings,
+    chatState,
+    sync: false,
+  });
+  if (!isCurrentChat()) return false;
+  await commitSelectedPendingEmotionUpdates({
+    messageIds: [messageId],
+    chatState,
+    settings,
+    getSelectedFingerprint: () => fingerprint || getMessageContentFingerprint(messageId, settings),
+  });
+  return true;
 }
 
 export async function syncEmotionProfileInjection() {

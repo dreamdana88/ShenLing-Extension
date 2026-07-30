@@ -39,6 +39,7 @@ import {
 import {
   getChatState,
   getConfirmedSummaryTasks,
+  getContextInfo,
   getGlobalSettings,
   getPlotOutlineState,
   getSummarySettings,
@@ -94,6 +95,7 @@ import {
 const summaryEventStops = [];
 const summaryProcessTimers = new Map();
 const summaryWriteIgnoreIds = new Set();
+const deferredGrandRecoveries = new Set();
 let summaryEventsRegistered = false;
 
 let workflowOptions = {
@@ -511,11 +513,16 @@ export function createScannedSummaryState(
     .reverse()
     .find(message => message.role === 'assistant' && GRAND_MEMORY_BLOCK_RE.test(message.message)) || null;
   const lastGrandSummaryMessageId = latestArchiveRecord?.summaryMessageId ?? latestGrandMemoryMessage?.message_id ?? null;
-  const archiveFloorBoundary = lastGrandSummaryMessageId ?? 0;
+  const archiveFloorBoundary = Number(
+    latestArchiveRecord?.archiveTo
+    ?? baseSummary.lastArchivedMessageId
+    ?? -1,
+  );
 
   const countedMessages = messages.filter(message => (
     message.message_id > archiveFloorBoundary &&
     message.role === 'assistant' &&
+    !message.is_hidden &&
     !GRAND_MEMORY_BLOCK_RE.test(message.message) &&
     hasMemoryBlock(message.message)
   ));
@@ -767,7 +774,35 @@ export function shouldTriggerAutoGrandMemory(chatState = getChatState(), setting
 export function getLatestArchiveBoundary(chatState = getChatState()) {
   const archiveRecords = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [];
   const latestRecord = archiveRecords.at(-1) || null;
-  return Number(latestRecord?.summaryMessageId ?? chatState.summary.lastGrandSummaryMessageId ?? -1);
+  return Number(latestRecord?.archiveTo ?? chatState.summary.lastArchivedMessageId ?? -1);
+}
+
+function getCurrentChatIdentity() {
+  return String(getContextInfo().chatId || '').trim();
+}
+
+function isCurrentChatIdentity(chatIdentity) {
+  return Boolean(chatIdentity) && getCurrentChatIdentity() === chatIdentity;
+}
+
+function deferGrandRecovery(chatIdentity) {
+  if (chatIdentity) deferredGrandRecoveries.add(chatIdentity);
+}
+
+function recoverDeferredGrandMemoryForCurrentChat() {
+  const chatIdentity = getCurrentChatIdentity();
+  if (!deferredGrandRecoveries.has(chatIdentity)) return false;
+  const chatState = getChatState();
+  deferredGrandRecoveries.delete(chatIdentity);
+  if (chatState.summary.runningTask !== 'grand_memory') return false;
+  chatState.summary.runningTask = 'none';
+  chatState.summary.lastError = '';
+  saveChatState();
+  return true;
+}
+
+export function recoverDeferredAutoGrandMemory() {
+  return recoverDeferredGrandMemoryForCurrentChat();
 }
 
 function hasMatchingSummarizedConfirmedTask(message, chatState) {
@@ -816,13 +851,14 @@ export function getSafeAutoGrandArchiveTo(chatState = getChatState()) {
 export async function processAutoGrandMemory() {
   const settings = getGlobalSettings();
   const chatState = getChatState();
+  const chatIdentity = getCurrentChatIdentity();
   if (!shouldTriggerAutoGrandMemory(chatState, settings)) return;
   if (chatState.summary.runningTask !== 'none') return;
 
   const archiveTo = getSafeAutoGrandArchiveTo(chatState);
   if (!Number.isInteger(archiveTo)) return;
-  const previousGrandSummaryMessageId = getLatestArchiveBoundary(chatState);
-  const archiveFrom = previousGrandSummaryMessageId >= 0 ? previousGrandSummaryMessageId + 1 : 0;
+  const previousArchiveTo = getLatestArchiveBoundary(chatState);
+  const archiveFrom = previousArchiveTo >= 0 ? previousArchiveTo + 1 : 0;
   if (archiveFrom > archiveTo) return;
 
   chatState.summary.runningTask = 'grand_memory';
@@ -841,8 +877,16 @@ export async function processAutoGrandMemory() {
       summary: getSummarySettings(),
     });
     const result = await generateSummaryMemory(prompt, { type: '自动大总结' });
+    if (!isCurrentChatIdentity(chatIdentity)) {
+      deferGrandRecovery(chatIdentity);
+      return;
+    }
     const grandMemory = forceGrandMemoryRange(result, archiveData.memoryFrom, archiveData.memoryTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
+    if (!isCurrentChatIdentity(chatIdentity)) {
+      deferGrandRecovery(chatIdentity);
+      return;
+    }
 
     markSummaryWriteIgnored(Number(summaryMessageId));
 
@@ -852,6 +896,10 @@ export async function processAutoGrandMemory() {
         archiveMessageIds.map(message_id => ({ message_id, is_hidden: true })),
         { refresh: 'all' },
       );
+    }
+    if (!isCurrentChatIdentity(chatIdentity)) {
+      deferGrandRecovery(chatIdentity);
+      return;
     }
 
     const archiveRecord = {
@@ -864,6 +912,10 @@ export async function processAutoGrandMemory() {
       createdAt: Date.now(),
     };
 
+    if (!isCurrentChatIdentity(chatIdentity)) {
+      deferGrandRecovery(chatIdentity);
+      return;
+    }
     chatState.summary.runningTask = 'none';
     chatState.summary.memoryCountSinceArchive = 0;
     chatState.summary.memoryCountedMessageIds = [];
@@ -878,6 +930,10 @@ export async function processAutoGrandMemory() {
     await tryExtractMemoirAfterGrandSummary(archiveRecord, grandMemory);
     refreshSummaryPanelAfterAction();
   } catch (error) {
+    if (!isCurrentChatIdentity(chatIdentity)) {
+      deferGrandRecovery(chatIdentity);
+      return;
+    }
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = error.message || String(error);
     saveChatState();
@@ -1530,6 +1586,7 @@ export function registerAutoSummaryEvents() {
     summaryProcessTimers.forEach(timer => window.clearTimeout(timer));
     summaryProcessTimers.clear();
     clearStaleSummaryRunningTask('聊天切换');
+    recoverDeferredGrandMemoryForCurrentChat();
     scanExistingSummaryState();
   };
 

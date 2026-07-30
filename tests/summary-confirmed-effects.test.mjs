@@ -154,6 +154,34 @@ test('a chat switch during an effect leaves the other chat untouched and recover
   assert.deepEqual(harness.calls, ['emotion', 'emotion', 'affection', 'plot']);
 });
 
+test('a rejecting effect switched to another chat records deferred recovery instead of failing the source task', async () => {
+  let first = true;
+  const harness = createHarness({
+    runEffect: async name => {
+      harness.calls.push(name);
+      if (name === 'emotion' && first) {
+        first = false;
+        harness.switchTo('chat-b');
+        throw new Error('cross-chat rejection');
+      }
+    },
+  });
+  harness.coordinator.scheduleConfirmedEffects('task-a');
+  await harness.coordinator.drainConfirmedEffects();
+  assert.deepEqual(harness.stateB.summary.confirmedTasks, []);
+  assert.equal(harness.stateA.summary.confirmedTasks[0].effects.emotion, 'RUNNING');
+
+  harness.switchTo('chat-a');
+  assert.equal(harness.coordinator.handleChatChanged(), true);
+  assert.equal(harness.stateA.summary.confirmedTasks[0].effects.emotion, 'PENDING');
+  await harness.coordinator.drainConfirmedEffects();
+  assert.deepEqual(harness.stateA.summary.confirmedTasks[0].effects, {
+    emotion: 'SUCCEEDED',
+    affection: 'SUCCEEDED',
+    plot: 'SUCCEEDED',
+  });
+});
+
 function summarizedTaskFor(message) {
   return {
     ...task(`task-${message.message_id}`),

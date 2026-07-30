@@ -12,8 +12,7 @@ import {
 import { extractMemoryBlocks } from '../../core/summary.js';
 import { processAutoGrandMemory } from './workflow.js';
 import {
-  commitSelectedPendingEmotionUpdates,
-  processEmotionUpdateFromSummaryResult,
+  commitEmotionUpdateFromConfirmedSummary,
   shouldAnalyzeEmotionProfile,
 } from '../emotion-profile/workflow.js';
 import {
@@ -70,8 +69,12 @@ export function createConfirmedEffectsCoordinator(options = {}) {
   });
   const runEffect = options.runEffect || (async (name, { task, memory, state }) => {
     if (name === 'emotion') {
-      await processEmotionUpdateFromSummaryResult(memory, { messageId: task.originalMessageId });
-      await commitSelectedPendingEmotionUpdates({ messageIds: [task.originalMessageId] });
+      await commitEmotionUpdateFromConfirmedSummary(memory, {
+        messageId: task.originalMessageId,
+        fingerprint: task.assistantFingerprint,
+        chatState: state,
+        isCurrentChat: () => getIdentity() === task.chatIdentity,
+      });
       return;
     }
     if (name === 'affection') {
@@ -183,7 +186,10 @@ export function createConfirmedEffectsCoordinator(options = {}) {
           effects[name] = 'SUCCEEDED';
           delete task.effectReasonCodes?.[name];
         } catch {
-          if (getIdentity() !== task.chatIdentity) return;
+          if (getIdentity() !== task.chatIdentity) {
+            deferredRecoveries.set(task.chatIdentity, { taskKey: task.taskKey, name });
+            return;
+          }
           effects[name] = 'FAILED';
           task.effectReasonCodes = { ...(task.effectReasonCodes || {}), [name]: SAFE_EFFECT_REASON_CODE };
           logEffectFailure(name);
