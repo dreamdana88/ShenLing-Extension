@@ -52,6 +52,7 @@ export function createConfirmedSummaryConsumer(options = {}) {
   const getSummaryFingerprint = options.getSummaryFingerprint || getAutoSummaryFingerprint;
   const generate = options.generate;
   const write = options.write;
+  const onSummaryCommitted = options.onSummaryCommitted;
   const now = options.now || Date.now;
   const formatTimestamp = options.formatTimestamp || nowTimestamp;
   const defer = options.defer || (callback => window.setTimeout(callback, 0));
@@ -286,6 +287,9 @@ export function createConfirmedSummaryConsumer(options = {}) {
       task.status = 'SUMMARIZED';
       task.updatedAt = formatTimestamp();
       saveState();
+      void Promise.resolve(onSummaryCommitted?.(task)).catch(error => {
+        console.warn('[蜃灵助手] confirmed Summary 下游 effect 调度失败。', error);
+      });
       scheduleConfirmedQueueDrain();
       return;
     }
@@ -339,10 +343,21 @@ export function createConfirmedSummaryConsumer(options = {}) {
       if (!wrote) {
         cancelTask(latestTask);
       } else {
+        const messageId = Number(task.originalMessageId);
+        const countedMessageIds = Array.isArray(latestState.summary.memoryCountedMessageIds)
+          ? latestState.summary.memoryCountedMessageIds
+          : [];
+        const alreadyCounted = countedMessageIds.includes(messageId)
+          || Object.hasOwn(latestState.summary.processedMessageFingerprints || {}, messageId);
         latestState.summary.processedMessageFingerprints = {
           ...(latestState.summary.processedMessageFingerprints || {}),
           [task.originalMessageId]: result.fingerprint,
         };
+        if (!alreadyCounted) {
+          latestState.summary.memoryCountedMessageIds = [...countedMessageIds, messageId];
+          latestState.summary.memoryCountSinceArchive = Number(latestState.summary.memoryCountSinceArchive || 0) + 1;
+          latestState.summary.smallSummaryCount = Number(latestState.summary.smallSummaryCount || 0) + 1;
+        }
         latestState.summary.lastSummaryMessageId = Number(task.originalMessageId);
         latestState.summary.lastSummaryAt = formatTimestamp();
         latestTask.status = 'SUMMARIZED';
@@ -350,6 +365,14 @@ export function createConfirmedSummaryConsumer(options = {}) {
       latestTask.updatedAt = formatTimestamp();
       delete latestTask.executionToken;
       saveState();
+      if (latestTask.status === 'SUMMARIZED') {
+        void Promise.resolve(onSummaryCommitted?.(latestTask, {
+          memory: result.memory,
+          effectMemory: result.effectResult || result.memory,
+        })).catch(error => {
+          console.warn('[蜃灵助手] confirmed Summary 下游 effect 调度失败。', error);
+        });
+      }
     } catch (error) {
       const cancellationRequested = hasCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
       if (getIdentity() !== task.chatIdentity) {

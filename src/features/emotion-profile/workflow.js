@@ -527,16 +527,20 @@ export async function processEmotionUpdateFromArchiveResult(result, { messageId,
   }
 }
 
-export async function commitSelectedPendingEmotionUpdates({ notify = false } = {}) {
+export async function commitSelectedPendingEmotionUpdates({ notify = false, messageIds = null } = {}) {
   const chatState = getChatState();
   const store = getEmotionProfileStore(chatState);
   const pendingEntries = Object.entries(store.pendingByMessage || {});
   if (!pendingEntries.length) return;
+  const selectedMessageIds = Array.isArray(messageIds)
+    ? new Set(messageIds.map(Number).filter(Number.isInteger))
+    : null;
 
   let changed = false;
   const committedRoleNames = [];
 
   for (const [messageId, bucket] of pendingEntries) {
+    if (selectedMessageIds && !selectedMessageIds.has(Number(messageId))) continue;
     if (!isPlainObject(bucket) || !isPlainObject(bucket.items)) {
       delete store.pendingByMessage[messageId];
       changed = true;

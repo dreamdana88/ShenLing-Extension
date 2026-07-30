@@ -42,6 +42,7 @@ function createHarness(tasks, options = {}) {
       calls.write.push([messageId, fingerprint]);
       return true;
     }),
+    onSummaryCommitted: options.onSummaryCommitted,
     formatTimestamp: () => '2026-07-30T00:00:01.000Z',
     defer: () => {},
     generationIdleRecoveryIntervalMs: options.generationIdleRecoveryIntervalMs,
@@ -86,6 +87,27 @@ test('a duplicate drain cannot issue a second Summary request for the same task'
   resolveGenerate();
   await firstDrain;
   assert.equal(harness.state.summary.confirmedTasks[0].status, 'SUMMARIZED');
+});
+
+test('a successful confirmed Summary schedules its downstream effects only after it is persisted as SUMMARIZED', async () => {
+  let observedStatus = '';
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
+    onSummaryCommitted: confirmedTask => {
+      observedStatus = confirmedTask.status;
+    },
+  });
+  await harness.consumer.drainConfirmedQueue();
+  assert.equal(harness.state.summary.confirmedTasks[0].status, 'SUMMARIZED');
+  assert.equal(observedStatus, 'SUMMARIZED');
+});
+
+test('a confirmed Summary is counted once for the automatic Grand Memory interval', async () => {
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')]);
+  await harness.consumer.drainConfirmedQueue();
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.state.summary.memoryCountedMessageIds, [1]);
+  assert.equal(harness.state.summary.memoryCountSinceArchive, 1);
+  assert.equal(harness.state.summary.smallSummaryCount, 1);
 });
 
 test('a changed target after the request returns is cancelled without writing', async () => {

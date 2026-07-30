@@ -389,12 +389,21 @@ export const CONFIRMED_SUMMARY_TASK_STATUSES = Object.freeze([
   'FAILED',
   'CANCELLED',
 ]);
+export const CONFIRMED_SUMMARY_EFFECT_STATUSES = Object.freeze([
+  'PENDING',
+  'RUNNING',
+  'SUCCEEDED',
+  'FAILED',
+  'SKIPPED',
+]);
+export const CONFIRMED_SUMMARY_EFFECT_NAMES = Object.freeze(['emotion', 'affection', 'plot']);
 const CONFIRMED_SUMMARY_REASON_CODES = new Set(['SUMMARY_DISABLED']);
 const CONFIRMED_SUMMARY_ERROR_CODES = new Set([
   'SUMMARY_GENERATION_FAILED',
   'SUMMARY_TRANSPORT_TIMEOUT',
   'SUMMARY_TARGET_INVALID',
 ]);
+const CONFIRMED_SUMMARY_EFFECT_REASON_CODES = new Set(['CONFIRMED_EFFECT_FAILED']);
 
 function normalizeConfirmedTaskMessageId(value) {
   const messageId = Number(value);
@@ -412,6 +421,28 @@ function normalizeConfirmedTaskTimestamp(value) {
 
 function normalizeConfirmedTaskStatus(value) {
   return CONFIRMED_SUMMARY_TASK_STATUSES.includes(value) ? value : 'CANCELLED';
+}
+
+function normalizeConfirmedTaskEffectStatus(value) {
+  return CONFIRMED_SUMMARY_EFFECT_STATUSES.includes(value) ? value : 'PENDING';
+}
+
+function normalizeConfirmedTaskEffects(value) {
+  if (!isPlainObject(value)) return undefined;
+  const effects = {};
+  CONFIRMED_SUMMARY_EFFECT_NAMES.forEach(name => {
+    effects[name] = normalizeConfirmedTaskEffectStatus(value[name]);
+  });
+  return effects;
+}
+
+function normalizeConfirmedTaskEffectReasonCodes(value) {
+  if (!isPlainObject(value)) return undefined;
+  const reasonCodes = {};
+  CONFIRMED_SUMMARY_EFFECT_NAMES.forEach(name => {
+    if (CONFIRMED_SUMMARY_EFFECT_REASON_CODES.has(value[name])) reasonCodes[name] = value[name];
+  });
+  return Object.keys(reasonCodes).length ? reasonCodes : undefined;
 }
 
 export function normalizeConfirmedSummaryTasks(value) {
@@ -459,6 +490,12 @@ export function normalizeConfirmedSummaryTasks(value) {
         : {}),
       ...(CONFIRMED_SUMMARY_ERROR_CODES.has(rawTask.lastErrorCode)
         ? { lastErrorCode: rawTask.lastErrorCode }
+        : {}),
+      ...(normalizeConfirmedTaskEffects(rawTask.effects)
+        ? { effects: normalizeConfirmedTaskEffects(rawTask.effects) }
+        : {}),
+      ...(normalizeConfirmedTaskEffectReasonCodes(rawTask.effectReasonCodes)
+        ? { effectReasonCodes: normalizeConfirmedTaskEffectReasonCodes(rawTask.effectReasonCodes) }
         : {}),
     });
   });

@@ -54,6 +54,7 @@ import {
   handleAutoSummaryEnabledChanged,
   registerConfirmedSummaryConsumer,
 } from './src/features/summary/confirmed-consumer.js';
+import { registerConfirmedEffects } from './src/features/summary/confirmed-effects.js';
 import {
   bindSummaryPanelEvents,
   configureSummaryPanel,
@@ -1318,15 +1319,21 @@ function init() {
   clearStaleSummaryRunningTask('插件重新加载');
   scanExistingSummaryState();
   registerAutoSummaryEvents();
+  const confirmedEffects = registerConfirmedEffects();
   const confirmedConsumer = registerConfirmedSummaryConsumer({
     generate: generateConfirmedSummaryForTask,
     write: writeConfirmedSummaryForTask,
+    onSummaryCommitted: (task, result) => confirmedEffects.scheduleConfirmedEffects(
+      task.taskKey,
+      result?.effectMemory || result?.memory,
+    ),
   });
   registerConfirmedLifecycleEvents({
     shouldCreateTask: shouldRunAutoSummary,
     onTaskCreated: task => confirmedConsumer.holdConfirmedTaskUntilGenerationTerminal(task),
   });
   registerEmotionProfileEvents();
+  registerAffectionWorkflowEvents();
   registerPendingCommitEvents();
   registerPromptStateLineSanitizerEvents();
   registerPlotOutlineEvents();

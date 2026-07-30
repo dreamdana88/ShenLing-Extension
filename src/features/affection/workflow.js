@@ -1406,6 +1406,7 @@ export function processAffectionUpdateFromSummaryResult(
     settings = getGlobalSettings(),
     chatState = getChatState(),
     persist = true,
+    startBuild = true,
   } = {},
 ) {
   if (!isAffectionAnalysisActive(settings)) return null;
@@ -1420,7 +1421,7 @@ export function processAffectionUpdateFromSummaryResult(
     { messageId, fingerprint, analysis: prepared },
     { chatState, persist },
   );
-  if (pending) {
+  if (pending && startBuild) {
     void startAffectionProfileBuildsForPending(pending, {
       settings,
       chatState,
@@ -1433,12 +1434,48 @@ export function processAffectionUpdateFromSummaryResult(
   return { ...prepared, pending, fingerprint };
 }
 
+export async function commitAffectionUpdateFromConfirmedSummary(
+  result,
+  {
+    messageId,
+    settings = getGlobalSettings(),
+    chatState = getChatState(),
+    chatId = getContextInfo().chatId,
+    persist = true,
+  } = {},
+) {
+  const prepared = processAffectionUpdateFromSummaryResult(result, {
+    messageId,
+    settings,
+    chatState,
+    persist,
+    startBuild: false,
+  });
+  if (!prepared?.pending) return prepared;
+
+  await startAffectionProfileBuildsForPending(prepared.pending, {
+    settings,
+    chatState,
+    chatId,
+    persist,
+  });
+  const commit = await commitSelectedPendingAffectionUpdates({
+    settings,
+    chatState,
+    chatId,
+    persist,
+    messageIds: [Number(messageId)],
+  });
+  return { ...prepared, commit };
+}
+
 export async function commitSelectedPendingAffectionUpdates({
   settings = getGlobalSettings(),
   chatState = getChatState(),
   chatId = getContextInfo().chatId,
   persist = true,
   getSelectedFingerprint = messageId => getMessageContentFingerprint(messageId, settings),
+  messageIds = null,
 } = {}) {
   const summary = {
     active: isAffectionAnalysisActive(settings),
@@ -1454,12 +1491,16 @@ export async function commitSelectedPendingAffectionUpdates({
   const store = getAffectionSystemState(chatState);
   const pendingEntries = Object.entries(store.pendingByMessage || {});
   if (!pendingEntries.length) return summary;
+  const selectedMessageIds = Array.isArray(messageIds)
+    ? new Set(messageIds.map(Number).filter(Number.isInteger))
+    : null;
 
   let stateChanged = false;
   const timestamp = formatTimestamp();
 
   for (const [messageKey, bucket] of pendingEntries) {
     const messageId = Number(messageKey);
+    if (selectedMessageIds && !selectedMessageIds.has(messageId)) continue;
     if (!Number.isInteger(messageId) || !isPlainObject(bucket) || !isPlainObject(bucket.items)) {
       delete store.pendingByMessage[messageKey];
       stateChanged = true;

@@ -38,12 +38,14 @@ import {
 } from './confirmed-lifecycle.js';
 import {
   getChatState,
+  getConfirmedSummaryTasks,
   getGlobalSettings,
   getPlotOutlineState,
   getSummarySettings,
   getWordReplaceSettings,
   saveChatState,
 } from '../../core/settings.js';
+import { getAssistantMessageContentFingerprint } from '../../core/message-fingerprint.js';
 import { applyReplacementRulesByScope } from '../word-replace/core.js';
 import {
   buildEmotionUpdatePromptSection,
@@ -768,13 +770,57 @@ export function getLatestArchiveBoundary(chatState = getChatState()) {
   return Number(latestRecord?.summaryMessageId ?? chatState.summary.lastGrandSummaryMessageId ?? -1);
 }
 
+function hasMatchingSummarizedConfirmedTask(message, chatState) {
+  const matchingTasks = getConfirmedSummaryTasks(chatState)
+    .filter(task => Number(task.originalMessageId) === Number(message.message_id));
+  if (matchingTasks.some(task => task.status !== 'SUMMARIZED')) return false;
+  const completed = matchingTasks.find(task => task.status === 'SUMMARIZED');
+  return Boolean(
+    completed
+    && Number(completed.selectedSwipeId) === Number(message.swipe_id ?? 0)
+    && completed.assistantFingerprint === getAssistantMessageContentFingerprint(message),
+  );
+}
+
+function hasCompatibleHistoricalSummary(message, chatState) {
+  if (!hasMemoryBlock(message.message)) return false;
+  const recordedFingerprint = chatState.summary.processedMessageFingerprints?.[message.message_id];
+  if (!recordedFingerprint) return false;
+  const sourceFingerprint = getAutoSummaryFingerprint(message.message_id);
+  const assistantFingerprint = getAssistantMessageContentFingerprint(message);
+  return recordedFingerprint === sourceFingerprint || recordedFingerprint === assistantFingerprint;
+}
+
+export function calculateSafeArchiveTo(messages, chatState = getChatState()) {
+  const archiveFrom = getLatestArchiveBoundary(chatState) + 1;
+  let safeArchiveTo = null;
+  const orderedMessages = [...messages]
+    .filter(message => Number(message.message_id) >= archiveFrom)
+    .sort((left, right) => Number(left.message_id) - Number(right.message_id));
+
+  for (const message of orderedMessages) {
+    if (message.role !== 'assistant' || GRAND_MEMORY_BLOCK_RE.test(String(message.message || ''))) continue;
+    if (message.is_hidden) break;
+    const completed = hasMatchingSummarizedConfirmedTask(message, chatState)
+      || hasCompatibleHistoricalSummary(message, chatState);
+    if (!completed) break;
+    safeArchiveTo = Number(message.message_id);
+  }
+  return safeArchiveTo;
+}
+
+export function getSafeAutoGrandArchiveTo(chatState = getChatState()) {
+  return calculateSafeArchiveTo(getChatMessagesSafe(undefined, { hide_state: 'all' }), chatState);
+}
+
 export async function processAutoGrandMemory() {
   const settings = getGlobalSettings();
   const chatState = getChatState();
   if (!shouldTriggerAutoGrandMemory(chatState, settings)) return;
   if (chatState.summary.runningTask !== 'none') return;
 
-  const archiveTo = getLastMessageId();
+  const archiveTo = getSafeAutoGrandArchiveTo(chatState);
+  if (!Number.isInteger(archiveTo)) return;
   const previousGrandSummaryMessageId = getLatestArchiveBoundary(chatState);
   const archiveFrom = previousGrandSummaryMessageId >= 0 ? previousGrandSummaryMessageId + 1 : 0;
   if (archiveFrom > archiveTo) return;
@@ -1406,9 +1452,19 @@ export async function generateConfirmedSummaryForTask(messageId) {
   const material = createSummarySourceMaterial(Number(messageId), summary);
   if (!material) throw new Error(`第 ${Number(messageId)} 楼没有可总结的正文。`);
   const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
-  const prompt = buildMemorySummaryPrompt(material.promptContent, priorMemories, summary);
-  const result = await generateSummaryMemory(prompt, { type: 'confirmed 自动小总结' });
-  const memory = normalizeMemoryBlock(result);
+  const chatState = getChatState();
+  const prompt = buildMemorySummaryPrompt(material.promptContent, priorMemories, summary, {
+    extraInstructions: joinSummaryExtraInstructions(
+      buildEmotionUpdatePromptSection(settings),
+      buildAffectionUpdatePromptSection(settings, chatState),
+      buildPlotOutlineProgressPromptSection(chatState),
+    ),
+  });
+  const effectResult = await generateSummaryMemory(prompt, { type: 'confirmed 自动小总结' });
+  const affectionAnalysis = prepareAffectionUpdateFromSummaryResult(effectResult, { settings, chatState });
+  const memory = stripMemoryChangedControlLines(
+    affectionAnalysis?.normalizedMemory || normalizeMemoryBlock(effectResult),
+  );
   const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings(settings));
   if (memoryReplacementResult.errors.length > 0) {
     throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
@@ -1416,6 +1472,7 @@ export async function generateConfirmedSummaryForTask(messageId) {
   return {
     fingerprint: material.fingerprint,
     memory: memoryReplacementResult.text,
+    effectResult,
   };
 }
 
