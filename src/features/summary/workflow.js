@@ -323,14 +323,27 @@ export function collectPriorMemoriesForSummary(messageId) {
 
   const chatState = getChatState();
   const allMessages = getChatMessagesSafe(`0-${Number(messageId) - 1}`, { hide_state: 'all' });
-  const latestArchiveBoundary = [...(chatState.summary.archiveRecords || [])]
-    .filter(record => Number(record.summaryMessageId) < Number(messageId))
-    .at(-1)?.summaryMessageId ?? -1;
-  const latestGrandMemoryMessage = [...allMessages]
-    .reverse()
-    .find(message => message.role === 'assistant' && GRAND_MEMORY_BLOCK_RE.test(message.message)) || null;
+  const grandMessagesById = new Map(allMessages
+    .filter(message => message.role === 'assistant' && GRAND_MEMORY_BLOCK_RE.test(message.message))
+    .map(message => [Number(message.message_id), message]));
+  const latestArchiveRecord = [...(chatState.summary.archiveRecords || [])]
+    .filter(record => {
+      const summaryMessageId = Number(record?.summaryMessageId);
+      const archiveTo = Number(record?.archiveTo);
+      return Number.isInteger(summaryMessageId) &&
+        summaryMessageId < Number(messageId) &&
+        Number.isInteger(archiveTo) &&
+        archiveTo >= -1 &&
+        grandMessagesById.has(summaryMessageId);
+    })
+    .at(-1) || null;
+  const latestGrandMemoryMessage = latestArchiveRecord
+    ? grandMessagesById.get(Number(latestArchiveRecord.summaryMessageId))
+    : [...grandMessagesById.values()].at(-1) || null;
   const latestGrandMemory = latestGrandMemoryMessage?.message.match(GRAND_MEMORY_BLOCK_RE)?.[0]?.trim() || '';
-  const archiveBoundary = Math.max(Number(latestArchiveBoundary), Number(latestGrandMemoryMessage?.message_id ?? -1));
+  const archiveBoundary = latestArchiveRecord
+    ? Number(latestArchiveRecord.archiveTo)
+    : Number(latestGrandMemoryMessage?.message_id ?? -1);
   const allPriorMemories = allMessages
     .filter(message => (
       message.message_id > archiveBoundary &&
