@@ -7,6 +7,8 @@ import { getAutoSummaryFingerprint, shouldRunAutoSummary } from './workflow.js';
 const consumerEventStops = [];
 let consumerEventsRegistered = false;
 let runtimeConsumer = null;
+const GENERATION_GATE_IDLE_RECOVERY_INTERVAL_MS = 250;
+const MAX_GENERATION_GATE_IDLE_RECOVERY_CHECKS = 3;
 
 function nowTimestamp() {
   return new Date().toISOString();
@@ -54,18 +56,25 @@ export function createConfirmedSummaryConsumer(options = {}) {
   const formatTimestamp = options.formatTimestamp || nowTimestamp;
   const defer = options.defer || (callback => window.setTimeout(callback, 0));
   const maxIdleDefers = Number.isInteger(options.maxIdleDefers) ? options.maxIdleDefers : 3;
+  const generationIdleRecoveryIntervalMs = Number.isFinite(options.generationIdleRecoveryIntervalMs)
+    ? Math.max(1, Number(options.generationIdleRecoveryIntervalMs))
+    : GENERATION_GATE_IDLE_RECOVERY_INTERVAL_MS;
+  const scheduleGenerationIdleRecoveryCheck = options.scheduleGenerationIdleRecoveryCheck
+    || ((callback, delay) => window.setTimeout(callback, delay));
   const maxGenerationIdleRecoveryChecks = Number.isInteger(options.maxGenerationIdleRecoveryChecks)
     ? Math.max(1, options.maxGenerationIdleRecoveryChecks)
-    : 3;
+    : MAX_GENERATION_GATE_IDLE_RECOVERY_CHECKS;
   let scheduled = false;
   let running = false;
   let idleDefers = 0;
   let sequence = 0;
   const deferredRecoveries = new Map();
   const generationGates = new Map();
+  const activeGenerationAttempts = new Map();
   const cancelledExecutionTokens = new Set();
   let activeExecution = null;
   let generationIdleRecoveryScheduled = false;
+  let generationAttemptSequence = 0;
 
   function createExecutionKey(chatIdentity, taskKey, executionToken) {
     return [chatIdentity, taskKey, executionToken].join('\u001f');
@@ -89,12 +98,14 @@ export function createConfirmedSummaryConsumer(options = {}) {
 
   function holdConfirmedTaskUntilGenerationTerminal(task) {
     if (!task?.taskKey || !task.chatIdentity || task.status !== 'PENDING') return false;
+    const attempt = activeGenerationAttempts.get(task.chatIdentity);
+    if (!attempt) return false;
     generationGates.set(task.taskKey, {
       chatIdentity: task.chatIdentity,
-      observedGenerationStart: false,
-      observedGenerating: false,
+      generationAttemptId: attempt.id,
       idleRecoveryChecks: 0,
     });
+    scheduleGenerationIdleRecovery();
     return true;
   }
 
@@ -105,31 +116,30 @@ export function createConfirmedSummaryConsumer(options = {}) {
   function scheduleGenerationIdleRecovery() {
     if (generationIdleRecoveryScheduled) return false;
     generationIdleRecoveryScheduled = true;
-    defer(() => {
+    scheduleGenerationIdleRecoveryCheck(() => {
       generationIdleRecoveryScheduled = false;
       recoverAwaitingGenerationAfterIdle();
-    });
+    }, generationIdleRecoveryIntervalMs);
     return true;
   }
 
   function handleMainGenerationStarted() {
     const identity = getIdentity();
-    let changed = false;
-    generationGates.forEach(gate => {
-      if (gate.chatIdentity !== identity) return;
-      gate.observedGenerationStart = true;
-      gate.idleRecoveryChecks = 0;
-      changed = true;
+    if (!identity) return false;
+    activeGenerationAttempts.set(identity, {
+      id: `generation:${++generationAttemptSequence}`,
     });
-    if (changed) scheduleGenerationIdleRecovery();
-    return changed;
+    return true;
   }
 
   function handleMainGenerationTerminal() {
     const identity = getIdentity();
+    const attempt = activeGenerationAttempts.get(identity);
+    if (!attempt) return false;
+    activeGenerationAttempts.delete(identity);
     let released = false;
     generationGates.forEach((gate, taskKey) => {
-      if (gate.chatIdentity !== identity) return;
+      if (gate.chatIdentity !== identity || gate.generationAttemptId !== attempt.id) return;
       generationGates.delete(taskKey);
       released = true;
     });
@@ -141,25 +151,34 @@ export function createConfirmedSummaryConsumer(options = {}) {
     const identity = getIdentity();
     let awaitingFurtherRecovery = false;
     let released = false;
+    const attempt = activeGenerationAttempts.get(identity);
     generationGates.forEach((gate, taskKey) => {
-      if (gate.chatIdentity !== identity || !gate.observedGenerationStart) return;
+      if (gate.chatIdentity !== identity || gate.generationAttemptId !== attempt?.id) return;
+      gate.idleRecoveryChecks += 1;
       if (isGenerating()) {
-        gate.observedGenerating = true;
-        gate.idleRecoveryChecks = 0;
-        awaitingFurtherRecovery = true;
+        if (gate.idleRecoveryChecks < maxGenerationIdleRecoveryChecks) awaitingFurtherRecovery = true;
         return;
       }
-      gate.idleRecoveryChecks += 1;
-      if (gate.observedGenerating || gate.idleRecoveryChecks >= maxGenerationIdleRecoveryChecks) {
-        generationGates.delete(taskKey);
-        released = true;
-      } else {
-        awaitingFurtherRecovery = true;
-      }
+      generationGates.delete(taskKey);
+      released = true;
     });
     if (released) scheduleConfirmedQueueDrain();
     if (awaitingFurtherRecovery) scheduleGenerationIdleRecovery();
     return released;
+  }
+
+  function handleChatChanged() {
+    const identity = getIdentity();
+    const attempt = activeGenerationAttempts.get(identity);
+    if (!attempt) return false;
+    let restarted = false;
+    generationGates.forEach(gate => {
+      if (gate.chatIdentity !== identity || gate.generationAttemptId !== attempt.id) return;
+      gate.idleRecoveryChecks = 0;
+      restarted = true;
+    });
+    if (restarted) scheduleGenerationIdleRecovery();
+    return restarted;
   }
 
   function restoreDeferredRecovery() {
@@ -370,6 +389,7 @@ export function createConfirmedSummaryConsumer(options = {}) {
     holdConfirmedTaskUntilGenerationTerminal,
     handleMainGenerationStarted,
     handleMainGenerationTerminal,
+    handleChatChanged,
     recoverAwaitingGenerationAfterIdle,
     scheduleConfirmedQueueDrain,
     drainConfirmedQueue,
@@ -402,7 +422,12 @@ export function registerConfirmedSummaryConsumer(options = {}) {
       ? () => runtimeConsumer.handleMainGenerationStarted()
       : (eventName === events.GENERATION_ENDED || eventName === events.GENERATION_STOPPED)
         ? () => runtimeConsumer.handleMainGenerationTerminal()
-        : () => runtimeConsumer.scheduleConfirmedQueueDrain();
+        : eventName === events.CHAT_CHANGED
+          ? () => {
+            runtimeConsumer.handleChatChanged();
+            runtimeConsumer.scheduleConfirmedQueueDrain();
+          }
+          : () => runtimeConsumer.scheduleConfirmedQueueDrain();
     const stop = registerTavernEvent(eventName, handler);
     if (stop) consumerEventStops.push(stop);
   });

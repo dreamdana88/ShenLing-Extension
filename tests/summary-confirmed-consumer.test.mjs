@@ -44,6 +44,8 @@ function createHarness(tasks, options = {}) {
     }),
     formatTimestamp: () => '2026-07-30T00:00:01.000Z',
     defer: () => {},
+    generationIdleRecoveryIntervalMs: options.generationIdleRecoveryIntervalMs,
+    scheduleGenerationIdleRecoveryCheck: options.scheduleGenerationIdleRecoveryCheck || (() => {}),
     maxGenerationIdleRecoveryChecks: options.maxGenerationIdleRecoveryChecks,
   });
   return { state, calls, consumer };
@@ -278,6 +280,7 @@ test('generation-in-progress defers consumption without changing a pending task'
 
 test('a freshly confirmed task waits for GENERATION_ENDED even while isGenerating is briefly false', async () => {
   const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')]);
+  harness.consumer.handleMainGenerationStarted();
   assert.equal(harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]), true);
   await harness.consumer.drainConfirmedQueue();
   assert.deepEqual(harness.calls.generate, []);
@@ -291,6 +294,7 @@ test('a freshly confirmed task waits for GENERATION_ENDED even while isGeneratin
 
 test('GENERATION_STOPPED releases the confirmed task once', async () => {
   const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')]);
+  harness.consumer.handleMainGenerationStarted();
   harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]);
   await harness.consumer.drainConfirmedQueue();
   assert.deepEqual(harness.calls.generate, []);
@@ -304,8 +308,8 @@ test('a started generation that fails without a terminal event releases after bo
   const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
     maxGenerationIdleRecoveryChecks: 1,
   });
-  harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]);
   harness.consumer.handleMainGenerationStarted();
+  harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]);
   await harness.consumer.drainConfirmedQueue();
   assert.deepEqual(harness.calls.generate, []);
 
@@ -314,8 +318,20 @@ test('a started generation that fails without a terminal event releases after bo
   assert.deepEqual(harness.calls.generate, [1]);
 });
 
+test('generation idle recovery uses an injected non-zero interval instead of drain defer timing', () => {
+  const delays = [];
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
+    generationIdleRecoveryIntervalMs: 125,
+    scheduleGenerationIdleRecoveryCheck: (_callback, delay) => { delays.push(delay); },
+  });
+  harness.consumer.handleMainGenerationStarted();
+  harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]);
+  assert.deepEqual(delays, [125]);
+});
+
 test('repeated terminal and render wakeups keep a confirmed Summary idempotent', async () => {
   const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')]);
+  harness.consumer.handleMainGenerationStarted();
   harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]);
   harness.consumer.handleMainGenerationTerminal();
   harness.consumer.handleMainGenerationTerminal();
@@ -332,6 +348,7 @@ test('a B generation gate keeps Summary writes at zero until it terminates', asy
   const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
     isGenerating: () => generating,
   });
+  harness.consumer.handleMainGenerationStarted();
   harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[0]);
   await harness.consumer.drainConfirmedQueue();
   assert.deepEqual(harness.calls.write, []);
@@ -340,4 +357,43 @@ test('a B generation gate keeps Summary writes at zero until it terminates', asy
   harness.consumer.handleMainGenerationTerminal();
   await harness.consumer.drainConfirmedQueue();
   assert.deepEqual(harness.calls.write, [[1, 'summary:1']]);
+});
+
+test('a B terminal cannot release A gate, while returning to A restarts bounded idle recovery', async () => {
+  const stateA = { summary: { confirmedQueueActivatedAt: '2026-07-30T00:00:00.000Z', confirmedTasks: [task('1', '2026-07-30T00:00:01.000Z')], processedMessageFingerprints: {} } };
+  const stateB = { summary: { confirmedQueueActivatedAt: '2026-07-30T00:00:00.000Z', confirmedTasks: [], processedMessageFingerprints: {} } };
+  let currentChat = 'chat-a';
+  const recoveryCallbacks = [];
+  const writes = [];
+  const consumer = createConfirmedSummaryConsumer({
+    getChatState: () => currentChat === 'chat-a' ? stateA : stateB,
+    saveChatState: () => {},
+    getChatIdentity: () => currentChat,
+    isEnabled: () => true,
+    isGenerating: () => false,
+    isTargetValid: () => true,
+    getSummaryFingerprint: () => 'summary:1',
+    generate: async () => ({ fingerprint: 'summary:1', memory: '<memory>A</memory>' }),
+    write: async (...args) => { writes.push(args); return true; },
+    formatTimestamp: () => '2026-07-30T00:00:01.000Z',
+    defer: () => {},
+    maxGenerationIdleRecoveryChecks: 1,
+    scheduleGenerationIdleRecoveryCheck: callback => { recoveryCallbacks.push(callback); },
+  });
+  consumer.handleMainGenerationStarted();
+  consumer.holdConfirmedTaskUntilGenerationTerminal(stateA.summary.confirmedTasks[0]);
+
+  currentChat = 'chat-b';
+  consumer.handleMainGenerationStarted();
+  consumer.handleMainGenerationTerminal();
+  recoveryCallbacks.shift()();
+  assert.equal(stateA.summary.confirmedTasks[0].status, 'PENDING');
+  assert.deepEqual(writes, []);
+
+  currentChat = 'chat-a';
+  assert.equal(consumer.handleChatChanged(), true);
+  recoveryCallbacks.shift()();
+  await consumer.drainConfirmedQueue();
+  assert.equal(stateA.summary.confirmedTasks[0].status, 'SUMMARIZED');
+  assert.equal(writes.length, 1);
 });
