@@ -30,7 +30,7 @@ function createHarness({ chats = null, now = 1_700_000_000_000 } = {}) {
   let currentChatId = Object.keys(chatStore)[0];
   let currentNow = now;
   let saveCount = 0;
-  const coordinator = createConfirmedLifecycleCoordinator({
+  const coordinatorOptions = {
     getSnapshot: () => {
       const current = chatStore[currentChatId];
       return {
@@ -44,11 +44,13 @@ function createHarness({ chats = null, now = 1_700_000_000_000 } = {}) {
     createTimestamp: value => `t:${value}`,
     getAssistantFingerprint: fingerprint,
     getUserFingerprint: fingerprint,
-  });
+  };
+  const coordinator = createConfirmedLifecycleCoordinator(coordinatorOptions);
 
   return {
     chatStore,
     coordinator,
+    createPageCoordinator: () => createConfirmedLifecycleCoordinator(coordinatorOptions),
     get current() { return chatStore[currentChatId]; },
     get currentChatId() { return currentChatId; },
     get now() { return currentNow; },
@@ -59,13 +61,13 @@ function createHarness({ chats = null, now = 1_700_000_000_000 } = {}) {
   };
 }
 
-function confirmTailUser(harness, message = 'U2：继续剧情') {
-  assert.equal(harness.coordinator.captureGenerationAfterCommands(), true);
+function confirmTailUser(harness, message = 'U2：继续剧情', type = 'normal', options = {}, dryRun = false) {
+  assert.equal(harness.coordinator.captureGenerationAfterCommands(type, options, dryRun), true);
   harness.current.messages.push(user(message));
   return harness.coordinator.createConfirmedTaskFromMessageSent(harness.current.messages.length - 1);
 }
 
-test('valid AFTER_COMMANDS plus tail MESSAGE_SENT creates exactly one minimal pending task', () => {
+test('normal AFTER_COMMANDS plus tail MESSAGE_SENT creates exactly one minimal pending task', () => {
   const harness = createHarness();
   const task = confirmTailUser(harness);
 
@@ -118,10 +120,10 @@ test('expired sending context and a chat switch cannot create a task', () => {
   assert.equal(harness.taskList('chat-b').length, 0);
 });
 
-test('Quick Reply-equivalent duplicate events are idempotent and retain the original task identity', () => {
+test('Quick Reply-equivalent normal events are idempotent and retain the original task identity', () => {
   const harness = createHarness();
   const first = confirmTailUser(harness, 'Quick Reply：继续');
-  assert.equal(harness.coordinator.captureGenerationAfterCommands(), true);
+  assert.equal(harness.coordinator.captureGenerationAfterCommands('normal'), true);
   const duplicate = harness.coordinator.createConfirmedTaskFromMessageSent(2);
 
   assert.equal(duplicate, null);
@@ -179,6 +181,36 @@ test('Swipe, received/rendered/end/stopped-style wakeups do not create tasks wit
   harness.coordinator.recoverCurrentChatTasks();
 
   assert.equal(harness.taskList().length, 0);
+});
+
+for (const [name, type, options, dryRun] of [
+  ['Swipe', 'swipe', {}, false],
+  ['Regenerate', 'regenerate', {}, false],
+  ['Continue', 'continue', {}, false],
+  ['dryRun', 'normal', {}, true],
+  ['automatic_trigger', 'normal', { automatic_trigger: true }, false],
+]) {
+  test(`${name} AFTER_COMMANDS followed by an isolated MESSAGE_SENT does not create a task`, () => {
+    const harness = createHarness();
+    assert.equal(harness.coordinator.captureGenerationAfterCommands(type, options, dryRun), false);
+    harness.current.messages.push(user(`${name} 的孤立发送`));
+    assert.equal(harness.coordinator.createConfirmedTaskFromMessageSent(2), null);
+    assert.equal(harness.taskList().length, 0);
+  });
+}
+
+test('a new GENERATION_STARTED clears an earlier normal send context', () => {
+  const harness = createHarness();
+  assert.equal(harness.coordinator.captureGenerationAfterCommands('normal'), true);
+  assert.deepEqual(harness.coordinator.getPendingSendContext(), {
+    chatIdentity: 'chat-a',
+    messageCount: 2,
+    generationType: 'normal',
+    capturedAt: 1_700_000_000_000,
+  });
+  assert.equal(harness.coordinator.clearPendingSendContext(), true);
+  harness.current.messages.push(user('旧上下文不应确认'));
+  assert.equal(harness.coordinator.createConfirmedTaskFromMessageSent(2), null);
 });
 
 test('editing a pending assistant reply or changing its selected swipe cancels the old task', () => {
@@ -244,6 +276,48 @@ test('refresh normalizes RUNNING back to PENDING while SUMMARIZED never revives'
   assert.equal(summarized.taskList()[0].status, 'SUMMARIZED');
 });
 
+test('ordinary normalize, queue reads, and reconciliation preserve RUNNING', () => {
+  const harness = createHarness();
+  confirmTailUser(harness);
+  harness.taskList()[0].status = 'RUNNING';
+  assert.equal(getConfirmedSummaryTasks(harness.current.state)[0].status, 'RUNNING');
+  assert.equal(harness.taskList()[0].status, 'RUNNING');
+  harness.coordinator.reconcileCurrentChatTasks();
+  assert.equal(harness.taskList()[0].status, 'RUNNING');
+});
+
+test('same-page chat changes preserve RUNNING after the chat has been recovered once', () => {
+  const harness = createHarness({
+    chats: {
+      'chat-a': {
+        messages: [user('开场 A'), assistant('A 候选')],
+        state: { identity: { chatId: 'chat-a' }, summary: { confirmedTasks: [] } },
+      },
+      'chat-b': {
+        messages: [user('开场 B'), assistant('B 候选')],
+        state: { identity: { chatId: 'chat-b' }, summary: { confirmedTasks: [] } },
+      },
+    },
+  });
+  confirmTailUser(harness);
+  harness.coordinator.recoverCurrentChatTasks();
+  harness.taskList()[0].status = 'RUNNING';
+  harness.setCurrentChat('chat-b');
+  harness.coordinator.handleChatChanged();
+  harness.setCurrentChat('chat-a');
+  harness.coordinator.handleChatChanged();
+  assert.equal(harness.taskList()[0].status, 'RUNNING');
+});
+
+test('a new page session performs the one-time RUNNING recovery', () => {
+  const harness = createHarness();
+  confirmTailUser(harness);
+  harness.taskList()[0].status = 'RUNNING';
+  const nextPageCoordinator = harness.createPageCoordinator();
+  nextPageCoordinator.recoverCurrentChatTasks();
+  assert.equal(harness.taskList()[0].status, 'PENDING');
+});
+
 test('B generation, Roll, and Swipe activity cannot rebuild A after A is confirmed', () => {
   const harness = createHarness();
   const taskA = confirmTailUser(harness);
@@ -258,6 +332,30 @@ test('B generation, Roll, and Swipe activity cannot rebuild A after A is confirm
   assert.equal(harness.taskList()[0].taskKey, taskA.taskKey);
   assert.equal(harness.taskList()[0].status, 'PENDING');
 });
+
+for (const [name, mutateUser] of [
+  ['hidden', message => { message.is_hidden = true; }],
+  ['system', message => { message.is_system = true; }],
+  ['isSmallSys', message => { message.extra = { isSmallSys: true }; }],
+]) {
+  test(`${name} tail user does not create a confirmed task`, () => {
+    const harness = createHarness();
+    assert.equal(harness.coordinator.captureGenerationAfterCommands('normal'), true);
+    const confirmingUser = user(`${name} user`);
+    mutateUser(confirmingUser);
+    harness.current.messages.push(confirmingUser);
+    assert.equal(harness.coordinator.createConfirmedTaskFromMessageSent(2), null);
+    assert.equal(harness.taskList().length, 0);
+  });
+
+  test(`a confirming user changed to ${name} cancels its active task`, () => {
+    const harness = createHarness();
+    confirmTailUser(harness);
+    mutateUser(harness.current.messages[2]);
+    harness.coordinator.reconcileCurrentChatTasks();
+    assert.equal(harness.taskList()[0].status, 'CANCELLED');
+  });
+}
 
 test('old metadata loads safely and persisted tasks never retain body, prompt, API key, or error payloads', () => {
   const legacyState = { summary: { smallSummaryCount: 3 } };

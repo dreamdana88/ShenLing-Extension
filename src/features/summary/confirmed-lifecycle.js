@@ -57,6 +57,17 @@ function isVisibleAssistant(record) {
   );
 }
 
+function isVisibleUser(record) {
+  const message = record?.message;
+  return Boolean(
+    message
+    && getMessageRole(message) === 'user'
+    && !message.is_hidden
+    && !message.is_system
+    && !message.extra?.isSmallSys,
+  );
+}
+
 function resolvePayloadMessageId(payload) {
   const direct = Number(payload);
   if (Number.isInteger(direct) && direct >= 0) return direct;
@@ -112,8 +123,7 @@ function hasMatchingAssistant(record, task, getAssistantFingerprint) {
 
 function hasMatchingConfirmingUser(record, task, getUserFingerprint) {
   return Boolean(
-    record
-    && getMessageRole(record.message) === 'user'
+    isVisibleUser(record)
     && getUserFingerprint(record.message) === task.confirmingUserFingerprint,
   );
 }
@@ -139,6 +149,7 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
     ? Math.max(0, Number(options.contextTtlMs))
     : CONFIRMED_SEND_CONTEXT_TTL_MS;
   let pendingSendContext = null;
+  const recoveredChatIdentities = new Set();
 
   function getCurrentSnapshot() {
     const snapshot = getSnapshot() || {};
@@ -160,15 +171,27 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
     return true;
   }
 
-  function captureGenerationAfterCommands() {
+  function clearPendingSendContext() {
+    const hadContext = pendingSendContext !== null;
+    pendingSendContext = null;
+    return hadContext;
+  }
+
+  function canCaptureGenerationAfterCommands(type, options, dryRun) {
+    return (type === undefined || type === 'normal')
+      && dryRun !== true
+      && options?.automatic_trigger !== true;
+  }
+
+  function captureGenerationAfterCommands(type, options, dryRun) {
+    clearPendingSendContext();
+    if (!canCaptureGenerationAfterCommands(type, options, dryRun)) return false;
     const snapshot = getCurrentSnapshot();
-    if (!snapshot.chatIdentity) {
-      pendingSendContext = null;
-      return false;
-    }
+    if (!snapshot.chatIdentity) return false;
     pendingSendContext = {
       chatIdentity: snapshot.chatIdentity,
       messageCount: snapshot.records.length,
+      generationType: type === undefined ? 'normal' : type,
       capturedAt: now(),
     };
     return true;
@@ -197,7 +220,7 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
       tail
       && tail.index === pendingSendContext.messageCount
       && tail.messageId === payloadMessageId
-      && getMessageRole(tail.message) === 'user',
+      && isVisibleUser(tail),
     );
     pendingSendContext = null;
     if (!isFreshTailUser) return null;
@@ -304,9 +327,22 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
   function recoverCurrentChatTasks() {
     const snapshot = getCurrentSnapshot();
     const before = JSON.stringify(snapshot.chatState?.summary?.confirmedTasks ?? []);
-    getTasks(snapshot);
+    const tasks = getTasks(snapshot);
+    const isFirstRecoveryForChat = snapshot.chatIdentity
+      && !recoveredChatIdentities.has(snapshot.chatIdentity);
+    let runningRecoveryChanged = false;
+    if (isFirstRecoveryForChat) {
+      const timestamp = createTimestamp(now());
+      tasks.forEach(task => {
+        if (task.chatIdentity !== snapshot.chatIdentity || task.status !== 'RUNNING') return;
+        task.status = 'PENDING';
+        task.updatedAt = timestamp;
+        runningRecoveryChanged = true;
+      });
+      recoveredChatIdentities.add(snapshot.chatIdentity);
+    }
     const normalized = JSON.stringify(snapshot.chatState?.summary?.confirmedTasks ?? []);
-    const recoveryChanged = before !== normalized;
+    const recoveryChanged = runningRecoveryChanged || before !== normalized;
     if (recoveryChanged) persist();
     const reconciliation = reconcileCurrentChatTasks();
     return { changed: recoveryChanged || reconciliation.changed, ...reconciliation };
@@ -323,6 +359,7 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
     reconcileCurrentChatTasks,
     recoverCurrentChatTasks,
     handleChatChanged,
+    clearPendingSendContext,
     clearExpiredSendContext,
     getPendingSendContext: () => pendingSendContext && { ...pendingSendContext },
   };
@@ -340,7 +377,8 @@ export function registerConfirmedLifecycleEvents() {
   }
 
   const registrations = [
-    [events.GENERATION_AFTER_COMMANDS, () => runtimeCoordinator.captureGenerationAfterCommands()],
+    [events.GENERATION_STARTED, () => runtimeCoordinator.clearPendingSendContext()],
+    [events.GENERATION_AFTER_COMMANDS, (type, options, dryRun) => runtimeCoordinator.captureGenerationAfterCommands(type, options, dryRun)],
     [events.MESSAGE_SENT, payload => runtimeCoordinator.createConfirmedTaskFromMessageSent(payload)],
     [events.CHAT_CHANGED, () => runtimeCoordinator.handleChatChanged()],
     [events.MESSAGE_EDITED, () => runtimeCoordinator.reconcileCurrentChatTasks()],

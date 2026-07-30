@@ -404,7 +404,6 @@ function normalizeConfirmedTaskTimestamp(value) {
 }
 
 function normalizeConfirmedTaskStatus(value) {
-  if (value === 'RUNNING') return 'PENDING';
   return CONFIRMED_SUMMARY_TASK_STATUSES.includes(value) ? value : 'CANCELLED';
 }
 
