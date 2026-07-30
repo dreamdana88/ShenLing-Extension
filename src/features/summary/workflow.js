@@ -31,6 +31,7 @@ import {
   getTavernEventsSafe,
   registerTavernEvent,
 } from '../../core/tavern-events.js';
+import { synchronizeConfirmedTaskAfterReplacement } from './confirmed-lifecycle.js';
 import {
   getChatState,
   getGlobalSettings,
@@ -1384,6 +1385,7 @@ export async function processImmediateWordReplace(messageId) {
 
   markSummaryWriteIgnored(Number(messageId));
   await setChatMessageContent(Number(messageId), replacementResult.text);
+  synchronizeConfirmedTaskAfterReplacement(Number(messageId));
   refreshSummaryPanelAfterAction();
   return true;
 }

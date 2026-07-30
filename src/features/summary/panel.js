@@ -52,6 +52,7 @@ let summaryPanelOptions = {
   getPanelRoot: null,
   refreshPanel: null,
   syncSettingsPanelState: null,
+  onAutoSummaryEnabledChanged: null,
 };
 
 export function configureSummaryPanel(options = {}) {
@@ -514,6 +515,9 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
     }
 
     saveGlobalSettings();
+    if (field === 'enabled') {
+      summaryPanelOptions.onAutoSummaryEnabledChanged?.(summary.enabled);
+    }
     return true;
   };
 

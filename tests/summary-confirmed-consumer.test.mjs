@@ -99,18 +99,43 @@ test('a changed target after the request returns is cancelled without writing', 
   assert.deepEqual(harness.calls.write, []);
 });
 
-test('a chat switch during the request returns the task to PENDING without cross-chat writing', async () => {
+test('a chat switch keeps B untouched, restores A, then consumes A once after return', async () => {
+  const stateA = { summary: { confirmedQueueActivatedAt: '2026-07-30T00:00:00.000Z', confirmedTasks: [task('1', '2026-07-30T00:00:01.000Z')], processedMessageFingerprints: {} } };
+  const stateB = { summary: { confirmedQueueActivatedAt: '2026-07-30T00:00:00.000Z', confirmedTasks: [], processedMessageFingerprints: {} } };
   let currentChat = 'chat-a';
-  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
+  let pauseAfterReturn = false;
+  const calls = { generate: 0, write: 0, savedB: 0 };
+  const consumer = createConfirmedSummaryConsumer({
+    getChatState: () => currentChat === 'chat-a' ? stateA : stateB,
+    saveChatState: () => { if (currentChat === 'chat-b') calls.savedB += 1; },
     getChatIdentity: () => currentChat,
+    isGenerating: () => pauseAfterReturn,
+    isEnabled: () => true,
+    isTargetValid: () => true,
+    getSummaryFingerprint: () => 'summary:1',
     generate: async messageId => {
-      currentChat = 'chat-b';
+      calls.generate += 1;
+      if (calls.generate === 1) currentChat = 'chat-b';
       return { fingerprint: `summary:${messageId}`, memory: '<memory>late</memory>' };
     },
+    write: async () => { calls.write += 1; return true; },
+    formatTimestamp: () => '2026-07-30T00:00:01.000Z',
+    defer: () => {},
   });
-  await harness.consumer.drainConfirmedQueue();
-  assert.equal(harness.state.summary.confirmedTasks[0].status, 'PENDING');
-  assert.deepEqual(harness.calls.write, []);
+  await consumer.drainConfirmedQueue();
+  assert.equal(stateA.summary.confirmedTasks[0].status, 'RUNNING');
+  assert.deepEqual(stateB.summary.confirmedTasks, []);
+  assert.equal(calls.write, 0);
+  assert.equal(calls.savedB, 0);
+
+  currentChat = 'chat-a';
+  pauseAfterReturn = true;
+  await consumer.drainConfirmedQueue();
+  assert.equal(stateA.summary.confirmedTasks[0].status, 'PENDING');
+  pauseAfterReturn = false;
+  await consumer.drainConfirmedQueue();
+  assert.equal(stateA.summary.confirmedTasks[0].status, 'SUMMARIZED');
+  assert.equal(calls.write, 1);
 });
 
 test('Summary failure becomes FAILED and does not block the next pending task', async () => {
@@ -128,6 +153,33 @@ test('Summary failure becomes FAILED and does not block the next pending task', 
   await harness.consumer.drainConfirmedQueue();
   assert.deepEqual(harness.calls.generate, [1, 3]);
   assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['FAILED', 'SUMMARIZED']);
+  assert.equal(harness.state.summary.confirmedTasks[0].lastErrorCode, 'SUMMARY_GENERATION_FAILED');
+});
+
+test('disabling Summary cancels pending tasks and reopening cannot consume them', async () => {
+  let enabled = false;
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], { isEnabled: () => enabled });
+  await harness.consumer.drainConfirmedQueue();
+  assert.equal(harness.state.summary.confirmedTasks[0].status, 'CANCELLED');
+  assert.equal(harness.state.summary.confirmedTasks[0].reasonCode, 'SUMMARY_DISABLED');
+  enabled = true;
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generate, []);
+});
+
+test('disabling Summary while RUNNING discards the returned result without writing', async () => {
+  let enabled = true;
+  const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
+    isEnabled: () => enabled,
+    generate: async messageId => {
+      enabled = false;
+      return { fingerprint: `summary:${messageId}`, memory: '<memory>late</memory>' };
+    },
+  });
+  await harness.consumer.drainConfirmedQueue();
+  assert.equal(harness.state.summary.confirmedTasks[0].status, 'CANCELLED');
+  assert.equal(harness.state.summary.confirmedTasks[0].reasonCode, 'SUMMARY_DISABLED');
+  assert.deepEqual(harness.calls.write, []);
 });
 
 test('generation-in-progress defers consumption without changing a pending task', async () => {

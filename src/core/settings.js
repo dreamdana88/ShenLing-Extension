@@ -389,6 +389,12 @@ export const CONFIRMED_SUMMARY_TASK_STATUSES = Object.freeze([
   'FAILED',
   'CANCELLED',
 ]);
+const CONFIRMED_SUMMARY_REASON_CODES = new Set(['SUMMARY_DISABLED']);
+const CONFIRMED_SUMMARY_ERROR_CODES = new Set([
+  'SUMMARY_GENERATION_FAILED',
+  'SUMMARY_TRANSPORT_TIMEOUT',
+  'SUMMARY_TARGET_INVALID',
+]);
 
 function normalizeConfirmedTaskMessageId(value) {
   const messageId = Number(value);
@@ -447,6 +453,12 @@ export function normalizeConfirmedSummaryTasks(value) {
       updatedAt: normalizeConfirmedTaskTimestamp(rawTask.updatedAt),
       ...(String(rawTask.executionToken ?? '').trim()
         ? { executionToken: String(rawTask.executionToken).trim().slice(0, 128) }
+        : {}),
+      ...(CONFIRMED_SUMMARY_REASON_CODES.has(rawTask.reasonCode)
+        ? { reasonCode: rawTask.reasonCode }
+        : {}),
+      ...(CONFIRMED_SUMMARY_ERROR_CODES.has(rawTask.lastErrorCode)
+        ? { lastErrorCode: rawTask.lastErrorCode }
         : {}),
     });
   });

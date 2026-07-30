@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { CHAT_STATE_KEY } from '../src/constants.js';
 import { createMessageContentFingerprint } from '../src/core/message-fingerprint.js';
-import { getConfirmedSummaryTasks } from '../src/core/settings.js';
+import { getConfirmedSummaryTasks, normalizeConfirmedSummaryTasks } from '../src/core/settings.js';
 import {
   CONFIRMED_SEND_CONTEXT_TTL_MS,
   createConfirmedLifecycleCoordinator,
   createConfirmedTaskKey,
+  synchronizeConfirmedTaskAfterReplacement,
 } from '../src/features/summary/confirmed-lifecycle.js';
+import { createConfirmedSummaryConsumer } from '../src/features/summary/confirmed-consumer.js';
 
 function user(message) {
   return { role: 'user', message };
@@ -20,7 +23,11 @@ function fingerprint(message) {
   return createMessageContentFingerprint(message?.message ?? '');
 }
 
-function createHarness({ chats = null, now = 1_700_000_000_000 } = {}) {
+function createHarness({
+  chats = null,
+  now = 1_700_000_000_000,
+  shouldCreateTask = () => true,
+} = {}) {
   const chatStore = chats || {
     'chat-a': {
       messages: [user('开场'), assistant('A 的正式候选')],
@@ -44,6 +51,7 @@ function createHarness({ chats = null, now = 1_700_000_000_000 } = {}) {
     createTimestamp: value => `t:${value}`,
     getAssistantFingerprint: fingerprint,
     getUserFingerprint: fingerprint,
+    shouldCreateTask,
   };
   const coordinator = createConfirmedLifecycleCoordinator(coordinatorOptions);
 
@@ -370,4 +378,123 @@ test('old metadata loads safely and persisted tasks never retain body, prompt, A
   assert.equal(serialized.includes('apiKey'), false);
   assert.equal(serialized.includes('prompt'), false);
   assert.equal(serialized.includes('error'), false);
+});
+
+test('task normalization retains only recognized safe Summary failure codes', () => {
+  const baseTask = {
+    taskKey: 'chat-a:safe-error',
+    chatIdentity: 'chat-a',
+    originalMessageId: 1,
+    assistantFingerprint: createMessageContentFingerprint('assistant source'),
+    selectedSwipeId: 0,
+    confirmingUserMessageId: 2,
+    confirmingUserFingerprint: createMessageContentFingerprint('confirming user'),
+    status: 'FAILED',
+    createdAt: 't:1',
+    updatedAt: 't:2',
+  };
+  const [safe] = normalizeConfirmedSummaryTasks([{
+    ...baseTask,
+    lastErrorCode: 'SUMMARY_TRANSPORT_TIMEOUT',
+  }]);
+  const [unsafe] = normalizeConfirmedSummaryTasks([{
+    ...baseTask,
+    taskKey: 'chat-a:unsafe-error',
+    lastErrorCode: 'network error: token=secret',
+  }]);
+
+  assert.equal(safe.lastErrorCode, 'SUMMARY_TRANSPORT_TIMEOUT');
+  assert.equal(Object.hasOwn(unsafe, 'lastErrorCode'), false);
+});
+
+test('disabled automatic Summary does not create a confirmed task', () => {
+  const harness = createHarness({ shouldCreateTask: () => false });
+  assert.equal(harness.coordinator.captureGenerationAfterCommands('normal'), true);
+  harness.current.messages.push(user('关闭期间的 U2'));
+  assert.equal(harness.coordinator.createConfirmedTaskFromMessageSent(2), null);
+  assert.deepEqual(harness.taskList(), []);
+});
+
+test('a controlled plugin word replacement updates a pending task fingerprint without reviving manual edit exemptions', async () => {
+  const previousContext = globalThis.SillyTavern;
+  const previousTavernHelper = globalThis.TavernHelper;
+  const previousGetChatMessages = globalThis.getChatMessages;
+  let saved = 0;
+  const task = {
+    taskKey: 'chat-a:replacement-race',
+    chatIdentity: 'chat-a',
+    originalMessageId: 1,
+    assistantFingerprint: createMessageContentFingerprint('alpha before replacement'),
+    selectedSwipeId: 0,
+    confirmingUserMessageId: 2,
+    confirmingUserFingerprint: createMessageContentFingerprint('U2：继续剧情'),
+    status: 'PENDING',
+    createdAt: 't:1',
+    updatedAt: 't:1',
+  };
+  const context = {
+    chatId: 'chat-a',
+    name2: 'Assistant',
+    chat: [user('U1'), { is_user: false, mes: 'alpha before replacement', swipe_id: 0 }, user('U2：继续剧情')],
+    chatMetadata: {
+      [CHAT_STATE_KEY]: {
+        summary: {
+          confirmedQueueActivatedAt: 't:0',
+          confirmedTasks: [task],
+          processedMessageFingerprints: {},
+        },
+      },
+    },
+    extensionSettings: {},
+    saveMetadataDebounced: () => { saved += 1; },
+  };
+
+  try {
+    globalThis.SillyTavern = { getContext: () => context };
+    delete globalThis.TavernHelper;
+    delete globalThis.getChatMessages;
+
+    let finishReplacement;
+    const replacementFinished = new Promise(resolve => { finishReplacement = resolve; });
+    const before = task.assistantFingerprint;
+    context.chat[1].mes = 'omega replacement content after confirmation';
+    finishReplacement();
+    await replacementFinished;
+
+    assert.equal(synchronizeConfirmedTaskAfterReplacement(1), true);
+    const persistedTask = context.chatMetadata[CHAT_STATE_KEY].summary.confirmedTasks[0];
+    assert.equal(persistedTask.status, 'PENDING');
+    assert.equal(
+      persistedTask.assistantFingerprint,
+      createMessageContentFingerprint('omega replacement content after confirmation'),
+    );
+    assert.notEqual(persistedTask.assistantFingerprint, before);
+    assert.equal(saved, 1);
+
+    const writes = [];
+    const consumer = createConfirmedSummaryConsumer({
+      getChatState: () => context.chatMetadata[CHAT_STATE_KEY],
+      saveChatState: () => { saved += 1; },
+      getChatIdentity: () => 'chat-a',
+      isEnabled: () => true,
+      isGenerating: () => false,
+      isTargetValid: item => item.assistantFingerprint === persistedTask.assistantFingerprint,
+      getSummaryFingerprint: () => 'summary:replacement',
+      generate: async () => ({ fingerprint: 'summary:replacement', memory: '<memory>replacement</memory>' }),
+      write: async (...args) => { writes.push(args); return true; },
+      formatTimestamp: () => 't:2',
+      defer: () => {},
+    });
+    await consumer.drainConfirmedQueue();
+    await consumer.drainConfirmedQueue();
+    assert.equal(context.chatMetadata[CHAT_STATE_KEY].summary.confirmedTasks[0].status, 'SUMMARIZED');
+    assert.equal(writes.length, 1);
+  } finally {
+    if (previousContext === undefined) delete globalThis.SillyTavern;
+    else globalThis.SillyTavern = previousContext;
+    if (previousTavernHelper === undefined) delete globalThis.TavernHelper;
+    else globalThis.TavernHelper = previousTavernHelper;
+    if (previousGetChatMessages === undefined) delete globalThis.getChatMessages;
+    else globalThis.getChatMessages = previousGetChatMessages;
+  }
 });

@@ -50,7 +50,10 @@ import {
   shouldRunAutoSummary,
   writeConfirmedSummaryForTask,
 } from './src/features/summary/workflow.js';
-import { registerConfirmedSummaryConsumer } from './src/features/summary/confirmed-consumer.js';
+import {
+  registerConfirmedSummaryConsumer,
+  scheduleConfirmedQueueDrain,
+} from './src/features/summary/confirmed-consumer.js';
 import {
   bindSummaryPanelEvents,
   configureSummaryPanel,
@@ -1212,6 +1215,7 @@ function renderSettingsPanel() {
   container.querySelector('#shenling-assistant-enabled')?.addEventListener('change', event => {
     settings.enabled = Boolean(event.currentTarget.checked);
     saveGlobalSettings();
+    scheduleConfirmedQueueDrain();
     syncSettingsPanelState();
   });
   container.querySelector('#shenling-assistant-floating-enabled')?.addEventListener('change', event => {
@@ -1235,6 +1239,7 @@ function init() {
     getPanelRoot: () => panelRoot,
     refreshPanel: renderFloatingPanel,
     syncSettingsPanelState,
+    onAutoSummaryEnabledChanged: scheduleConfirmedQueueDrain,
   });
   configureWordReplacePanel({
     getPanelRoot: () => panelRoot,

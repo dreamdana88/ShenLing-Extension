@@ -373,6 +373,21 @@ export function createConfirmedLifecycleCoordinator(options = {}) {
   };
 }
 
+export function synchronizeConfirmedTaskAfterReplacement(messageId) {
+  const chatState = getChatState();
+  const task = getConfirmedSummaryTasks(chatState).find(item => (
+    item.status === 'PENDING' && Number(item.originalMessageId) === Number(messageId)
+  ));
+  const message = getChatMessagesSafe(Number(messageId), { hide_state: 'all' })[0];
+  if (!task || !message || getSelectedSwipeId(message) !== task.selectedSwipeId) return false;
+  const fingerprint = getAssistantMessageContentFingerprint(message);
+  if (!fingerprint || fingerprint === task.assistantFingerprint) return false;
+  task.assistantFingerprint = fingerprint;
+  task.updatedAt = createDefaultTimestamp(Date.now());
+  saveChatState();
+  return true;
+}
+
 export function registerConfirmedLifecycleEvents(options = {}) {
   if (lifecycleEventsRegistered) return true;
   runtimeCoordinator = createConfirmedLifecycleCoordinator(options);
