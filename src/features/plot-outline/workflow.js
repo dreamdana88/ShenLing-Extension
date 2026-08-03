@@ -35,13 +35,14 @@ import {
   isPlainObject,
 } from '../../utils/text.js';
 import { applyWordReplacementToGeneratedContent } from '../word-replace/generated.js';
+import { getLongFormGenerationTimeoutMessage, LONG_FORM_GENERATION_TIMEOUT_MS } from '../../constants.js';
 
 let workflowOptions = {
   addCommunicationLog: null,
   getActiveApiProfile: null,
 };
 
-const OUTLINE_GENERATION_TIMEOUT_MS = 180000;
+export const OUTLINE_GENERATION_TIMEOUT_MS = LONG_FORM_GENERATION_TIMEOUT_MS;
 const PLOT_OUTLINE_PROMPT_ID = 'shenling_assistant_plot_outline_state';
 // setExtensionPrompt 参数：position 1 = IN_CHAT，depth 0 = 紧贴最新楼层，与情感档案一致
 const PLOT_OUTLINE_INJECT_POSITION = 1;
@@ -628,13 +629,13 @@ export async function runPlotOutlineGeneration({ userDirection } = {}) {
       ? await generateWithMainApi({
         messages,
         timeoutMs: OUTLINE_GENERATION_TIMEOUT_MS,
-        timeoutMessage: '剧情大纲生成超时，请稍后重试。',
+        timeoutMessage: getLongFormGenerationTimeoutMessage('剧情大纲', apiMode),
       })
       : await generateWithSecondaryApi({
         profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
         messages,
         timeoutMs: OUTLINE_GENERATION_TIMEOUT_MS,
-        timeoutMessage: '剧情大纲生成超时，请稍后重试。',
+        timeoutMessage: getLongFormGenerationTimeoutMessage('剧情大纲', apiMode),
       });
 
     const rawContent = apiResult.content;

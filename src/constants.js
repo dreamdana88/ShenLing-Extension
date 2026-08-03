@@ -1,12 +1,22 @@
 export const MODULE_NAME = 'shenling_assistant';
 export const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 export const STORAGE_VERSION = 1;
-export const PLUGIN_VERSION = '0.17.20';
+export const PLUGIN_VERSION = '0.17.21';
 export const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 export const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 export const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
 export const GRAND_MEMORY_BLOCK_RE = /<grand_memory>[\s\S]*?<\/grand_memory>/i;
 export const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
+export const LONG_FORM_GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
+
+export function getLongFormGenerationTimeoutMessage(featureName, apiMode) {
+  const label = String(featureName || '生成').trim() || '生成';
+  const seconds = LONG_FORM_GENERATION_TIMEOUT_MS / 1000;
+  return apiMode === 'secondary' || apiMode === 'secondary_api'
+    ? `${label}生成等待超过 ${seconds} 秒，副 API 请求已取消，请稍后重试。`
+    : `${label}生成等待超过 ${seconds} 秒，已停止等待；主 API 生成可能仍在后台继续。`;
+}
+
 export const SUMMARY_EVENT_DELAY_MS = 700;
 export const SUMMARY_PROMPT_VERSION = 10;
 

@@ -10,6 +10,7 @@ import {
   bindMiniTheaterPanelEvents,
   isMiniTheaterPreviewOpen,
   renderMiniTheaterPanel,
+  runMiniTheaterGeneration,
 } from '../src/features/mini-theater/panel.js';
 import {
   configurePlotOutlineWorkflow,
@@ -18,6 +19,7 @@ import {
 import {
   configureDiaryPanel,
   bindDiaryPanelEvents,
+  runDiaryGeneration,
 } from '../src/features/diary/panel.js';
 import {
   configureAffectionWorkflow,
@@ -962,4 +964,162 @@ test('Schedule and Summary ordinary Feature Errors keep empty transport codes', 
     assert.equal(logs.length, 1);
     assert.equal(logs[0].status, 'failure');
   });
+});
+
+async function withCompressedLongFormTimeout(run) {
+  const originalSetTimeout = globalThis.setTimeout;
+  const seenTimeouts = [];
+  globalThis.setTimeout = (callback, timeoutMs, ...args) => originalSetTimeout(
+    callback,
+    (seenTimeouts.push(timeoutMs), timeoutMs === 300000 ? 5 : timeoutMs),
+    ...args,
+  );
+  try {
+    return await run(seenTimeouts);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+}
+
+function createCaptureTimeoutInput() {
+  return {
+    captureState: {
+      request: '采集一座山神庙',
+      requestedType: 'location',
+      source: { mode: 'recent_chat', recentCount: 20 },
+      optionalContext: {
+        includeCharacterCard: false,
+        includePersona: false,
+        worldbookRefs: [],
+      },
+      drafts: [],
+      lastError: '',
+    },
+    materialOptions: {
+      messages: [
+        { message_id: 0, role: 'user', message: '我们到了山脚。' },
+        { message_id: 1, role: 'assistant', message: '庙门半掩。' },
+      ],
+      names: { userName: '测试用户', characterName: '测试角色' },
+    },
+    persist: false,
+  };
+}
+
+test('Mini Theater main and secondary calls pass the shared 300-second timeout to Core', async () => {
+  for (const mode of ['main_api', 'secondary_api']) {
+    await withCompressedLongFormTimeout(async seenTimeouts => {
+      await withHarness({
+        mode,
+        generateRaw: mode === 'main_api' ? async () => new Promise(() => {}) : undefined,
+        fetchImpl: mode === 'secondary_api' ? async () => new Promise(() => {}) : undefined,
+        configure: options => configureMiniTheaterPanel(options),
+      }, async ({ context }) => {
+        context.extensionSettings[MODULE_NAME].modules.miniTheater.apiMode = mode;
+        const { root, promptInput } = createMiniTheaterRoot();
+        bindMiniTheaterPanelEvents(root);
+        promptInput.dispatchEvent('input', { target: promptInput });
+        await assert.rejects(runMiniTheaterGeneration(), error => {
+          assert.equal(error.code, mode === 'main_api' ? 'MAIN_TIMEOUT' : 'SECONDARY_TIMEOUT');
+          return true;
+        });
+      });
+      assert.ok(seenTimeouts.includes(300000));
+    });
+  }
+});
+
+test('Plot Outline main and secondary calls pass the shared 300-second timeout to Core', async () => {
+  for (const mode of ['main_api', 'secondary_api']) {
+    await withCompressedLongFormTimeout(async seenTimeouts => {
+      await withHarness({
+        mode,
+        generateRaw: mode === 'main_api' ? async () => new Promise(() => {}) : undefined,
+        fetchImpl: mode === 'secondary_api' ? async () => new Promise(() => {}) : undefined,
+        configure: options => configurePlotOutlineWorkflow(options),
+      }, async ({ context }) => {
+        context.extensionSettings[MODULE_NAME].modules.plotOutline.apiMode = mode;
+        await assert.rejects(
+          runPlotOutlineGeneration({ userDirection: '剧情大纲超时合同' }),
+          error => {
+            assert.equal(error.code, mode === 'main_api' ? 'MAIN_TIMEOUT' : 'SECONDARY_TIMEOUT');
+            return true;
+          },
+        );
+      });
+      assert.ok(seenTimeouts.includes(300000));
+    });
+  }
+});
+
+test('Diary main and secondary calls pass the shared 300-second timeout to Core', async () => {
+  for (const mode of ['main', 'secondary']) {
+    await withCompressedLongFormTimeout(async seenTimeouts => {
+      await withHarness({
+        mode: mode === 'main' ? 'main_api' : 'secondary_api',
+        generateRaw: mode === 'main' ? async () => new Promise(() => {}) : undefined,
+        fetchImpl: mode === 'secondary' ? async () => new Promise(() => {}) : undefined,
+        configure: options => configureDiaryPanel(options),
+      }, async ({ context }) => {
+        context.chatMetadata[CHAT_STATE_KEY].diary.settings = { apiMode: mode };
+        await assert.rejects(
+          runDiaryGeneration({
+            messages: [{ role: 'user', content: '日记超时合同' }],
+            taskType: '日记超时合同',
+            fallbackDate: '第1天',
+          }),
+          error => {
+            assert.equal(error.code, mode === 'main' ? 'MAIN_TIMEOUT' : 'SECONDARY_TIMEOUT');
+            return true;
+          },
+        );
+      });
+      assert.ok(seenTimeouts.includes(300000));
+    });
+  }
+});
+
+test('Affection profile build main and secondary calls pass the shared 300-second timeout to Core', async () => {
+  for (const mode of ['main_api', 'secondary_api']) {
+    await withCompressedLongFormTimeout(async seenTimeouts => {
+      await withHarness({
+        mode,
+        generateRaw: mode === 'main_api' ? async () => new Promise(() => {}) : undefined,
+        fetchImpl: mode === 'secondary_api' ? async () => new Promise(() => {}) : undefined,
+        configure: options => configureAffectionWorkflow(options),
+      }, async ({ context }) => {
+        context.extensionSettings[MODULE_NAME].modules.affection.profileBuildApiMode = mode;
+        await assert.rejects(
+          runAffectionProfileBuildApiPreview({ roleName: '超时角色', initialValueTenths: 100 }),
+          error => {
+            assert.equal(error.code, mode === 'main_api' ? 'MAIN_TIMEOUT' : 'SECONDARY_TIMEOUT');
+            return true;
+          },
+        );
+      });
+      assert.ok(seenTimeouts.includes(300000));
+    });
+  }
+});
+
+test('Memoir Capture main and secondary calls pass the shared 300-second timeout to Core', async () => {
+  for (const mode of ['main_api', 'secondary_api']) {
+    await withCompressedLongFormTimeout(async seenTimeouts => {
+      await withHarness({
+        mode,
+        generateRaw: mode === 'main_api' ? async () => new Promise(() => {}) : undefined,
+        fetchImpl: mode === 'secondary_api' ? async () => new Promise(() => {}) : undefined,
+        configure: options => configureCaptureWorkflow(options),
+      }, async () => {
+        await assert.rejects(
+          runCaptureGeneration({ ...createCaptureTimeoutInput(), apiMode: mode }),
+          error => {
+            assert.equal(error.code, mode === 'main_api' ? 'MAIN_TIMEOUT' : 'SECONDARY_TIMEOUT');
+            return true;
+          },
+        );
+      });
+      assert.ok(seenTimeouts.includes(300000));
+    });
+  }
 });

@@ -58,9 +58,10 @@ import {
   replaceAffectionRecord,
   sortAffectionRecords,
 } from './model.js';
+import { getLongFormGenerationTimeoutMessage, LONG_FORM_GENERATION_TIMEOUT_MS } from '../../constants.js';
 
-const AFFECTION_PROFILE_BUILD_TIMEOUT_MS = 180000;
-const AFFECTION_PROFILE_BUILDING_MAX_AGE_MS = 5 * 60 * 1000;
+export const AFFECTION_PROFILE_BUILD_TIMEOUT_MS = LONG_FORM_GENERATION_TIMEOUT_MS;
+export const AFFECTION_PROFILE_BUILDING_MAX_AGE_MS = LONG_FORM_GENERATION_TIMEOUT_MS + 2 * 60 * 1000;
 const AFFECTION_BUILD_TASK_LIMIT = 60;
 const AFFECTION_PENDING_COMMIT_HANDLER_ID = 'affection';
 export const AFFECTION_STATE_PROMPT_ID = 'shenling_assistant_affection_state';
@@ -383,13 +384,13 @@ async function requestAffectionProfileStages({ messages, apiMode }) {
     ? await generateWithMainApi({
       messages,
       timeoutMs: AFFECTION_PROFILE_BUILD_TIMEOUT_MS,
-      timeoutMessage: '专属阶段表生成超时，请稍后重试。',
+      timeoutMessage: getLongFormGenerationTimeoutMessage('专属阶段表', apiMode),
     })
     : await generateWithSecondaryApi({
       profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
       messages,
       timeoutMs: AFFECTION_PROFILE_BUILD_TIMEOUT_MS,
-      timeoutMessage: '专属阶段表生成超时，请稍后重试。',
+      timeoutMessage: getLongFormGenerationTimeoutMessage('专属阶段表', apiMode),
     });
 
   return {

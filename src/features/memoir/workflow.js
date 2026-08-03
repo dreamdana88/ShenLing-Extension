@@ -4,7 +4,13 @@
 //   - 已绑定且本聊天确认过 -> 直接复用。
 //   - 已绑定但未确认/绑定已变化 -> 由 UI 询问：复用当前书，或创建蜃灵专属书并切换绑定。
 
-import { GRAND_MEMORY_BLOCK_RE, LIST_BLOCK_RE, MEMORY_BLOCK_RE } from '../../constants.js';
+import {
+  GRAND_MEMORY_BLOCK_RE,
+  getLongFormGenerationTimeoutMessage,
+  LIST_BLOCK_RE,
+  LONG_FORM_GENERATION_TIMEOUT_MS,
+  MEMORY_BLOCK_RE,
+} from '../../constants.js';
 import { getChatMessagesSafe, getContextSafe } from '../../core/chat.js';
 import {
   generateWithMainApi,
@@ -1108,7 +1114,7 @@ export async function buildCaptureOptionalContextMaterial(optionalContext, optio
 // 设定采集生成流程：材料预检、独立请求、严格 JSON 解析与草稿追加。
 
 
-const CAPTURE_GENERATION_TIMEOUT_MS = 180000;
+export const CAPTURE_GENERATION_TIMEOUT_MS = LONG_FORM_GENERATION_TIMEOUT_MS;
 
 let workflowOptions = {
   addCommunicationLog: null,
@@ -1249,13 +1255,13 @@ async function requestCaptureGeneration(messages, apiMode) {
     ? generateWithMainApi({
       messages,
       timeoutMs: CAPTURE_GENERATION_TIMEOUT_MS,
-      timeoutMessage: '设定采集生成超时，请稍后重试。',
+      timeoutMessage: getLongFormGenerationTimeoutMessage('设定采集', apiMode),
     })
     : generateWithSecondaryApi({
       profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
       messages,
       timeoutMs: CAPTURE_GENERATION_TIMEOUT_MS,
-      timeoutMessage: '设定采集生成超时，请稍后重试。',
+      timeoutMessage: getLongFormGenerationTimeoutMessage('设定采集', apiMode),
     });
 }
 

@@ -18,6 +18,7 @@ const secondaryProfile = {
 const MAIN_TIMEOUT_MESSAGE = '日程表生成等待超过 300 秒，已停止等待；主 API 生成可能仍在后台继续。';
 const SECONDARY_TIMEOUT_MESSAGE = '日程表生成等待超过 300 秒，副 API 请求已取消，请稍后重试。';
 const EXPECTED_TIMEOUT_MS = 300000;
+const LEGACY_SHORT_TIMEOUT_MS = 3 * 60 * 1000;
 
 function createResponse({
   ok = true,
@@ -203,7 +204,7 @@ test('Schedule main and secondary generation pass timeoutMs 300000', async () =>
 
   assert.ok(seenTimeouts.includes(EXPECTED_TIMEOUT_MS));
   assert.equal(seenTimeouts.filter(value => value === EXPECTED_TIMEOUT_MS).length >= 2, true);
-  assert.equal(seenTimeouts.includes(180000), false);
+  assert.equal(seenTimeouts.includes(LEGACY_SHORT_TIMEOUT_MS), false);
 });
 
 test('Schedule main API timeout uses wait-only message and MAIN_TIMEOUT diagnostics', async () => {

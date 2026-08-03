@@ -3,6 +3,7 @@ import {
   formatTimestamp,
   isPlainObject,
 } from '../../utils/text.js';
+import { getLongFormGenerationTimeoutMessage, LONG_FORM_GENERATION_TIMEOUT_MS } from '../../constants.js';
 import {
   generateWithMainApi,
   generateWithSecondaryApi,
@@ -988,14 +989,20 @@ function saveEntry(entryInput) {
   return entry;
 }
 
-async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
+export const DIARY_GENERATION_TIMEOUT_MS = LONG_FORM_GENERATION_TIMEOUT_MS;
+
+export async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
   const store = getDiaryStore(getChatState());
   const addCommunicationLog = getPanelOption('addCommunicationLog');
   const startedAt = performance.now();
 
   if (store.settings.apiMode === 'main') {
     try {
-      const apiResult = await generateWithMainApi({ messages });
+      const apiResult = await generateWithMainApi({
+        messages,
+        timeoutMs: DIARY_GENERATION_TIMEOUT_MS,
+        timeoutMessage: getLongFormGenerationTimeoutMessage('日记', 'main'),
+      });
       const rawParsedResult = parseDiaryGenerationResult(apiResult.content, fallbackDate);
       const { result: parsedResult, replacement: wordReplacement } =
         applyWordReplacementToDiaryResult(rawParsedResult);
@@ -1048,7 +1055,12 @@ async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
   const profile = getPanelOption('getActiveApiProfile')?.(getGlobalSettings());
   let apiResult = null;
   try {
-    apiResult = await generateWithSecondaryApi({ profile, messages });
+    apiResult = await generateWithSecondaryApi({
+      profile,
+      messages,
+      timeoutMs: DIARY_GENERATION_TIMEOUT_MS,
+      timeoutMessage: getLongFormGenerationTimeoutMessage('日记', 'secondary'),
+    });
     const rawParsedResult = parseDiaryGenerationResult(apiResult.content, fallbackDate);
     const { result: parsedResult, replacement: wordReplacement } =
       applyWordReplacementToDiaryResult(rawParsedResult);

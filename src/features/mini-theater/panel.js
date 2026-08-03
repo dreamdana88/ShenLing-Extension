@@ -1,4 +1,8 @@
 import {
+  getLongFormGenerationTimeoutMessage,
+  LONG_FORM_GENERATION_TIMEOUT_MS,
+} from "../../constants.js";
+import {
   formatShenlingContextForPrompt,
   resolveShenlingContext,
 } from "../../core/context-resolver.js";
@@ -37,7 +41,7 @@ let panelOptions = {
 let promptSearchRefreshTimer = null;
 let pickSearchRefreshTimer = null;
 
-const THEATER_GENERATION_TIMEOUT_MS = 120000;
+export const THEATER_GENERATION_TIMEOUT_MS = LONG_FORM_GENERATION_TIMEOUT_MS;
 const THEATER_RESULT_WARN_LIMIT = 50;
 
 // 跨渲染持久化的面板本地状态
@@ -470,7 +474,7 @@ function buildTheaterContextDiagnostics(context = {}) {
   };
 }
 
-async function runMiniTheaterGeneration() {
+export async function runMiniTheaterGeneration() {
   const userPrompt = String(panelState.promptText || "").trim();
   if (!userPrompt) {
     throw new Error("请先输入小剧场提示词，或从提示词库选择一条。");
@@ -521,7 +525,7 @@ async function runMiniTheaterGeneration() {
         ? await generateWithMainApi({
             messages,
             timeoutMs: THEATER_GENERATION_TIMEOUT_MS,
-            timeoutMessage: "小剧场生成超时，请稍后重试。",
+            timeoutMessage: getLongFormGenerationTimeoutMessage("小剧场", apiMode),
           })
         : await generateWithSecondaryApi({
             profile: getPanelOption("getActiveApiProfile")?.(
@@ -529,7 +533,7 @@ async function runMiniTheaterGeneration() {
             ),
             messages,
             timeoutMs: THEATER_GENERATION_TIMEOUT_MS,
-            timeoutMessage: "小剧场生成超时，请稍后重试。",
+            timeoutMessage: getLongFormGenerationTimeoutMessage("小剧场", apiMode),
           });
     requestBody = apiResult.requestBody;
 
