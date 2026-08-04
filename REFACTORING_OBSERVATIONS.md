@@ -86,3 +86,23 @@
 * **现象或能力边界**：当 `globalThis.generateRaw` 不存在，且 `globalThis.SillyTavern.getContext()` 自身抛错时，旧实现会直接向上抛出普通 Error，无法通过统一 Generation Error 访问器取得稳定错误上下文。
 * **最终处理**：Phase 4E-2E 在 Generation Core 中增加 `MAIN_PROVIDER_RESOLUTION_FAILED`，stage 为 `resolve_provider`。Provider 解析异常现在会包装为 `GenerationTransportError`，保留原始 cause，并提供仅包含 `provider`、`messageCount` 与 `durationMs` 的安全 diagnostics。正常 Provider 优先级保持为全局 `generateRaw` 优先；全局入口存在时不会调用 `SillyTavern.getContext()`；`getContext()` 正常返回但不存在 `generateRaw` 时继续使用 `MAIN_PROVIDER_MISSING`；任何解析失败均不会 fallback 到副 API。
 * **最终关闭记录**：关闭阶段：Phase 4E-2E；实现提交：`9f86b3c1cb866a3c5f51b92c61dd56191e80b0d1`；版本：`0.17.16`；验证结论：隔离测试已复现旧行为并验证新错误契约、Provider 优先级、cause 保留、敏感信息清洗与无 fallback；GitHub 实际提交审查通过；SillyTavern 1.18.0 实机确认 `globalThis.generateRaw` 可以为 `undefined`，实际主 Provider 可通过 `SillyTavern.getContext().generateRaw` 正常取得；0.17.16 主 API与副 API成功冒烟均通过，未出现新增 Generation、模块或未处理 Promise 错误。关闭日期：2026-07-28。
+
+## OBS-008：流式 transportMode 字符串缺少统一常量
+
+- **来源 Phase**：Phase 4.6-S1-A Review Fix 后续观察。
+- **当前状态**：观察中
+- **现象或能力边界**：Generation Core 当前仅在 `transportMode === 'stream'` 时启用流式路径；其他值（包括拼写错误）都会保持默认 legacy。作为尚未接入 Feature 的内部参数，该行为当前可接受。
+- **当前影响**：S1-A 没有生产 Feature 传入 `transportMode`，因此不存在提前启用流式或现有业务回归；但 S2 接线若分散书写字符串，拼写错误会静默落回 legacy。
+- **触发复查条件**：Phase 4.6-S2 首次为小剧场接入流式 transport。
+- **建议处理阶段**：Phase 4.6-S2；由 Generation Core 导出或在统一调用层复用单一 transport mode 常量，避免 Feature 手写 `'stream'` 字符串。
+- **最终关闭记录**：
+
+## OBS-009：主 API 长文本 timeout 提示需要区分 legacy 与 stream
+
+- **来源 Phase**：Phase 4.6-S1-A Review Fix 后续观察。
+- **当前状态**：观察中
+- **现象或能力边界**：现有长文本主 API timeout 提示“已停止等待；主 API 生成可能仍在后台继续”准确描述 legacy wait-only 路径；流式 timeout 会调用 `stopGenerationById`，不应复用该提示。
+- **当前影响**：S1-A 生产 Feature 仍全部默认 legacy，因此当前提示与真实行为一致，不阻塞本阶段通过。
+- **触发复查条件**：Phase 4.6-S2 小剧场显式 opt-in 流式 transport。
+- **建议处理阶段**：Phase 4.6-S2 任务书必须为流式路径提供单独 timeout 提示，并保留 legacy 原提示；不得仅按“主 API”共用同一句文案。
+- **最终关闭记录**：

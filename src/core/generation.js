@@ -1,6 +1,11 @@
-import { buildApiUrl } from './api.js';
+import {
+  buildApiUrl,
+  buildCustomApiFromProfile,
+  sanitizeCustomApiForDiagnostics,
+} from './api.js';
 import {
   RuntimeGenerationError,
+  createSecondaryGenerationId,
   getRuntimeStreamingCapability,
   runRuntimeStreamingGeneration,
 } from './runtime-generation.js';
@@ -396,14 +401,30 @@ export async function generateWithMainApi({
   };
 }
 
+function buildSecondaryStreamDiagnosticRequestBody(messages, model, customApi) {
+  return {
+    model,
+    messages,
+    stream: true,
+    ordered_prompts: messages,
+    custom_api: sanitizeCustomApiForDiagnostics(customApi),
+    should_stream: true,
+    should_silence: true,
+  };
+}
+
 export async function generateWithSecondaryApi({
   profile,
   messages,
   timeoutMs,
   timeoutMessage = '生成超时，请稍后重试。',
+  signal,
+  transportMode = 'legacy',
 }) {
   const startedAt = Date.now();
   const messageCount = Array.isArray(messages) ? messages.length : 0;
+  const useStreaming = transportMode === 'stream';
+
   if (!profile) {
     throw new GenerationTransportError('当前环境未提供副 API 配置。', {
       code: 'SECONDARY_PROFILE_MISSING',
@@ -411,7 +432,7 @@ export async function generateWithSecondaryApi({
       diagnostics: {
         provider: 'secondary',
         messageCount,
-        stream: false,
+        stream: useStreaming,
         durationMs: getDurationMs(startedAt),
       },
     });
@@ -427,7 +448,7 @@ export async function generateWithSecondaryApi({
         provider: 'secondary',
         profileName,
         messageCount,
-        stream: false,
+        stream: useStreaming,
         durationMs: getDurationMs(startedAt),
       },
     });
@@ -453,7 +474,7 @@ export async function generateWithSecondaryApi({
           model,
           url: '',
           messageCount,
-          stream: false,
+          stream: useStreaming,
           durationMs: getDurationMs(startedAt),
         },
         cause: error,
@@ -461,6 +482,181 @@ export async function generateWithSecondaryApi({
     );
   }
   const safeUrl = sanitizeUrl(url, [apiKey]);
+
+  if (useStreaming) {
+    let streamingCapability;
+    try {
+      streamingCapability = getRuntimeStreamingCapability();
+      if (streamingCapability.status === 'error') {
+        throw streamingCapability.error;
+      }
+    } catch (error) {
+      const originalMessage = sanitizeSensitiveText(
+        error?.message || String(error),
+        [apiKey],
+      );
+      throw new GenerationTransportError(
+        `解析副 API 流式 Provider 失败：${originalMessage}`,
+        {
+          code: 'STREAM_UNAVAILABLE',
+          stage: 'resolve_provider',
+          diagnostics: {
+            provider: 'secondary',
+            profileName,
+            model,
+            url: safeUrl,
+            messageCount,
+            stream: true,
+            durationMs: getDurationMs(startedAt),
+          },
+          cause: error,
+        },
+      );
+    }
+
+    if (streamingCapability.status !== 'available') {
+      throw new GenerationTransportError(
+        '当前环境缺少成对的 generateRaw 与 stopGenerationById，无法使用副 API 流式传输。',
+        {
+          code: 'STREAM_UNAVAILABLE',
+          stage: 'resolve_provider',
+          diagnostics: {
+            provider: 'secondary',
+            profileName,
+            model,
+            url: safeUrl,
+            messageCount,
+            stream: true,
+            durationMs: getDurationMs(startedAt),
+          },
+        },
+      );
+    }
+
+    let customApi;
+    try {
+      customApi = buildCustomApiFromProfile(profile);
+    } catch (error) {
+      const originalMessage = sanitizeSensitiveText(
+        error?.message || String(error),
+        [apiKey],
+      );
+      throw new GenerationTransportError(
+        `无法构建副 API custom_api：${originalMessage}`,
+        {
+          code: 'SECONDARY_URL_BUILD_FAILED',
+          stage: 'build_request',
+          diagnostics: {
+            provider: 'secondary',
+            profileName,
+            model,
+            url: safeUrl,
+            messageCount,
+            stream: true,
+            durationMs: getDurationMs(startedAt),
+          },
+          cause: error,
+        },
+      );
+    }
+
+    const generationId = createSecondaryGenerationId();
+    const diagnosticRequestBody = buildSecondaryStreamDiagnosticRequestBody(
+      messages,
+      model,
+      customApi,
+    );
+
+    try {
+      const streamResult = await runRuntimeStreamingGeneration({
+        capability: streamingCapability,
+        messages,
+        timeoutMs,
+        signal,
+        generationId,
+        customApi,
+      });
+
+      const content = String(streamResult.responseText || '');
+      if (!content.trim()) {
+        throw new GenerationTransportError(
+          '副 API 接口响应中缺少可用模型正文。',
+          {
+            code: 'SECONDARY_CONTENT_MISSING',
+            stage: 'extract_content',
+            diagnostics: {
+              provider: 'secondary',
+              profileName,
+              model,
+              url: safeUrl,
+              messageCount,
+              stream: true,
+              generationId,
+              responseText: '',
+              responseTextTruncated: false,
+              durationMs: getDurationMs(startedAt),
+            },
+          },
+        );
+      }
+
+      // Stream path has no OpenAI chat-completions JSON envelope from TavernHelper.
+      // Keep responseJson present as null; never fabricate a provider JSON object.
+      return {
+        profileName,
+        model,
+        url,
+        httpStatus: null,
+        requestBody: diagnosticRequestBody,
+        responseText: content,
+        responseJson: null,
+        content,
+        transport: {
+          mode: 'stream',
+          source: streamingCapability.source || 'TavernHelper',
+          generationId: streamResult.transport.generationId,
+          firstChunkMs: streamResult.transport.firstChunkMs,
+          chunkCount: streamResult.transport.chunkCount,
+          durationMs: getDurationMs(startedAt),
+        },
+      };
+    } catch (error) {
+      if (error instanceof GenerationTransportError) throw error;
+      if (!(error instanceof RuntimeGenerationError)) throw error;
+
+      const code = (
+        error.code === 'USER_ABORT'
+        || error.code === 'TIMEOUT_ABORT'
+        || error.code === 'NETWORK_ERROR'
+      )
+        ? error.code
+        : 'SECONDARY_FETCH_FAILED';
+      const message = code === 'TIMEOUT_ABORT'
+        ? sanitizeSensitiveText(timeoutMessage, [apiKey])
+        : code === 'USER_ABORT'
+          ? '副 API 生成已取消。'
+          : `副 API 流式生成失败：${sanitizeSensitiveText(
+            error.cause?.message || error.message,
+            [apiKey],
+          )}`;
+      throw new GenerationTransportError(message, {
+        code,
+        stage: 'send_request',
+        diagnostics: {
+          provider: 'secondary',
+          profileName,
+          model,
+          url: safeUrl,
+          messageCount,
+          stream: true,
+          ...error.diagnostics,
+          durationMs: getDurationMs(startedAt),
+        },
+        cause: error.cause || error,
+      });
+    }
+  }
+
   const requestBody = {
     model,
     messages,

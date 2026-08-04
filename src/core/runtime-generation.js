@@ -1,4 +1,7 @@
-const GENERATION_ID_PREFIX = 'slx-main';
+const GENERATION_ID_PREFIXES = Object.freeze({
+  main: 'slx-main',
+  secondary: 'slx-secondary',
+});
 export const STOP_SETTLEMENT_GRACE_MS = 2000;
 
 let generationSequence = 0;
@@ -83,7 +86,12 @@ export function supportsStreamingGeneration(host = globalThis) {
   return getRuntimeStreamingCapability(host).status === 'available';
 }
 
-export function createMainGenerationId(host = globalThis) {
+/**
+ * Unique generation id for streaming transport.
+ * @param {'main'|'secondary'} [channel='main']
+ */
+export function createStreamingGenerationId(channel = 'main', host = globalThis) {
+  const prefix = GENERATION_ID_PREFIXES[channel] || GENERATION_ID_PREFIXES.main;
   let uniquePart = '';
   try {
     uniquePart = host?.crypto?.randomUUID?.() || '';
@@ -94,7 +102,15 @@ export function createMainGenerationId(host = globalThis) {
     uniquePart = `${Date.now().toString(36)}-${generationSequence.toString(36)}`;
   }
 
-  return `${GENERATION_ID_PREFIX}-${uniquePart}`;
+  return `${prefix}-${uniquePart}`;
+}
+
+export function createMainGenerationId(host = globalThis) {
+  return createStreamingGenerationId('main', host);
+}
+
+export function createSecondaryGenerationId(host = globalThis) {
+  return createStreamingGenerationId('secondary', host);
 }
 
 export class RuntimeGenerationError extends Error {
@@ -173,8 +189,8 @@ function registerStreamListeners(runtime, generationId, startedAt, stats) {
 
 function createAbortError(code, generationId, cause, diagnostics = {}) {
   const message = code === 'TIMEOUT_ABORT'
-    ? '酒馆主 API 流式生成超时并已请求停止。'
-    : '酒馆主 API 流式生成已由用户取消。';
+    ? '流式生成超时并已请求停止。'
+    : '流式生成已由用户取消。';
   return new RuntimeGenerationError(message, {
     code,
     generationId,
@@ -216,6 +232,9 @@ function getAbortDiagnostics(abortState, stopOutcome, stopSettlementTimedOut) {
 
 /**
  * 调用公开运行时流式合同，并且只以 generateRaw Promise 的 settlement 作为完成信号。
+ *
+ * Main / secondary share this lifecycle. Secondary only differs by optional custom_api.
+ * Stream events are diagnostic only; GENERATION_ENDED is never required for resolve.
  */
 export async function runRuntimeStreamingGeneration({
   capability = getRuntimeStreamingCapability(),
@@ -223,6 +242,7 @@ export async function runRuntimeStreamingGeneration({
   timeoutMs,
   signal,
   generationId = createMainGenerationId(),
+  customApi,
 } = {}) {
   if (capability?.status === 'error') {
     throw new RuntimeGenerationError('解析酒馆助手流式生成能力失败。', {
@@ -245,6 +265,9 @@ export async function runRuntimeStreamingGeneration({
     should_silence: true,
     generation_id: generationId,
   };
+  if (customApi && typeof customApi === 'object') {
+    requestBody.custom_api = customApi;
+  }
 
   if (signal?.aborted) {
     throw createAbortError('USER_ABORT', generationId, signal.reason, {
@@ -308,7 +331,7 @@ export async function runRuntimeStreamingGeneration({
       // 从而保证 generateRaw 始终先于 stopGenerationById。
       generateResult = runtime.generateRaw(requestBody);
     } catch (error) {
-      throw new RuntimeGenerationError('酒馆主 API 流式生成调用失败。', {
+      throw new RuntimeGenerationError('流式生成调用失败。', {
         code: 'NETWORK_ERROR',
         generationId,
         diagnostics: { generationId },
@@ -374,7 +397,7 @@ export async function runRuntimeStreamingGeneration({
     }
 
     if (settlement.status === 'rejected') {
-      throw new RuntimeGenerationError('酒馆主 API 流式生成调用失败。', {
+      throw new RuntimeGenerationError('流式生成调用失败。', {
         code: 'NETWORK_ERROR',
         generationId,
         diagnostics: { generationId },

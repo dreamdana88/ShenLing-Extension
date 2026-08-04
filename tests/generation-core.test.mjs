@@ -3,6 +3,11 @@ import { readFile, readdir } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import test from 'node:test';
 import {
+  buildCustomApiFromProfile,
+  SECONDARY_CUSTOM_API_SOURCE,
+  sanitizeCustomApiForDiagnostics,
+} from '../src/core/api.js';
+import {
   GenerationTransportError,
   generateWithMainApi,
   generateWithSecondaryApi,
@@ -1312,4 +1317,407 @@ test('real Node fetch aborts localhost slow headers and slow bodies while preser
   } finally {
     await localServer.close();
   }
+});
+
+test('secondary Profile maps to temporary custom_api without mutating schema or leaking key', () => {
+  const cases = [
+    {
+      profile: {
+        name: 'GPROXY Display Name',
+        baseUrl: 'https://proxy.example/v1/',
+        endpointPath: '/v1/chat/completions',
+        apiKey: SECRET,
+        model: 'org/ns-model.v2',
+      },
+      expected: {
+        apiurl: 'https://proxy.example/v1',
+        model: 'org/ns-model.v2',
+        source: SECONDARY_CUSTOM_API_SOURCE,
+        key: SECRET,
+      },
+    },
+    {
+      profile: {
+        name: 'No slash',
+        baseUrl: 'https://proxy.example',
+        endpointPath: '/chat/completions',
+        apiKey: '',
+        model: 'manual-model',
+      },
+      expected: {
+        apiurl: 'https://proxy.example',
+        model: 'manual-model',
+        source: SECONDARY_CUSTOM_API_SOURCE,
+      },
+    },
+  ];
+
+  for (const { profile, expected } of cases) {
+    const snapshot = structuredClone(profile);
+    const customApi = buildCustomApiFromProfile(profile);
+    assert.deepEqual(customApi, expected);
+    assert.deepEqual(profile, snapshot, 'Profile schema must not be mutated');
+    assert.equal(customApi.source, 'openai');
+    assert.notEqual(customApi.source, profile.name);
+
+    const safe = sanitizeCustomApiForDiagnostics(customApi);
+    assert.equal(Object.hasOwn(safe, 'key'), false);
+    assert.equal(JSON.stringify(safe).includes(SECRET), false);
+  }
+});
+
+test('secondary defaults to legacy fetch even when TavernHelper streaming exists', async () => {
+  let fetchCalls = 0;
+  let generateRawCalls = 0;
+  await withGlobals({
+    tavernHelper: {
+      generateRaw: async () => {
+        generateRawCalls += 1;
+        return 'unexpected stream';
+      },
+      stopGenerationById: () => false,
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      return createResponse({ body: 'legacy secondary body' });
+    },
+  }, async () => {
+    const result = await generateWithSecondaryApi({
+      profile: secondaryProfile,
+      messages,
+    });
+    assert.equal(result.content, 'legacy secondary body');
+    assert.equal(Object.hasOwn(result, 'transport'), false);
+    assert.equal(result.requestBody.stream, false);
+    assert.equal(fetchCalls, 1);
+    assert.equal(generateRawCalls, 0);
+  });
+});
+
+test('secondary explicit stream uses custom_api ordered prompts and never legacy fetch', async () => {
+  const orderedMessages = [
+    { role: 'system', content: 'SYS_MARKER' },
+    { role: 'user', content: 'USER_MARKER' },
+    { role: 'assistant', content: 'ASSISTANT_MARKER' },
+    { role: 'user', content: 'FINAL_USER_MARKER' },
+  ];
+  let received = null;
+  let fetchCalls = 0;
+  const profile = {
+    ...secondaryProfile,
+    name: 'Brand Name Must Not Become Source',
+    baseUrl: 'https://secondary.example/v1/',
+    endpointPath: '/v1/chat/completions',
+    model: 'provider/ns-model',
+    apiKey: SECRET,
+  };
+
+  await withGlobals({
+    tavernHelper: {
+      async generateRaw(request) {
+        received = request;
+        return 'secondary stream full result';
+      },
+      stopGenerationById() {
+        return false;
+      },
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      return createResponse({ body: 'should not run' });
+    },
+  }, async () => {
+    const result = await generateWithSecondaryApi({
+      profile,
+      messages: orderedMessages,
+      transportMode: 'stream',
+    });
+
+    assert.strictEqual(received.ordered_prompts, orderedMessages);
+    assert.deepEqual(received.ordered_prompts, orderedMessages);
+    assert.deepEqual(
+      received.ordered_prompts.map(item => item.content),
+      ['SYS_MARKER', 'USER_MARKER', 'ASSISTANT_MARKER', 'FINAL_USER_MARKER'],
+    );
+    assert.equal(received.should_stream, true);
+    assert.equal(received.should_silence, true);
+    assert.match(received.generation_id, /^slx-secondary-/);
+    assert.deepEqual(received.custom_api, {
+      apiurl: 'https://secondary.example/v1',
+      model: 'provider/ns-model',
+      source: 'openai',
+      key: SECRET,
+    });
+    assert.equal(received.custom_api.source, 'openai');
+    assert.notEqual(received.custom_api.source, profile.name);
+
+    assert.equal(result.content, 'secondary stream full result');
+    assert.equal(result.responseText, 'secondary stream full result');
+    assert.equal(result.responseJson, null);
+    assert.equal(result.httpStatus, null);
+    assert.equal(result.model, 'provider/ns-model');
+    assert.equal(result.profileName, profile.name);
+    assert.equal(result.url, 'https://secondary.example/v1/chat/completions');
+    assert.equal(result.requestBody.stream, true);
+    assert.equal(result.requestBody.model, 'provider/ns-model');
+    assert.strictEqual(result.requestBody.messages, orderedMessages);
+    assert.deepEqual(result.requestBody.custom_api, {
+      apiurl: 'https://secondary.example/v1',
+      model: 'provider/ns-model',
+      source: 'openai',
+    });
+    assert.equal(Object.hasOwn(result.requestBody.custom_api, 'key'), false);
+    assert.equal(JSON.stringify(result).includes(SECRET), false);
+    assert.equal(result.transport.mode, 'stream');
+    assert.equal(result.transport.source, 'TavernHelper');
+    assert.equal(result.transport.generationId, received.generation_id);
+    assert.equal(result.transport.firstChunkMs, null);
+    assert.equal(result.transport.chunkCount, 0);
+    assert.ok(Number.isFinite(result.transport.durationMs));
+    assert.equal(fetchCalls, 0);
+  });
+});
+
+test('secondary stream fails clearly when runtime capability is unavailable', async () => {
+  let fetchCalls = 0;
+  await withGlobals({
+    fetch: async () => {
+      fetchCalls += 1;
+      return createResponse();
+    },
+  }, async () => {
+    const error = await getRejection(generateWithSecondaryApi({
+      profile: secondaryProfile,
+      messages,
+      transportMode: 'stream',
+    }));
+    assertTransportError(error, 'STREAM_UNAVAILABLE', 'resolve_provider');
+    assert.equal(error.diagnostics.stream, true);
+    assert.equal(error.diagnostics.provider, 'secondary');
+    assert.equal(fetchCalls, 0);
+  });
+});
+
+test('secondary stream provider rejection does not retry legacy fetch', async () => {
+  const original = new Error('HTTP 502 bad gateway from provider');
+  let fetchCalls = 0;
+  await withGlobals({
+    tavernHelper: {
+      generateRaw: async () => {
+        throw original;
+      },
+      stopGenerationById: () => false,
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      return createResponse({ body: 'legacy fallback must not run' });
+    },
+  }, async () => {
+    const error = await getRejection(generateWithSecondaryApi({
+      profile: secondaryProfile,
+      messages,
+      transportMode: 'stream',
+    }));
+    assertTransportError(error, 'NETWORK_ERROR', 'send_request');
+    assert.equal(error.cause, original);
+    assert.match(error.message, /502/);
+    assert.equal(error.diagnostics.stream, true);
+    assert.equal(fetchCalls, 0);
+    assertSecretAbsent(error);
+  });
+});
+
+test('secondary stream timeout cancels exact generationId and never returns partial content', async () => {
+  const deferred = createDeferred();
+  const stoppedIds = [];
+  let receivedId = '';
+  let receivedCustomApi = null;
+  await withGlobals({
+    tavernHelper: {
+      generateRaw: async request => {
+        receivedId = request.generation_id;
+        receivedCustomApi = request.custom_api;
+        return deferred.promise;
+      },
+      stopGenerationById: id => {
+        stoppedIds.push(id);
+        deferred.reject(new DOMException('timeout stopped', 'AbortError'));
+        return true;
+      },
+    },
+    fetch: async () => {
+      throw new Error('legacy fetch must not run on secondary stream timeout');
+    },
+  }, async () => {
+    const error = await getRejection(generateWithSecondaryApi({
+      profile: secondaryProfile,
+      messages,
+      timeoutMs: 5,
+      timeoutMessage: 'secondary stream timeout marker',
+      transportMode: 'stream',
+    }));
+    assertTransportError(error, 'TIMEOUT_ABORT', 'send_request');
+    assert.equal(error.message, 'secondary stream timeout marker');
+    assert.equal(error.diagnostics.stream, true);
+    assert.equal(error.diagnostics.stopRequested, true);
+    assert.equal(error.diagnostics.stopAccepted, true);
+    assert.equal(error.diagnostics.abortReason, 'TIMEOUT_ABORT');
+    assert.deepEqual(stoppedIds, [receivedId]);
+    assert.match(receivedId, /^slx-secondary-/);
+    assert.equal(receivedCustomApi.model, secondaryProfile.model);
+    assert.equal(Object.hasOwn(error, 'content'), false);
+    assertSecretAbsent(error);
+  });
+});
+
+test('secondary stream user abort cancels exact generationId', async () => {
+  const deferred = createDeferred();
+  const controller = new AbortController();
+  const stoppedIds = [];
+  let receivedId = '';
+  await withGlobals({
+    tavernHelper: {
+      generateRaw: async request => {
+        receivedId = request.generation_id;
+        return deferred.promise;
+      },
+      stopGenerationById: id => {
+        stoppedIds.push(id);
+        deferred.reject(new DOMException('user stopped', 'AbortError'));
+        return true;
+      },
+    },
+  }, async () => {
+    const pending = generateWithSecondaryApi({
+      profile: secondaryProfile,
+      messages,
+      timeoutMs: 100,
+      signal: controller.signal,
+      transportMode: 'stream',
+    });
+    controller.abort();
+    const error = await getRejection(pending);
+    assertTransportError(error, 'USER_ABORT', 'send_request');
+    assert.equal(error.diagnostics.stream, true);
+    assert.equal(error.diagnostics.stopRequested, true);
+    assert.equal(error.diagnostics.stopAccepted, true);
+    assert.equal(error.diagnostics.abortReason, 'USER_ABORT');
+    assert.deepEqual(stoppedIds, [receivedId]);
+    assert.match(receivedId, /^slx-secondary-/);
+  });
+});
+
+test('secondary stream records chunk stats but uses Promise text as content', async () => {
+  const orderedMessages = [
+    { role: 'system', content: 'SYS_MARKER' },
+    { role: 'user', content: 'USER_MARKER' },
+    { role: 'assistant', content: 'ASSISTANT_MARKER' },
+    { role: 'user', content: 'FINAL_USER_MARKER' },
+  ];
+  let receivedId = '';
+  await withGlobals({
+    tavernHelper: {
+      iframe_events: {
+        STREAM_TOKEN_RECEIVED_FULLY: 'stream-full',
+        STREAM_TOKEN_RECEIVED_INCREMENTALLY: 'stream-delta',
+      },
+      eventOn(eventName, listener) {
+        this._listeners = this._listeners || new Map();
+        const set = this._listeners.get(eventName) || new Set();
+        set.add(listener);
+        this._listeners.set(eventName, set);
+        return {
+          stop: () => {
+            set.delete(listener);
+          },
+        };
+      },
+      emit(eventName, ...args) {
+        for (const listener of this._listeners?.get(eventName) || []) {
+          listener(...args);
+        }
+      },
+      async generateRaw(request) {
+        receivedId = request.generation_id;
+        this.emit(this.iframe_events.STREAM_TOKEN_RECEIVED_FULLY, 'partial-full', request.generation_id);
+        this.emit(this.iframe_events.STREAM_TOKEN_RECEIVED_INCREMENTALLY, 'partial-delta', request.generation_id);
+        return 'promise wins over partial chunks';
+      },
+      stopGenerationById() {
+        return false;
+      },
+    },
+  }, async () => {
+    const result = await generateWithSecondaryApi({
+      profile: secondaryProfile,
+      messages: orderedMessages,
+      transportMode: 'stream',
+    });
+    assert.equal(result.content, 'promise wins over partial chunks');
+    assert.equal(result.responseText, 'promise wins over partial chunks');
+    assert.notEqual(result.content, 'partial-full');
+    assert.notEqual(result.content, 'partial-delta');
+    assert.equal(result.transport.chunkCount, 1);
+    assert.ok(Number.isFinite(result.transport.firstChunkMs));
+    assert.equal(result.transport.generationId, receivedId);
+  });
+});
+
+test('secondary stream rejects after partial events without returning partial content', async () => {
+  const original = new Error('stream broke after partial');
+  await withGlobals({
+    tavernHelper: {
+      iframe_events: {
+        STREAM_TOKEN_RECEIVED_FULLY: 'stream-full',
+        STREAM_TOKEN_RECEIVED_INCREMENTALLY: 'stream-delta',
+      },
+      eventOn(eventName, listener) {
+        this._listeners = this._listeners || new Map();
+        const set = this._listeners.get(eventName) || new Set();
+        set.add(listener);
+        this._listeners.set(eventName, set);
+        return {
+          stop: () => {
+            set.delete(listener);
+          },
+        };
+      },
+      emit(eventName, ...args) {
+        for (const listener of this._listeners?.get(eventName) || []) {
+          listener(...args);
+        }
+      },
+      async generateRaw(request) {
+        this.emit(this.iframe_events.STREAM_TOKEN_RECEIVED_FULLY, 'half text', request.generation_id);
+        this.emit(this.iframe_events.STREAM_TOKEN_RECEIVED_INCREMENTALLY, 'half', request.generation_id);
+        throw original;
+      },
+      stopGenerationById() {
+        return false;
+      },
+    },
+    fetch: async () => createResponse({ body: 'legacy must not run' }),
+  }, async () => {
+    const error = await getRejection(generateWithSecondaryApi({
+      profile: secondaryProfile,
+      messages,
+      transportMode: 'stream',
+    }));
+    assertTransportError(error, 'NETWORK_ERROR', 'send_request');
+    assert.equal(error.cause, original);
+    assert.equal(Object.hasOwn(error, 'content'), false);
+    assert.equal(JSON.stringify(error).includes('half text'), false);
+  });
+});
+
+test('no Feature opts into stream transport during S1-B', async () => {
+  const featureFiles = await listJavaScriptFiles(new URL('../src/features/', import.meta.url));
+  const optIns = [];
+  for (const fileUrl of featureFiles) {
+    const source = await readFile(fileUrl, 'utf8');
+    if (/transportMode\s*:\s*['"]stream['"]/.test(source)) {
+      optIns.push(fileUrl.pathname);
+    }
+  }
+  assert.deepEqual(optIns, []);
 });

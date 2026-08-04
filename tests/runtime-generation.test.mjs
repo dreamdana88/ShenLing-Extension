@@ -4,6 +4,7 @@ import {
   RuntimeGenerationError,
   STOP_SETTLEMENT_GRACE_MS,
   createMainGenerationId,
+  createSecondaryGenerationId,
   getRuntimeStreamingCapability,
   runRuntimeStreamingGeneration,
   supportsStreamingGeneration,
@@ -135,6 +136,18 @@ test('generation ids are unique and keep the main transport prefix', () => {
   assert.equal(first, 'slx-main-uuid-1');
   assert.equal(second, 'slx-main-uuid-2');
   assert.notEqual(first, second);
+});
+
+test('secondary generation ids use a distinct prefix and remain unique', () => {
+  let value = 0;
+  const host = { crypto: { randomUUID: () => `uuid-${value += 1}` } };
+  const first = createSecondaryGenerationId(host);
+  const second = createSecondaryGenerationId(host);
+
+  assert.equal(first, 'slx-secondary-uuid-1');
+  assert.equal(second, 'slx-secondary-uuid-2');
+  assert.notEqual(first, second);
+  assert.notEqual(first, createMainGenerationId(host));
 });
 
 test('stream success preserves ordered prompts, resolves full text, records chunks, and cleans resources', async () => {
@@ -406,4 +419,113 @@ test('stop throw and rejected stop result remain bounded with their original dia
     assert.equal(error.diagnostics.stopSettlementTimedOut, false);
     assert.equal(harnesses[index].listenerCount(), 0);
   }
+});
+
+test('secondary custom_api is passed through the shared runtime adapter without altering lifecycle', async () => {
+  let received = null;
+  const customApi = {
+    apiurl: 'https://secondary.example/v1',
+    model: 'org/custom-model',
+    source: 'openai',
+    key: 'sk-runtime-only',
+  };
+  const harness = createRuntime({
+    generateRaw: async request => {
+      received = request;
+      harness.runtime.emit(
+        harness.iframeEvents.STREAM_TOKEN_RECEIVED_FULLY,
+        '完整',
+        request.generation_id,
+      );
+      harness.runtime.emit(
+        harness.iframeEvents.STREAM_TOKEN_RECEIVED_INCREMENTALLY,
+        '完整',
+        request.generation_id,
+      );
+      return 'secondary full result';
+    },
+  });
+
+  const result = await runRuntimeStreamingGeneration({
+    capability: getRuntimeStreamingCapability(harness.host),
+    messages,
+    generationId: 'secondary-runtime-generation',
+    customApi,
+  });
+
+  assert.strictEqual(received.custom_api, customApi);
+  assert.deepEqual(received.custom_api, customApi);
+  assert.deepEqual(received.ordered_prompts, messages);
+  assert.equal(received.should_stream, true);
+  assert.equal(received.should_silence, true);
+  assert.equal(received.generation_id, 'secondary-runtime-generation');
+  assert.equal(result.responseText, 'secondary full result');
+  assert.equal(result.transport.chunkCount, 1);
+  assert.ok(Number.isFinite(result.transport.firstChunkMs));
+  assert.equal(harness.listenerCount(), 0);
+});
+
+test('secondary abort stops the same generationId that received custom_api', async () => {
+  const deferred = createDeferred();
+  const controller = new AbortController();
+  const stoppedIds = [];
+  let receivedId = '';
+  let receivedCustomApi = null;
+  const customApi = {
+    apiurl: 'https://secondary.example',
+    model: 'stop-model',
+    source: 'openai',
+    key: 'sk-stop',
+  };
+  const harness = createRuntime({
+    generateRaw: request => {
+      receivedId = request.generation_id;
+      receivedCustomApi = request.custom_api;
+      return deferred.promise;
+    },
+    stopGenerationById: id => {
+      stoppedIds.push(id);
+      deferred.reject(new DOMException('secondary aborted', 'AbortError'));
+      return true;
+    },
+  });
+
+  const pending = runRuntimeStreamingGeneration({
+    capability: getRuntimeStreamingCapability(harness.host),
+    messages,
+    generationId: 'secondary-cancel-generation',
+    customApi,
+    signal: controller.signal,
+    timeoutMs: 100,
+  });
+  controller.abort();
+  const error = await getRejection(pending);
+
+  assert.equal(error.code, 'USER_ABORT');
+  assert.deepEqual(stoppedIds, ['secondary-cancel-generation']);
+  assert.equal(receivedId, 'secondary-cancel-generation');
+  assert.strictEqual(receivedCustomApi, customApi);
+  assert.equal(error.diagnostics.stopAccepted, true);
+  assert.equal(harness.listenerCount(), 0);
+});
+
+test('promise success without stream events still returns full text for custom_api path', async () => {
+  const harness = createRuntime({
+    generateRaw: async () => 'promise only result',
+  });
+
+  const result = await runRuntimeStreamingGeneration({
+    capability: getRuntimeStreamingCapability(harness.host),
+    messages,
+    generationId: 'no-events-secondary',
+    customApi: {
+      apiurl: 'https://secondary.example',
+      model: 'm',
+      source: 'openai',
+    },
+  });
+
+  assert.equal(result.responseText, 'promise only result');
+  assert.equal(result.transport.firstChunkMs, null);
+  assert.equal(result.transport.chunkCount, 0);
 });
