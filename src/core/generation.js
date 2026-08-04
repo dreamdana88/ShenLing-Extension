@@ -1,4 +1,9 @@
 import { buildApiUrl } from './api.js';
+import {
+  RuntimeGenerationError,
+  getRuntimeStreamingCapability,
+  runRuntimeStreamingGeneration,
+} from './runtime-generation.js';
 
 const RESPONSE_TEXT_LIMIT = 16384;
 const SENSITIVE_QUERY_KEYS = new Set([
@@ -189,13 +194,66 @@ export async function generateWithMainApi({
   messages,
   timeoutMs,
   timeoutMessage = '生成超时，请稍后重试。',
+  signal,
 }) {
   const startedAt = Date.now();
   const messageCount = Array.isArray(messages) ? messages.length : 0;
+  let streamingCapability;
   let generateRaw;
   try {
+    streamingCapability = getRuntimeStreamingCapability();
+    if (streamingCapability.status === 'error') {
+      throw streamingCapability.error;
+    }
+
+    if (streamingCapability.status === 'available') {
+      const streamResult = await runRuntimeStreamingGeneration({
+        capability: streamingCapability,
+        messages,
+        timeoutMs,
+        signal,
+      });
+      return {
+        profileName: '酒馆当前连接',
+        model: '酒馆主 API',
+        url: '酒馆当前连接',
+        requestBody: streamResult.requestBody,
+        responseText: streamResult.responseText,
+        content: streamResult.responseText,
+        transport: streamResult.transport,
+      };
+    }
+
     generateRaw = getMainGenerateRaw();
   } catch (error) {
+    if (error instanceof RuntimeGenerationError) {
+      const code = (
+        error.code === 'USER_ABORT'
+        || error.code === 'TIMEOUT_ABORT'
+        || error.code === 'NETWORK_ERROR'
+      )
+        ? error.code
+        : 'MAIN_PROVIDER_FAILED';
+      const message = code === 'TIMEOUT_ABORT'
+        ? sanitizeSensitiveText(timeoutMessage)
+        : code === 'USER_ABORT'
+          ? '酒馆主 API 生成已取消。'
+          : `酒馆主 API 流式生成失败：${sanitizeSensitiveText(
+            error.cause?.message || error.message,
+          )}`;
+      throw new GenerationTransportError(message, {
+        code,
+        stage: 'send_request',
+        diagnostics: {
+          provider: 'main',
+          messageCount,
+          stream: true,
+          durationMs: getDurationMs(startedAt),
+        },
+        cause: error.cause || error,
+      });
+    }
+
     // Provider 解析阶段异常（例如 getContext() 自身抛错），不得伪装成 Provider 缺失，也不回退副 API。
     const originalMessage = sanitizeSensitiveText(error?.message || String(error));
     throw new GenerationTransportError(

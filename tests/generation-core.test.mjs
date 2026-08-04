@@ -54,12 +54,13 @@ function createResponse({
 
 async function withGlobals({
   generateRaw = ABSENT,
+  tavernHelper = ABSENT,
   contextGenerateRaw = ABSENT,
   getContext = ABSENT,
   fetch = ABSENT,
 } = {}, run) {
   const previous = new Map();
-  for (const key of ['generateRaw', 'SillyTavern', 'fetch']) {
+  for (const key of ['generateRaw', 'TavernHelper', 'SillyTavern', 'fetch']) {
     previous.set(key, {
       exists: Object.prototype.hasOwnProperty.call(globalThis, key),
       value: globalThis[key],
@@ -68,6 +69,9 @@ async function withGlobals({
 
   if (generateRaw === ABSENT) delete globalThis.generateRaw;
   else globalThis.generateRaw = generateRaw;
+
+  if (tavernHelper === ABSENT) delete globalThis.TavernHelper;
+  else globalThis.TavernHelper = tavernHelper;
 
   if (getContext !== ABSENT) {
     globalThis.SillyTavern = { getContext };
@@ -313,6 +317,141 @@ test('main API keeps its success contract and has no default timeout', async () 
   });
 });
 
+test('main API uses TavernHelper streaming with ordered prompts and preserves the Feature content contract', async () => {
+  const orderedMessages = [
+    { role: 'system', content: 'SYS_MARKER' },
+    { role: 'user', content: 'USER_MARKER' },
+    { role: 'assistant', content: 'ASSISTANT_MARKER' },
+    { role: 'user', content: 'FINAL_MARKER' },
+  ];
+  let received = null;
+  let contextCalls = 0;
+  const tavernHelper = {
+    async generateRaw(request) {
+      received = request;
+      return 'stream full result';
+    },
+    stopGenerationById() {
+      return false;
+    },
+  };
+
+  await withGlobals({
+    tavernHelper,
+    getContext: () => {
+      contextCalls += 1;
+      throw new Error('streaming provider must not resolve legacy context');
+    },
+  }, async () => {
+    const result = await generateWithMainApi({ messages: orderedMessages });
+    assert.strictEqual(received.ordered_prompts, orderedMessages);
+    assert.deepEqual(received.ordered_prompts, orderedMessages);
+    assert.equal(received.should_stream, true);
+    assert.equal(received.should_silence, true);
+    assert.match(received.generation_id, /^slx-main-/);
+    assert.equal(result.content, 'stream full result');
+    assert.equal(result.responseText, 'stream full result');
+    assert.strictEqual(result.requestBody, received);
+    assert.deepEqual(Object.keys(result).sort(), [
+      'content',
+      'model',
+      'profileName',
+      'requestBody',
+      'responseText',
+      'transport',
+      'url',
+    ]);
+    assert.equal(result.transport.mode, 'stream');
+    assert.equal(result.transport.generationId, received.generation_id);
+    assert.equal(result.transport.firstChunkMs, null);
+    assert.equal(result.transport.chunkCount, 0);
+    assert.equal(contextCalls, 0);
+  });
+});
+
+test('main streaming provider failures expose NETWORK_ERROR without secondary fallback', async () => {
+  const original = new Error('stream provider failed');
+  let secondaryCalls = 0;
+  await withGlobals({
+    tavernHelper: {
+      generateRaw: async () => { throw original; },
+      stopGenerationById: () => false,
+    },
+    fetch: async () => {
+      secondaryCalls += 1;
+      return createResponse();
+    },
+  }, async () => {
+    const error = await getRejection(generateWithMainApi({ messages }));
+    assertTransportError(error, 'NETWORK_ERROR', 'send_request');
+    assert.equal(error.cause, original);
+    assert.equal(error.diagnostics.stream, true);
+    assert.equal(secondaryCalls, 0);
+  });
+});
+
+test('main streaming timeout cancels its exact generation and exposes TIMEOUT_ABORT', async () => {
+  const deferred = createDeferred();
+  const stoppedIds = [];
+  let receivedId = '';
+  await withGlobals({
+    tavernHelper: {
+      generateRaw: async request => {
+        receivedId = request.generation_id;
+        return deferred.promise;
+      },
+      stopGenerationById: id => {
+        stoppedIds.push(id);
+        deferred.reject(new DOMException('timeout stopped', 'AbortError'));
+        return true;
+      },
+    },
+  }, async () => {
+    const error = await getRejection(generateWithMainApi({
+      messages,
+      timeoutMs: 5,
+      timeoutMessage: 'stream timeout marker',
+    }));
+    assertTransportError(error, 'TIMEOUT_ABORT', 'send_request');
+    assert.equal(error.message, 'stream timeout marker');
+    assert.equal(error.diagnostics.stream, true);
+    assert.deepEqual(stoppedIds, [receivedId]);
+    assert.match(receivedId, /^slx-main-/);
+  });
+});
+
+test('main streaming user abort cancels its exact generation and exposes USER_ABORT', async () => {
+  const deferred = createDeferred();
+  const controller = new AbortController();
+  const stoppedIds = [];
+  let receivedId = '';
+  await withGlobals({
+    tavernHelper: {
+      generateRaw: async request => {
+        receivedId = request.generation_id;
+        return deferred.promise;
+      },
+      stopGenerationById: id => {
+        stoppedIds.push(id);
+        deferred.reject(new DOMException('user stopped', 'AbortError'));
+        return true;
+      },
+    },
+  }, async () => {
+    const pending = generateWithMainApi({
+      messages,
+      timeoutMs: 100,
+      signal: controller.signal,
+    });
+    controller.abort();
+    const error = await getRejection(pending);
+    assertTransportError(error, 'USER_ABORT', 'send_request');
+    assert.equal(error.diagnostics.stream, true);
+    assert.deepEqual(stoppedIds, [receivedId]);
+    assert.match(receivedId, /^slx-main-/);
+  });
+});
+
 test('runWithTimeout clears its timer after an early main success', async () => {
   const originalClearTimeout = globalThis.clearTimeout;
   let clearCalls = 0;
@@ -375,7 +514,7 @@ test('main provider failures retain the original cause and never fall back', asy
   });
 });
 
-test('main timeout remains wait-only and a late resolve cannot settle twice', async () => {
+test('legacy main timeout remains wait-only when no matching cancel capability exists', async () => {
   let underlyingFinished = false;
   const previousAbortController = globalThis.AbortController;
   const previousStopGeneration = globalThis.stopGeneration;
@@ -389,9 +528,7 @@ test('main timeout remains wait-only and a late resolve cannot settle twice', as
   globalThis.stopGeneration = () => {
     stopCalls += 1;
   };
-  globalThis.stopGenerationById = () => {
-    stopCalls += 1;
-  };
+  delete globalThis.stopGenerationById;
 
   try {
     await withGlobals({
