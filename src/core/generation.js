@@ -94,6 +94,24 @@ function buildSafeDiagnostics(source = {}) {
   if (typeof source.stream === 'boolean') {
     diagnostics.stream = source.stream;
   }
+  if (typeof source.generationId === 'string') {
+    diagnostics.generationId = source.generationId.slice(0, 200);
+  }
+  if (typeof source.stopRequested === 'boolean') {
+    diagnostics.stopRequested = source.stopRequested;
+  }
+  if (typeof source.stopAccepted === 'boolean' || source.stopAccepted === null) {
+    diagnostics.stopAccepted = source.stopAccepted;
+  }
+  if (typeof source.stopError === 'string') {
+    diagnostics.stopError = sanitizeSensitiveText(source.stopError).slice(0, 1024);
+  }
+  if (typeof source.stopSettlementTimedOut === 'boolean') {
+    diagnostics.stopSettlementTimedOut = source.stopSettlementTimedOut;
+  }
+  if (source.abortReason === 'USER_ABORT' || source.abortReason === 'TIMEOUT_ABORT') {
+    diagnostics.abortReason = source.abortReason;
+  }
   if (typeof source.responseText === 'string') {
     const safeResponse = sanitizeResponseText(source.responseText);
     diagnostics.responseText = safeResponse.responseText;
@@ -195,18 +213,54 @@ export async function generateWithMainApi({
   timeoutMs,
   timeoutMessage = '生成超时，请稍后重试。',
   signal,
+  transportMode = 'legacy',
 }) {
   const startedAt = Date.now();
   const messageCount = Array.isArray(messages) ? messages.length : 0;
-  let streamingCapability;
-  let generateRaw;
-  try {
-    streamingCapability = getRuntimeStreamingCapability();
-    if (streamingCapability.status === 'error') {
-      throw streamingCapability.error;
+  const useStreaming = transportMode === 'stream';
+
+  if (useStreaming) {
+    let streamingCapability;
+    try {
+      streamingCapability = getRuntimeStreamingCapability();
+      if (streamingCapability.status === 'error') {
+        throw streamingCapability.error;
+      }
+    } catch (error) {
+      const originalMessage = sanitizeSensitiveText(error?.message || String(error));
+      throw new GenerationTransportError(
+        `解析酒馆主 API 流式 Provider 失败：${originalMessage}`,
+        {
+          code: 'MAIN_PROVIDER_RESOLUTION_FAILED',
+          stage: 'resolve_provider',
+          diagnostics: {
+            provider: 'main',
+            messageCount,
+            stream: true,
+            durationMs: getDurationMs(startedAt),
+          },
+          cause: error,
+        },
+      );
     }
 
-    if (streamingCapability.status === 'available') {
+    if (streamingCapability.status !== 'available') {
+      throw new GenerationTransportError(
+        '当前环境缺少成对的 generateRaw 与 stopGenerationById，无法使用主 API 流式传输。',
+        {
+          code: 'STREAM_UNAVAILABLE',
+          stage: 'resolve_provider',
+          diagnostics: {
+            provider: 'main',
+            messageCount,
+            stream: true,
+            durationMs: getDurationMs(startedAt),
+          },
+        },
+      );
+    }
+
+    try {
       const streamResult = await runRuntimeStreamingGeneration({
         capability: streamingCapability,
         messages,
@@ -222,11 +276,9 @@ export async function generateWithMainApi({
         content: streamResult.responseText,
         transport: streamResult.transport,
       };
-    }
+    } catch (error) {
+      if (!(error instanceof RuntimeGenerationError)) throw error;
 
-    generateRaw = getMainGenerateRaw();
-  } catch (error) {
-    if (error instanceof RuntimeGenerationError) {
       const code = (
         error.code === 'USER_ABORT'
         || error.code === 'TIMEOUT_ABORT'
@@ -248,12 +300,18 @@ export async function generateWithMainApi({
           provider: 'main',
           messageCount,
           stream: true,
+          ...error.diagnostics,
           durationMs: getDurationMs(startedAt),
         },
         cause: error.cause || error,
       });
     }
+  }
 
+  let generateRaw;
+  try {
+    generateRaw = getMainGenerateRaw();
+  } catch (error) {
     // Provider 解析阶段异常（例如 getContext() 自身抛错），不得伪装成 Provider 缺失，也不回退副 API。
     const originalMessage = sanitizeSensitiveText(error?.message || String(error));
     throw new GenerationTransportError(

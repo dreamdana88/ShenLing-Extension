@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   RuntimeGenerationError,
+  STOP_SETTLEMENT_GRACE_MS,
   createMainGenerationId,
   getRuntimeStreamingCapability,
   runRuntimeStreamingGeneration,
@@ -200,14 +201,54 @@ test('provider rejection becomes NETWORK_ERROR and cleans listeners', async () =
   assert.equal(harness.listenerCount(), 0);
 });
 
-test('user abort cancels the matching generation, waits for rejection, and cleans resources', async () => {
+test('a pre-aborted signal never starts or stops generation and leaves no resources', async () => {
+  const controller = new AbortController();
+  controller.abort('already cancelled');
+  let generateCalls = 0;
+  let stopCalls = 0;
+  const harness = createRuntime({
+    generateRaw: () => {
+      generateCalls += 1;
+      return 'unexpected';
+    },
+    stopGenerationById: () => {
+      stopCalls += 1;
+      return true;
+    },
+  });
+
+  const error = await getRejection(runRuntimeStreamingGeneration({
+    capability: getRuntimeStreamingCapability(harness.host),
+    messages,
+    generationId: 'pre-aborted-generation',
+    timeoutMs: 10,
+    signal: controller.signal,
+  }));
+
+  assert.equal(error.code, 'USER_ABORT');
+  assert.equal(error.diagnostics.stopRequested, false);
+  assert.equal(error.diagnostics.stopAccepted, null);
+  assert.equal(generateCalls, 0);
+  assert.equal(stopCalls, 0);
+  assert.equal(harness.listenerCount(), 0);
+});
+
+test('same-turn user abort orders generate before stop, waits for rejection, and cleans resources', async () => {
   const deferred = createDeferred();
   const controller = new AbortController();
   const stoppedIds = [];
+  const callOrder = [];
+  let generationStarted = false;
   const abortError = new DOMException('runtime aborted', 'AbortError');
   const harness = createRuntime({
-    generateRaw: () => deferred.promise,
+    generateRaw: () => {
+      callOrder.push('generate');
+      generationStarted = true;
+      return deferred.promise;
+    },
     stopGenerationById: id => {
+      assert.equal(generationStarted, true, 'stop must not run before generateRaw starts');
+      callOrder.push('stop');
       stoppedIds.push(id);
       deferred.reject(abortError);
       return true;
@@ -229,6 +270,11 @@ test('user abort cancels the matching generation, waits for rejection, and clean
   assert.equal(error.generationId, 'user-cancel-generation');
   assert.equal(error.cause, abortError);
   assert.deepEqual(stoppedIds, ['user-cancel-generation']);
+  assert.deepEqual(callOrder, ['generate', 'stop']);
+  assert.equal(error.diagnostics.stopRequested, true);
+  assert.equal(error.diagnostics.stopAccepted, true);
+  assert.equal(error.diagnostics.stopSettlementTimedOut, false);
+  assert.equal(error.diagnostics.abortReason, 'USER_ABORT');
   assert.equal(harness.listenerCount(), 0);
 });
 
@@ -257,10 +303,56 @@ test('timeout cancels the matching generation, waits for rejection, and cleans r
   assert.equal(error.generationId, 'timeout-generation');
   assert.equal(error.cause, abortError);
   assert.deepEqual(stoppedIds, ['timeout-generation']);
+  assert.equal(error.diagnostics.stopAccepted, true);
+  assert.equal(error.diagnostics.stopSettlementTimedOut, false);
+  assert.equal(error.diagnostics.abortReason, 'TIMEOUT_ABORT');
   assert.equal(harness.listenerCount(), 0);
 });
 
-test('a failed cancel does not leave the adapter waiting on an orphaned promise', async () => {
+test('stop accepted with no settlement exits after the bounded grace and safely consumes late resolve and reject', async () => {
+  const unhandled = [];
+  const onUnhandled = reason => unhandled.push(reason);
+  const deferredResolve = createDeferred();
+  const deferredReject = createDeferred();
+  process.on('unhandledRejection', onUnhandled);
+
+  try {
+    const harnesses = [deferredResolve, deferredReject].map(deferred => createRuntime({
+      generateRaw: () => deferred.promise,
+      stopGenerationById: () => true,
+    }));
+    const startedAt = Date.now();
+    const errors = await Promise.all(harnesses.map((harness, index) => getRejection(
+      runRuntimeStreamingGeneration({
+        capability: getRuntimeStreamingCapability(harness.host),
+        messages,
+        generationId: `late-settlement-${index}`,
+        timeoutMs: 5,
+      }),
+    )));
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.ok(elapsedMs >= STOP_SETTLEMENT_GRACE_MS);
+    assert.ok(elapsedMs < STOP_SETTLEMENT_GRACE_MS + 1000);
+    for (const [index, error] of errors.entries()) {
+      assert.equal(error.code, 'TIMEOUT_ABORT');
+      assert.equal(error.diagnostics.stopAccepted, true);
+      assert.equal(error.diagnostics.stopSettlementTimedOut, true);
+      assert.equal(harnesses[index].listenerCount(), 0);
+    }
+
+    const finalDiagnostics = errors.map(error => ({ ...error.diagnostics }));
+    deferredResolve.resolve('late success');
+    deferredReject.reject(new Error('late rejection'));
+    await delay(20);
+    assert.deepEqual(unhandled, []);
+    assert.deepEqual(errors.map(error => ({ ...error.diagnostics })), finalDiagnostics);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+test('stop=false exits promptly with explicit diagnostics and cleans resources', async () => {
   const harness = createRuntime({
     generateRaw: () => new Promise(() => {}),
     stopGenerationById: () => false,
@@ -274,5 +366,44 @@ test('a failed cancel does not leave the adapter waiting on an orphaned promise'
   }));
 
   assert.equal(error.code, 'TIMEOUT_ABORT');
+  assert.equal(error.diagnostics.stopRequested, true);
+  assert.equal(error.diagnostics.stopAccepted, false);
+  assert.equal(error.diagnostics.stopError, '');
+  assert.equal(error.diagnostics.stopSettlementTimedOut, false);
+  assert.equal(error.diagnostics.abortReason, 'TIMEOUT_ABORT');
   assert.equal(harness.listenerCount(), 0);
+});
+
+test('stop throw and rejected stop result remain bounded with their original diagnostics', async () => {
+  const stopErrors = [
+    new Error('stop threw'),
+    new Error('stop rejected'),
+  ];
+  const controllers = [new AbortController(), new AbortController()];
+  const harnesses = stopErrors.map((stopError, index) => createRuntime({
+    generateRaw: () => new Promise(() => {}),
+    stopGenerationById: index === 0
+      ? () => { throw stopError; }
+      : () => Promise.reject(stopError),
+  }));
+
+  const pending = harnesses.map((harness, index) => runRuntimeStreamingGeneration({
+    capability: getRuntimeStreamingCapability(harness.host),
+    messages,
+    generationId: `stop-error-${index}`,
+    timeoutMs: 100,
+    signal: controllers[index].signal,
+  }));
+  controllers.forEach(controller => controller.abort());
+  const errors = await Promise.all(pending.map(getRejection));
+
+  for (const [index, error] of errors.entries()) {
+    assert.equal(error.code, 'USER_ABORT');
+    assert.equal(error.cause, stopErrors[index]);
+    assert.equal(error.diagnostics.stopRequested, true);
+    assert.equal(error.diagnostics.stopAccepted, null);
+    assert.equal(error.diagnostics.stopError, stopErrors[index].message);
+    assert.equal(error.diagnostics.stopSettlementTimedOut, false);
+    assert.equal(harnesses[index].listenerCount(), 0);
+  }
 });

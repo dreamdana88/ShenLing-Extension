@@ -1,3 +1,4 @@
+// Phase 4.6-S0 开发期手动探针：不被生产入口 import、不自动发起 API 请求，也不读取或保存 API Key。
 (() => {
   'use strict';
 

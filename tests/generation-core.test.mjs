@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile, readdir } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import test from 'node:test';
 import {
@@ -35,6 +36,20 @@ function createDeferred() {
     reject = rejectPromise;
   });
   return { promise, reject, resolve };
+}
+
+async function listJavaScriptFiles(directoryUrl) {
+  const entries = await readdir(directoryUrl, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const entryUrl = new URL(entry.name, directoryUrl);
+    if (entry.isDirectory()) {
+      files.push(...await listJavaScriptFiles(new URL(`${entry.name}/`, directoryUrl)));
+    } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      files.push(entryUrl);
+    }
+  }
+  return files;
 }
 
 function createResponse({
@@ -317,6 +332,30 @@ test('main API keeps its success contract and has no default timeout', async () 
   });
 });
 
+test('main API stays on legacy transport by default even when TavernHelper streaming is available', async () => {
+  let tavernHelperCalls = 0;
+  let legacyRequest = null;
+  await withGlobals({
+    tavernHelper: {
+      generateRaw: async () => {
+        tavernHelperCalls += 1;
+        return 'unexpected stream result';
+      },
+      stopGenerationById: () => true,
+    },
+    contextGenerateRaw: async request => {
+      legacyRequest = request;
+      return 'legacy result';
+    },
+  }, async () => {
+    const result = await generateWithMainApi({ messages });
+    assert.equal(tavernHelperCalls, 0);
+    assert.deepEqual(legacyRequest, { prompt: messages });
+    assert.equal(result.content, 'legacy result');
+    assert.equal(Object.hasOwn(result, 'transport'), false);
+  });
+});
+
 test('main API uses TavernHelper streaming with ordered prompts and preserves the Feature content contract', async () => {
   const orderedMessages = [
     { role: 'system', content: 'SYS_MARKER' },
@@ -343,7 +382,10 @@ test('main API uses TavernHelper streaming with ordered prompts and preserves th
       throw new Error('streaming provider must not resolve legacy context');
     },
   }, async () => {
-    const result = await generateWithMainApi({ messages: orderedMessages });
+    const result = await generateWithMainApi({
+      messages: orderedMessages,
+      transportMode: 'stream',
+    });
     assert.strictEqual(received.ordered_prompts, orderedMessages);
     assert.deepEqual(received.ordered_prompts, orderedMessages);
     assert.equal(received.should_stream, true);
@@ -369,6 +411,29 @@ test('main API uses TavernHelper streaming with ordered prompts and preserves th
   });
 });
 
+test('explicit stream mode fails clearly when the runtime capability is unavailable', async () => {
+  await withGlobals({}, async () => {
+    const error = await getRejection(generateWithMainApi({
+      messages,
+      transportMode: 'stream',
+    }));
+    assertTransportError(error, 'STREAM_UNAVAILABLE', 'resolve_provider');
+    assert.equal(error.diagnostics.stream, true);
+  });
+});
+
+test('no Feature opts into stream transport during S1-A', async () => {
+  const featureFiles = await listJavaScriptFiles(new URL('../src/features/', import.meta.url));
+  const optIns = [];
+  for (const fileUrl of featureFiles) {
+    const source = await readFile(fileUrl, 'utf8');
+    if (/transportMode\s*:\s*['"]stream['"]/.test(source)) {
+      optIns.push(fileUrl.pathname);
+    }
+  }
+  assert.deepEqual(optIns, []);
+});
+
 test('main streaming provider failures expose NETWORK_ERROR without secondary fallback', async () => {
   const original = new Error('stream provider failed');
   let secondaryCalls = 0;
@@ -382,7 +447,10 @@ test('main streaming provider failures expose NETWORK_ERROR without secondary fa
       return createResponse();
     },
   }, async () => {
-    const error = await getRejection(generateWithMainApi({ messages }));
+    const error = await getRejection(generateWithMainApi({
+      messages,
+      transportMode: 'stream',
+    }));
     assertTransportError(error, 'NETWORK_ERROR', 'send_request');
     assert.equal(error.cause, original);
     assert.equal(error.diagnostics.stream, true);
@@ -411,10 +479,15 @@ test('main streaming timeout cancels its exact generation and exposes TIMEOUT_AB
       messages,
       timeoutMs: 5,
       timeoutMessage: 'stream timeout marker',
+      transportMode: 'stream',
     }));
     assertTransportError(error, 'TIMEOUT_ABORT', 'send_request');
     assert.equal(error.message, 'stream timeout marker');
     assert.equal(error.diagnostics.stream, true);
+    assert.equal(error.diagnostics.stopRequested, true);
+    assert.equal(error.diagnostics.stopAccepted, true);
+    assert.equal(error.diagnostics.stopSettlementTimedOut, false);
+    assert.equal(error.diagnostics.abortReason, 'TIMEOUT_ABORT');
     assert.deepEqual(stoppedIds, [receivedId]);
     assert.match(receivedId, /^slx-main-/);
   });
@@ -442,11 +515,16 @@ test('main streaming user abort cancels its exact generation and exposes USER_AB
       messages,
       timeoutMs: 100,
       signal: controller.signal,
+      transportMode: 'stream',
     });
     controller.abort();
     const error = await getRejection(pending);
     assertTransportError(error, 'USER_ABORT', 'send_request');
     assert.equal(error.diagnostics.stream, true);
+    assert.equal(error.diagnostics.stopRequested, true);
+    assert.equal(error.diagnostics.stopAccepted, true);
+    assert.equal(error.diagnostics.stopSettlementTimedOut, false);
+    assert.equal(error.diagnostics.abortReason, 'USER_ABORT');
     assert.deepEqual(stoppedIds, [receivedId]);
     assert.match(receivedId, /^slx-main-/);
   });

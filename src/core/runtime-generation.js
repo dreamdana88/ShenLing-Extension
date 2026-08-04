@@ -1,4 +1,5 @@
 const GENERATION_ID_PREFIX = 'slx-main';
+export const STOP_SETTLEMENT_GRACE_MS = 2000;
 
 let generationSequence = 0;
 
@@ -97,11 +98,17 @@ export function createMainGenerationId(host = globalThis) {
 }
 
 export class RuntimeGenerationError extends Error {
-  constructor(message, { code, generationId = '', cause } = {}) {
+  constructor(message, {
+    code,
+    generationId = '',
+    diagnostics = {},
+    cause,
+  } = {}) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = 'RuntimeGenerationError';
     this.code = code;
     this.generationId = generationId;
+    this.diagnostics = Object.freeze({ ...diagnostics });
 
     if (cause !== undefined && this.cause !== cause) {
       Object.defineProperty(this, 'cause', {
@@ -164,15 +171,47 @@ function registerStreamListeners(runtime, generationId, startedAt, stats) {
   return listeners;
 }
 
-function createAbortError(code, generationId, cause) {
+function createAbortError(code, generationId, cause, diagnostics = {}) {
   const message = code === 'TIMEOUT_ABORT'
     ? '酒馆主 API 流式生成超时并已请求停止。'
     : '酒馆主 API 流式生成已由用户取消。';
   return new RuntimeGenerationError(message, {
     code,
     generationId,
+    diagnostics,
     cause,
   });
+}
+
+function waitWithinStopGrace(promise, deadline) {
+  const remainingMs = Math.max(0, deadline - Date.now());
+  if (remainingMs === 0) {
+    return Promise.resolve({ status: 'stop-settlement-timeout' });
+  }
+
+  let graceTimer = null;
+  const gracePromise = new Promise(resolve => {
+    graceTimer = setTimeout(
+      () => resolve({ status: 'stop-settlement-timeout' }),
+      remainingMs,
+    );
+  });
+
+  return Promise.race([promise, gracePromise])
+    .finally(() => clearTimeout(graceTimer));
+}
+
+function getAbortDiagnostics(abortState, stopOutcome, stopSettlementTimedOut) {
+  return {
+    generationId: abortState.generationId,
+    stopRequested: true,
+    stopAccepted: stopOutcome.accepted,
+    stopError: stopOutcome.error
+      ? String(stopOutcome.error?.message || stopOutcome.error)
+      : '',
+    stopSettlementTimedOut,
+    abortReason: abortState.code,
+  };
 }
 
 /**
@@ -206,6 +245,18 @@ export async function runRuntimeStreamingGeneration({
     should_silence: true,
     generation_id: generationId,
   };
+
+  if (signal?.aborted) {
+    throw createAbortError('USER_ABORT', generationId, signal.reason, {
+      generationId,
+      stopRequested: false,
+      stopAccepted: null,
+      stopError: '',
+      stopSettlementTimedOut: false,
+      abortReason: 'USER_ABORT',
+    });
+  }
+
   const startedAt = Date.now();
   const stats = {
     firstChunkMs: null,
@@ -224,19 +275,51 @@ export async function runRuntimeStreamingGeneration({
   const requestAbort = code => {
     if (abortState) return;
 
-    abortState = { code, cancelResult: false, error: null };
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+
+    abortState = {
+      code,
+      generationId,
+      stopDeadline: Date.now() + STOP_SETTLEMENT_GRACE_MS,
+      stopOutcomePromise: null,
+    };
     try {
-      abortState.cancelResult = runtime.stopGenerationById(generationId) === true;
+      const stopResult = runtime.stopGenerationById(generationId);
+      abortState.stopOutcomePromise = Promise.resolve(stopResult).then(
+        value => ({ accepted: value === true, error: null }),
+        error => ({ accepted: null, error }),
+      );
     } catch (error) {
-      abortState.error = error;
+      abortState.stopOutcomePromise = Promise.resolve({
+        accepted: null,
+        error,
+      });
     }
     notifyAbort(abortState);
   };
 
   try {
-    if (signal?.aborted) {
-      throw createAbortError('USER_ABORT', generationId, signal.reason);
+    let generateResult;
+    try {
+      // 必须同步启动：调用者在本函数返回 Promise 后才能触发同轮 abort，
+      // 从而保证 generateRaw 始终先于 stopGenerationById。
+      generateResult = runtime.generateRaw(requestBody);
+    } catch (error) {
+      throw new RuntimeGenerationError('酒馆主 API 流式生成调用失败。', {
+        code: 'NETWORK_ERROR',
+        generationId,
+        diagnostics: { generationId },
+        cause: error,
+      });
     }
+
+    const settlementPromise = Promise.resolve(generateResult).then(
+      value => ({ status: 'fulfilled', value }),
+      error => ({ status: 'rejected', error }),
+    );
 
     if (typeof signal?.addEventListener === 'function') {
       const onAbort = () => requestAbort('USER_ABORT');
@@ -244,31 +327,57 @@ export async function runRuntimeStreamingGeneration({
       removeAbortListener = () => signal.removeEventListener?.('abort', onAbort);
     }
 
-    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-      timer = setTimeout(() => requestAbort('TIMEOUT_ABORT'), timeoutMs);
+    // generateRaw 可能在同步启动期间触发外部 abort；此处补检仍保持 generate → stop 顺序。
+    if (signal?.aborted) {
+      requestAbort('USER_ABORT');
     }
 
-    const settlementPromise = Promise.resolve()
-      .then(() => runtime.generateRaw(requestBody))
-      .then(
-        value => ({ status: 'fulfilled', value }),
-        error => ({ status: 'rejected', error }),
-      );
+    if (!abortState && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      const remainingTimeoutMs = Math.max(0, timeoutMs - (Date.now() - startedAt));
+      if (remainingTimeoutMs === 0) {
+        requestAbort('TIMEOUT_ABORT');
+      } else {
+        timer = setTimeout(() => requestAbort('TIMEOUT_ABORT'), remainingTimeoutMs);
+      }
+    }
 
     let settlement = await Promise.race([settlementPromise, abortPromise]);
     if (abortState) {
-      if (abortState.cancelResult) {
-        settlement = await settlementPromise;
+      let stopOutcome = await waitWithinStopGrace(
+        abortState.stopOutcomePromise,
+        abortState.stopDeadline,
+      );
+      if (stopOutcome.status === 'stop-settlement-timeout') {
+        stopOutcome = {
+          accepted: null,
+          error: new Error('stopGenerationById 未在停止收尾窗口内返回。'),
+        };
       }
-      const cause = abortState.error
+
+      let stopSettlementTimedOut = false;
+      if (stopOutcome.accepted === true) {
+        settlement = await waitWithinStopGrace(
+          settlementPromise,
+          abortState.stopDeadline,
+        );
+        stopSettlementTimedOut = settlement.status === 'stop-settlement-timeout';
+      }
+
+      const cause = stopOutcome.error
         || (settlement?.status === 'rejected' ? settlement.error : undefined);
-      throw createAbortError(abortState.code, generationId, cause);
+      throw createAbortError(
+        abortState.code,
+        generationId,
+        cause,
+        getAbortDiagnostics(abortState, stopOutcome, stopSettlementTimedOut),
+      );
     }
 
     if (settlement.status === 'rejected') {
       throw new RuntimeGenerationError('酒馆主 API 流式生成调用失败。', {
         code: 'NETWORK_ERROR',
         generationId,
+        diagnostics: { generationId },
         cause: settlement.error,
       });
     }
