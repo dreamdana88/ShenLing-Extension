@@ -471,36 +471,48 @@ test('Schedule success path does not write errorCode or errorStage', async () =>
 
 // ── Mini Theater ──────────────────────────────────────────────────────
 
-test('Mini Theater secondary HTTP 429 enriches failure log and keeps failed UI semantics', async () => {
-  await withHarness({
-    fetchImpl: async () => createResponse({
-      ok: false,
-      status: 429,
-      statusText: 'Too Many Requests',
-      body: '{"error":"slow down"}',
-    }),
-    configure: options => configureMiniTheaterPanel(options),
-  }, async ({ logs, context }) => {
-    context.extensionSettings[MODULE_NAME].modules.miniTheater.apiMode = 'secondary_api';
-    const { root, promptInput, generateButton, generateTab } = createMiniTheaterRoot();
-    bindMiniTheaterPanelEvents(root);
-    promptInput.dispatchEvent('input', { target: promptInput });
-    generateButton.click();
-    await waitFor(() => logs.length === 1);
-    assertTransportFailureLog(logs[0], {
-      code: 'SECONDARY_HTTP_ERROR',
-      stage: 'read_response',
+test('Mini Theater secondary stream provider failure enriches failure log and keeps failed UI semantics', async () => {
+  const previousTavernHelper = globalThis.TavernHelper;
+  globalThis.TavernHelper = {
+    async generateRaw() {
+      throw new Error('HTTP 429 Too Many Requests: slow down');
+    },
+    stopGenerationById() {
+      return false;
+    },
+  };
+
+  try {
+    await withHarness({
+      fetchImpl: async () => {
+        throw new Error('legacy fetch must not run for mini-theater stream');
+      },
+      configure: options => configureMiniTheaterPanel(options),
+    }, async ({ logs, context }) => {
+      context.extensionSettings[MODULE_NAME].modules.miniTheater.apiMode = 'secondary_api';
+      const { root, promptInput, generateButton, generateTab } = createMiniTheaterRoot();
+      bindMiniTheaterPanelEvents(root);
+      promptInput.dispatchEvent('input', { target: promptInput });
+      generateButton.click();
+      await waitFor(() => logs.length === 1);
+      assertTransportFailureLog(logs[0], {
+        code: 'NETWORK_ERROR',
+        stage: 'send_request',
+      });
+      assert.match(String(logs[0].errorStack || ''), /429|slow down/i);
+      assert.equal(logs[0].transport?.actualMode, 'stream');
+      assert.ok(logs[0].requestBody?.contextDiagnostics);
+      assert.equal(logs[0].requestBody.contextDiagnostics.purpose, 'miniTheater');
+      assert.ok(Object.hasOwn(logs[0].requestBody, 'selectedStyle'));
+      generateTab.click();
+      const html = renderMiniTheaterPanel();
+      assert.match(html, /is-failed/);
+      assert.equal(isMiniTheaterPreviewOpen(), false);
     });
-    assert.equal(logs[0].httpStatus, 429);
-    assert.match(String(logs[0].responseText || ''), /slow down|error/i);
-    assert.ok(logs[0].requestBody?.contextDiagnostics);
-    assert.equal(logs[0].requestBody.contextDiagnostics.purpose, 'miniTheater');
-    assert.ok(Object.hasOwn(logs[0].requestBody, 'selectedStyle'));
-    generateTab.click();
-    const html = renderMiniTheaterPanel();
-    assert.match(html, /is-failed/);
-    assert.equal(isMiniTheaterPreviewOpen(), false);
-  });
+  } finally {
+    if (previousTavernHelper === undefined) delete globalThis.TavernHelper;
+    else globalThis.TavernHelper = previousTavernHelper;
+  }
 });
 
 // ── Plot Outline ──────────────────────────────────────────────────────
@@ -1006,25 +1018,47 @@ function createCaptureTimeoutInput() {
   };
 }
 
-test('Mini Theater main and secondary calls pass the shared 300-second timeout to Core', async () => {
+test('Mini Theater main and secondary stream calls pass the shared 300-second timeout to Core', async () => {
   for (const mode of ['main_api', 'secondary_api']) {
     await withCompressedLongFormTimeout(async seenTimeouts => {
-      await withHarness({
-        mode,
-        generateRaw: mode === 'main_api' ? async () => new Promise(() => {}) : undefined,
-        fetchImpl: mode === 'secondary_api' ? async () => new Promise(() => {}) : undefined,
-        configure: options => configureMiniTheaterPanel(options),
-      }, async ({ context }) => {
-        context.extensionSettings[MODULE_NAME].modules.miniTheater.apiMode = mode;
-        const { root, promptInput } = createMiniTheaterRoot();
-        bindMiniTheaterPanelEvents(root);
-        promptInput.dispatchEvent('input', { target: promptInput });
-        await assert.rejects(runMiniTheaterGeneration(), error => {
-          assert.equal(error.code, mode === 'main_api' ? 'MAIN_TIMEOUT' : 'SECONDARY_TIMEOUT');
+      let settleReject = null;
+      const previousTavernHelper = globalThis.TavernHelper;
+      globalThis.TavernHelper = {
+        generateRaw: () => new Promise((_resolve, reject) => {
+          settleReject = reject;
+        }),
+        stopGenerationById: () => {
+          settleReject?.(new DOMException('stream timeout stopped', 'AbortError'));
           return true;
+        },
+      };
+      try {
+        await withHarness({
+          mode,
+          generateRaw: async () => {
+            throw new Error('legacy main generateRaw must not run for mini-theater stream');
+          },
+          fetchImpl: async () => {
+            throw new Error('legacy fetch must not run for mini-theater stream');
+          },
+          configure: options => configureMiniTheaterPanel(options),
+        }, async ({ context }) => {
+          context.extensionSettings[MODULE_NAME].modules.miniTheater.apiMode = mode;
+          const { root, promptInput } = createMiniTheaterRoot();
+          bindMiniTheaterPanelEvents(root);
+          promptInput.dispatchEvent('input', { target: promptInput });
+          await assert.rejects(runMiniTheaterGeneration(), error => {
+            assert.equal(error.code, 'TIMEOUT_ABORT');
+            assert.match(error.message, /已请求停止后台流式生成/);
+            assert.equal(error.message.includes('主 API 生成可能仍在后台继续'), false);
+            return true;
+          });
         });
-      });
-      assert.ok(seenTimeouts.includes(300000));
+        assert.ok(seenTimeouts.includes(300000));
+      } finally {
+        if (previousTavernHelper === undefined) delete globalThis.TavernHelper;
+        else globalThis.TavernHelper = previousTavernHelper;
+      }
     });
   }
 });

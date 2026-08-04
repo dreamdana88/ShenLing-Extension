@@ -1,7 +1,7 @@
 export const MODULE_NAME = 'shenling_assistant';
 export const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 export const STORAGE_VERSION = 1;
-export const PLUGIN_VERSION = '0.17.22';
+export const PLUGIN_VERSION = '0.17.23';
 export const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 export const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 export const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -9,9 +9,26 @@ export const GRAND_MEMORY_BLOCK_RE = /<grand_memory>[\s\S]*?<\/grand_memory>/i;
 export const LIST_BLOCK_RE = /<list>[\s\S]*?<\/list>/gi;
 export const LONG_FORM_GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
-export function getLongFormGenerationTimeoutMessage(featureName, apiMode) {
+/** Generation Core transport mode. Features must opt in explicitly to stream. */
+export const GENERATION_TRANSPORT_MODE = Object.freeze({
+  LEGACY: 'legacy',
+  STREAM: 'stream',
+});
+
+/**
+ * Long-form Feature timeout copy.
+ * Two-arg callers keep legacy semantics. Stream paths pass { transportMode: 'stream' }.
+ */
+export function getLongFormGenerationTimeoutMessage(
+  featureName,
+  apiMode,
+  { transportMode = GENERATION_TRANSPORT_MODE.LEGACY } = {},
+) {
   const label = String(featureName || '生成').trim() || '生成';
   const seconds = LONG_FORM_GENERATION_TIMEOUT_MS / 1000;
+  if (transportMode === GENERATION_TRANSPORT_MODE.STREAM) {
+    return `${label}生成等待超过 ${seconds} 秒，已请求停止后台流式生成，请稍后重试。`;
+  }
   return apiMode === 'secondary' || apiMode === 'secondary_api'
     ? `${label}生成等待超过 ${seconds} 秒，副 API 请求已取消，请稍后重试。`
     : `${label}生成等待超过 ${seconds} 秒，已停止等待；主 API 生成可能仍在后台继续。`;

@@ -75,6 +75,10 @@ export function createCommunicationLog(input = {}) {
     rawResultContent: input.rawResultContent ?? '',
     parsedResult: input.parsedResult ?? '',
     wordReplacement: input.wordReplacement ?? '',
+    // Optional stream diagnostics (Phase 4.6-S2+). Absent on legacy Feature logs.
+    transport: input.transport ?? null,
+    errorCode: input.errorCode || '',
+    errorStage: input.errorStage || '',
     errorStack: input.errorStack || input.error?.stack || input.error?.message || input.error || '',
   };
 }
@@ -129,6 +133,11 @@ export function sanitizeCommunicationLog(log, settings = {}) {
     rawResultContent: redactLogValue(log.rawResultContent, knownKeys),
     parsedResult: redactLogValue(log.parsedResult, knownKeys),
     wordReplacement: redactLogValue(log.wordReplacement, knownKeys),
+    transport: log.transport == null
+      ? null
+      : redactLogValue(log.transport, knownKeys),
+    errorCode: String(log.errorCode || ''),
+    errorStage: String(log.errorStage || ''),
     errorStack: redactLogValue(log.errorStack, knownKeys),
   };
 }
@@ -167,6 +176,19 @@ export function formatCommunicationLogForCopy(log) {
 
   if (log.wordReplacement) {
     lines.push('', '【禁词替换】', stringifyLogField(log.wordReplacement) || '未记录');
+  }
+
+  if (log.transport) {
+    lines.push('', '【传输诊断】', stringifyLogField(log.transport) || '未记录');
+  }
+
+  if (log.errorCode || log.errorStage) {
+    lines.push(
+      '',
+      '【错误码】',
+      `code: ${log.errorCode || '未记录'}`,
+      `stage: ${log.errorStage || '未记录'}`,
+    );
   }
 
   lines.push('', '【错误信息】', stringifyLogField(log.errorStack) || '未记录');

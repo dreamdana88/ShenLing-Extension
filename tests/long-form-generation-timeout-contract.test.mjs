@@ -52,6 +52,21 @@ test('long-form timeout diagnostics distinguish main wait-only from secondary ca
   );
 });
 
+test('stream transport timeout copy requests stop and does not claim wait-only main API', () => {
+  assert.equal(
+    getLongFormGenerationTimeoutMessage('小剧场', 'main_api', { transportMode: 'stream' }),
+    '小剧场生成等待超过 300 秒，已请求停止后台流式生成，请稍后重试。',
+  );
+  assert.equal(
+    getLongFormGenerationTimeoutMessage('小剧场', 'secondary_api', { transportMode: 'stream' }),
+    '小剧场生成等待超过 300 秒，已请求停止后台流式生成，请稍后重试。',
+  );
+  assert.equal(
+    getLongFormGenerationTimeoutMessage('小剧场', 'main_api'),
+    '小剧场生成等待超过 300 秒，已停止等待；主 API 生成可能仍在后台继续。',
+  );
+});
+
 test('affection building max age leaves a two-minute buffer beyond generation timeout', () => {
   assert.equal(AFFECTION_PROFILE_BUILDING_MAX_AGE_MS, 420000);
   assert.ok(AFFECTION_PROFILE_BUILDING_MAX_AGE_MS > AFFECTION_PROFILE_BUILD_TIMEOUT_MS);

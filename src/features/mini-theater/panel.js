@@ -1,4 +1,5 @@
 import {
+  GENERATION_TRANSPORT_MODE,
   getLongFormGenerationTimeoutMessage,
   LONG_FORM_GENERATION_TIMEOUT_MS,
 } from "../../constants.js";
@@ -41,7 +42,11 @@ let panelOptions = {
 let promptSearchRefreshTimer = null;
 let pickSearchRefreshTimer = null;
 
+/** Runtime-only AbortController for the active mini-theater generation. Not persisted. */
+let activeMiniTheaterGenerationController = null;
+
 export const THEATER_GENERATION_TIMEOUT_MS = LONG_FORM_GENERATION_TIMEOUT_MS;
+export const THEATER_TRANSPORT_MODE = GENERATION_TRANSPORT_MODE.STREAM;
 const THEATER_RESULT_WARN_LIMIT = 50;
 
 // 跨渲染持久化的面板本地状态
@@ -77,6 +82,33 @@ let panelState = {
 
 export function configureMiniTheaterPanel(options = {}) {
   panelOptions = { ...panelOptions, ...options };
+}
+
+/** Test-only: reset runtime panel state so suites do not leak across cases. */
+export function resetMiniTheaterPanelStateForTests() {
+  if (activeMiniTheaterGenerationController && !activeMiniTheaterGenerationController.signal.aborted) {
+    try {
+      activeMiniTheaterGenerationController.abort();
+    } catch {}
+  }
+  activeMiniTheaterGenerationController = null;
+  panelState.activeTab = "prompts";
+  panelState.previewOpen = false;
+  panelState.promptText = "";
+  panelState.promptSource = null;
+  panelState.selectedStyle = null;
+  panelState.generationStatus = "idle";
+  panelState.generationError = "";
+  panelState.result = null;
+  panelState.previewEditing = false;
+  panelState.previewDraft = null;
+  panelState.collectionMode = "prompts";
+  panelState.promptSearch = "";
+  panelState.promptSortBy = "newest";
+  panelState.promptFolderFilter = null;
+  panelState.modal = null;
+  panelState.pickSearch = "";
+  panelState.pickExpandedFolders = new Set();
 }
 
 export function isMiniTheaterPreviewOpen() {
@@ -474,7 +506,44 @@ function buildTheaterContextDiagnostics(context = {}) {
   };
 }
 
-export async function runMiniTheaterGeneration() {
+function buildTheaterTransportLog(apiResult = null, diagnostics = null) {
+  const transport = apiResult?.transport && typeof apiResult.transport === "object"
+    ? apiResult.transport
+    : {};
+  const log = {
+    requestedMode: THEATER_TRANSPORT_MODE,
+    actualMode: transport.mode || THEATER_TRANSPORT_MODE,
+    source: transport.source || "TavernHelper",
+    generationId: String(transport.generationId || diagnostics?.generationId || ""),
+    firstChunkMs: Number.isFinite(transport.firstChunkMs) ? transport.firstChunkMs : null,
+    chunkCount: Number.isFinite(transport.chunkCount) ? transport.chunkCount : 0,
+    durationMs: Number.isFinite(transport.durationMs)
+      ? transport.durationMs
+      : (Number.isFinite(diagnostics?.durationMs) ? diagnostics.durationMs : null),
+  };
+  if (typeof diagnostics?.stopRequested === "boolean") {
+    log.stopRequested = diagnostics.stopRequested;
+  }
+  if (typeof diagnostics?.stopAccepted === "boolean" || diagnostics?.stopAccepted === null) {
+    log.stopAccepted = diagnostics.stopAccepted;
+  }
+  if (typeof diagnostics?.stopError === "string" && diagnostics.stopError) {
+    log.stopError = diagnostics.stopError;
+  }
+  if (typeof diagnostics?.stopSettlementTimedOut === "boolean") {
+    log.stopSettlementTimedOut = diagnostics.stopSettlementTimedOut;
+  }
+  if (diagnostics?.abortReason === "USER_ABORT" || diagnostics?.abortReason === "TIMEOUT_ABORT") {
+    log.abortReason = diagnostics.abortReason;
+  }
+  return log;
+}
+
+/**
+ * Run mini-theater generation via Generation Core background streaming.
+ * @param {{ signal?: AbortSignal }} [options]
+ */
+export async function runMiniTheaterGeneration({ signal } = {}) {
   const userPrompt = String(panelState.promptText || "").trim();
   if (!userPrompt) {
     throw new Error("请先输入小剧场提示词，或从提示词库选择一条。");
@@ -492,6 +561,9 @@ export async function runMiniTheaterGeneration() {
   const apiMode = mt.apiMode;
   const startedAt = formatTimestamp();
   const startedMs = performance.now();
+  const timeoutMessage = getLongFormGenerationTimeoutMessage("小剧场", apiMode, {
+    transportMode: THEATER_TRANSPORT_MODE,
+  });
   let messages = [];
   let requestBody = null;
   let apiResult = null;
@@ -525,7 +597,9 @@ export async function runMiniTheaterGeneration() {
         ? await generateWithMainApi({
             messages,
             timeoutMs: THEATER_GENERATION_TIMEOUT_MS,
-            timeoutMessage: getLongFormGenerationTimeoutMessage("小剧场", apiMode),
+            timeoutMessage,
+            signal,
+            transportMode: THEATER_TRANSPORT_MODE,
           })
         : await generateWithSecondaryApi({
             profile: getPanelOption("getActiveApiProfile")?.(
@@ -533,7 +607,9 @@ export async function runMiniTheaterGeneration() {
             ),
             messages,
             timeoutMs: THEATER_GENERATION_TIMEOUT_MS,
-            timeoutMessage: getLongFormGenerationTimeoutMessage("小剧场", apiMode),
+            timeoutMessage,
+            signal,
+            transportMode: THEATER_TRANSPORT_MODE,
           });
     requestBody = apiResult.requestBody;
 
@@ -581,6 +657,7 @@ export async function runMiniTheaterGeneration() {
       rawResultContent: content,
       parsedResult: result,
       wordReplacement,
+      transport: buildTheaterTransportLog(apiResult),
     });
 
     if (wordReplacement.replacements > 0) {
@@ -622,6 +699,7 @@ export async function runMiniTheaterGeneration() {
         ? { ...requestBody, contextDiagnostics, selectedStyle }
         : { contextDiagnostics, selectedStyle },
       responseText: diagnostics?.responseText || apiResult?.responseText || "",
+      transport: buildTheaterTransportLog(apiResult, diagnostics),
       errorCode,
       errorStage,
       errorStack: error.stack || error.message || error,
@@ -630,20 +708,47 @@ export async function runMiniTheaterGeneration() {
   }
 }
 
+export function stopMiniTheaterGeneration() {
+  const controller = activeMiniTheaterGenerationController;
+  if (!controller || controller.signal.aborted) return;
+  try {
+    controller.abort();
+  } catch {
+    // Idempotent: a second stop must not throw.
+  }
+}
+
 async function generateMiniTheater() {
   if (panelState.generationStatus === "running") return;
+  const controller = new AbortController();
+  activeMiniTheaterGenerationController = controller;
   panelState.generationStatus = "running";
   panelState.generationError = "";
+  panelState.previewOpen = false;
   panelState.previewEditing = false;
   panelState.previewDraft = null;
   refreshPanel();
   try {
-    panelState.result = await runMiniTheaterGeneration();
+    panelState.result = await runMiniTheaterGeneration({
+      signal: controller.signal,
+    });
     panelState.generationStatus = "success";
     panelState.previewOpen = true;
   } catch (error) {
-    panelState.generationStatus = "failed";
-    panelState.generationError = error.message || String(error);
+    const errorCode = getGenerationErrorContext(error)?.code || "";
+    if (errorCode === "USER_ABORT") {
+      // Active cancel: keep prior success result, do not open a new preview.
+      panelState.generationStatus = "idle";
+      panelState.generationError = "";
+      notifyMiniTheater("info", "小剧场生成已停止。");
+    } else {
+      panelState.generationStatus = "failed";
+      panelState.generationError = error.message || String(error);
+    }
+  } finally {
+    if (activeMiniTheaterGenerationController === controller) {
+      activeMiniTheaterGenerationController = null;
+    }
   }
   refreshPanel();
 }
@@ -1026,6 +1131,7 @@ function renderGenerateTab() {
         <button class="${buttonClass}" type="button" data-theater-generate ${isRunning ? 'disabled aria-busy="true"' : ""}>
           ${escapeHtml(buttonLabel)}
         </button>
+        ${isRunning ? '<button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-stop-generation>停止生成</button>' : ""}
         ${hasResult ? '<button class="slx-soft-btn slx-theater-open-preview-btn" type="button" data-theater-open-preview>预览</button>' : ""}
         ${isFailed ? '<button class="slx-soft-btn" type="button" data-theater-generate>重试</button>' : ""}
       </div>
@@ -1869,6 +1975,11 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
   root.querySelectorAll("[data-theater-generate]").forEach((btn) => {
     btn.addEventListener("click", () => {
       generateMiniTheater();
+    });
+  });
+  root.querySelectorAll("[data-theater-stop-generation]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      stopMiniTheaterGeneration();
     });
   });
   root.querySelectorAll("[data-theater-open-preview]").forEach((btn) => {

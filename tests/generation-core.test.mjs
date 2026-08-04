@@ -429,16 +429,20 @@ test('explicit stream mode fails clearly when the runtime capability is unavaila
   });
 });
 
-test('no Feature opts into stream transport during S1-A', async () => {
-  const featureFiles = await listJavaScriptFiles(new URL('../src/features/', import.meta.url));
+test('only mini-theater Feature may opt into stream transport during S2', async () => {
+  const featureRoot = new URL('../src/features/', import.meta.url);
+  const featureFiles = await listJavaScriptFiles(featureRoot);
   const optIns = [];
   for (const fileUrl of featureFiles) {
     const source = await readFile(fileUrl, 'utf8');
-    if (/transportMode\s*:\s*['"]stream['"]/.test(source)) {
-      optIns.push(fileUrl.pathname);
+    if (/transportMode\s*:\s*['"]stream['"]/.test(source)
+      || /transportMode:\s*THEATER_TRANSPORT_MODE/.test(source)
+      || /GENERATION_TRANSPORT_MODE\.STREAM/.test(source)) {
+      optIns.push(fileUrl.pathname.replace(/\\/g, '/'));
     }
   }
-  assert.deepEqual(optIns, []);
+  assert.equal(optIns.length, 1, `unexpected stream opt-ins: ${optIns.join(', ')}`);
+  assert.match(optIns[0], /mini-theater\/panel\.js$/);
 });
 
 test('main streaming provider failures expose NETWORK_ERROR without secondary fallback', async () => {
@@ -1900,14 +1904,17 @@ test('secondary stream rejects after partial events without returning partial co
   });
 });
 
-test('no Feature opts into stream transport during S1-B', async () => {
+test('stream transport allowlist remains mini-theater only after S1-B contract tests', async () => {
   const featureFiles = await listJavaScriptFiles(new URL('../src/features/', import.meta.url));
   const optIns = [];
   for (const fileUrl of featureFiles) {
     const source = await readFile(fileUrl, 'utf8');
-    if (/transportMode\s*:\s*['"]stream['"]/.test(source)) {
-      optIns.push(fileUrl.pathname);
+    if (/transportMode\s*:\s*['"]stream['"]/.test(source)
+      || /transportMode:\s*THEATER_TRANSPORT_MODE/.test(source)
+      || /GENERATION_TRANSPORT_MODE\.STREAM/.test(source)) {
+      optIns.push(fileUrl.pathname.replace(/\\/g, '/'));
     }
   }
-  assert.deepEqual(optIns, []);
+  assert.equal(optIns.length, 1);
+  assert.match(optIns[0], /mini-theater\/panel\.js$/);
 });
