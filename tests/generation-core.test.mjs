@@ -4,7 +4,9 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 import {
   buildCustomApiFromProfile,
+  deriveCustomApiBaseUrl,
   SECONDARY_CUSTOM_API_SOURCE,
+  STREAM_ENDPOINT_UNSUPPORTED,
   sanitizeCustomApiForDiagnostics,
 } from '../src/core/api.js';
 import {
@@ -1319,19 +1321,81 @@ test('real Node fetch aborts localhost slow headers and slow bodies while preser
   }
 });
 
+test('deriveCustomApiBaseUrl absorbs standard endpointPath into OpenAI-compatible api root', () => {
+  const cases = [
+    {
+      baseUrl: 'https://example.com',
+      endpointPath: '/v1/chat/completions',
+      apiurl: 'https://example.com/v1',
+    },
+    {
+      baseUrl: 'https://example.com/',
+      endpointPath: '/v1/chat/completions',
+      apiurl: 'https://example.com/v1',
+    },
+    {
+      baseUrl: 'https://example.com/v1',
+      endpointPath: '/v1/chat/completions',
+      apiurl: 'https://example.com/v1',
+    },
+    {
+      baseUrl: 'https://example.com/v1/',
+      endpointPath: '/v1/chat/completions',
+      apiurl: 'https://example.com/v1',
+    },
+    {
+      baseUrl: 'https://example.com',
+      endpointPath: '/chat/completions',
+      apiurl: 'https://example.com',
+    },
+    {
+      baseUrl: 'https://example.com/',
+      endpointPath: '/chat/completions',
+      apiurl: 'https://example.com',
+    },
+  ];
+
+  for (const item of cases) {
+    assert.equal(
+      deriveCustomApiBaseUrl({
+        baseUrl: item.baseUrl,
+        endpointPath: item.endpointPath,
+      }),
+      item.apiurl,
+      `${item.baseUrl} + ${item.endpointPath}`,
+    );
+    assert.equal(item.apiurl.includes('/v1/v1'), false);
+  }
+});
+
 test('secondary Profile maps to temporary custom_api without mutating schema or leaking key', () => {
   const cases = [
     {
       profile: {
         name: 'GPROXY Display Name',
-        baseUrl: 'https://proxy.example/v1/',
+        baseUrl: 'https://proxy.example',
         endpointPath: '/v1/chat/completions',
         apiKey: SECRET,
-        model: 'org/ns-model.v2',
+        model: 'grok-build/grok-4.5',
       },
       expected: {
         apiurl: 'https://proxy.example/v1',
-        model: 'org/ns-model.v2',
+        model: 'grok-build/grok-4.5',
+        source: SECONDARY_CUSTOM_API_SOURCE,
+        key: SECRET,
+      },
+    },
+    {
+      profile: {
+        name: 'Already has v1',
+        baseUrl: 'https://proxy.example/v1/',
+        endpointPath: '/v1/chat/completions',
+        apiKey: SECRET,
+        model: 'codex/gpt-5.6-luna',
+      },
+      expected: {
+        apiurl: 'https://proxy.example/v1',
+        model: 'codex/gpt-5.6-luna',
         source: SECONDARY_CUSTOM_API_SOURCE,
         key: SECRET,
       },
@@ -1342,12 +1406,27 @@ test('secondary Profile maps to temporary custom_api without mutating schema or 
         baseUrl: 'https://proxy.example',
         endpointPath: '/chat/completions',
         apiKey: '',
-        model: 'manual-model',
+        model: 'deepseek-v4-flash',
       },
       expected: {
         apiurl: 'https://proxy.example',
-        model: 'manual-model',
+        model: 'deepseek-v4-flash',
         source: SECONDARY_CUSTOM_API_SOURCE,
+      },
+    },
+    {
+      profile: {
+        name: 'Namespaced model',
+        baseUrl: 'https://proxy.example',
+        endpointPath: '/v1/chat/completions',
+        apiKey: SECRET,
+        model: 'org/ns-model.v2',
+      },
+      expected: {
+        apiurl: 'https://proxy.example/v1',
+        model: 'org/ns-model.v2',
+        source: SECONDARY_CUSTOM_API_SOURCE,
+        key: SECRET,
       },
     },
   ];
@@ -1391,6 +1470,44 @@ test('secondary defaults to legacy fetch even when TavernHelper streaming exists
     assert.equal(result.requestBody.stream, false);
     assert.equal(fetchCalls, 1);
     assert.equal(generateRawCalls, 0);
+  });
+});
+
+test('secondary stream maps historical GPROXY base without /v1 via endpointPath', async () => {
+  let received = null;
+  const profile = {
+    ...secondaryProfile,
+    name: 'GPROXY History',
+    baseUrl: 'https://gproxy.example',
+    endpointPath: '/v1/chat/completions',
+    model: 'deepseek-v4-flash',
+    apiKey: SECRET,
+  };
+
+  await withGlobals({
+    tavernHelper: {
+      async generateRaw(request) {
+        received = request;
+        return 'gproxy stream ok';
+      },
+      stopGenerationById() {
+        return false;
+      },
+    },
+    fetch: async () => {
+      throw new Error('legacy fetch must not run');
+    },
+  }, async () => {
+    const result = await generateWithSecondaryApi({
+      profile,
+      messages,
+      transportMode: 'stream',
+    });
+    assert.equal(received.custom_api.apiurl, 'https://gproxy.example/v1');
+    assert.equal(result.requestBody.custom_api.apiurl, 'https://gproxy.example/v1');
+    assert.equal(result.url, 'https://gproxy.example/v1/chat/completions');
+    assert.equal(result.content, 'gproxy stream ok');
+    assert.equal(JSON.stringify(result).includes(SECRET), false);
   });
 });
 
@@ -1475,6 +1592,79 @@ test('secondary explicit stream uses custom_api ordered prompts and never legacy
     assert.equal(result.transport.chunkCount, 0);
     assert.ok(Number.isFinite(result.transport.durationMs));
     assert.equal(fetchCalls, 0);
+  });
+});
+
+test('secondary stream rejects non-standard endpointPath before any request', async () => {
+  let generateRawCalls = 0;
+  let fetchCalls = 0;
+  const profile = {
+    ...secondaryProfile,
+    baseUrl: 'https://custom.example',
+    endpointPath: '/custom/chat/completions',
+    apiKey: SECRET,
+  };
+
+  await withGlobals({
+    tavernHelper: {
+      generateRaw: async () => {
+        generateRawCalls += 1;
+        return 'should not start';
+      },
+      stopGenerationById: () => false,
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      return createResponse({ body: 'should not fetch' });
+    },
+  }, async () => {
+    const error = await getRejection(generateWithSecondaryApi({
+      profile,
+      messages,
+      transportMode: 'stream',
+    }));
+    assertTransportError(error, STREAM_ENDPOINT_UNSUPPORTED, 'build_request');
+    assert.equal(error.diagnostics.stream, true);
+    assert.equal(error.diagnostics.transportMode, 'stream');
+    assert.equal(error.diagnostics.profileName, profile.name);
+    assert.equal(error.diagnostics.endpointPath, '/custom/chat/completions');
+    assert.equal(error.diagnostics.baseUrl.includes('custom.example'), true);
+    assert.match(error.message, /endpointPath 无法安全映射/);
+    assert.equal(generateRawCalls, 0);
+    assert.equal(fetchCalls, 0);
+    assertSecretAbsent(error);
+  });
+});
+
+test('secondary legacy still accepts non-standard endpointPath', async () => {
+  let fetchUrl = '';
+  let generateRawCalls = 0;
+  const profile = {
+    ...secondaryProfile,
+    baseUrl: 'https://custom.example',
+    endpointPath: '/custom/chat/completions',
+  };
+
+  await withGlobals({
+    tavernHelper: {
+      generateRaw: async () => {
+        generateRawCalls += 1;
+        return 'unexpected stream';
+      },
+      stopGenerationById: () => false,
+    },
+    fetch: async (url) => {
+      fetchUrl = url;
+      return createResponse({ body: 'legacy custom endpoint ok' });
+    },
+  }, async () => {
+    const result = await generateWithSecondaryApi({
+      profile,
+      messages,
+    });
+    assert.equal(result.content, 'legacy custom endpoint ok');
+    assert.equal(fetchUrl, 'https://custom.example/custom/chat/completions');
+    assert.equal(generateRawCalls, 0);
   });
 });
 

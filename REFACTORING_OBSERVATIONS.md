@@ -106,3 +106,16 @@
 - **触发复查条件**：Phase 4.6-S2 小剧场显式 opt-in 流式 transport。
 - **建议处理阶段**：Phase 4.6-S2 任务书必须为流式路径提供单独 timeout 提示，并保留 legacy 原提示；不得仅按“主 API”共用同一句文案。
 - **最终关闭记录**：
+
+## OBS-010：副 API stream custom_api.apiurl 与 endpointPath 等价映射
+
+- **来源 Phase**：Phase 4.6-S1-B 实机审查（GPROXY HTTP 404）
+- **当前状态**：已关闭（标准路径）
+- **现象或能力边界**：S1-B 初版将 `profile.baseUrl` 直接写入 `custom_api.apiurl` 并忽略 `endpointPath`。legacy 路径则使用 `baseUrl + endpointPath`（例如 `https://example.com` + `/v1/chat/completions`）。用户历史 Profile 常只填根域名，由默认 `endpointPath` 补上 `/v1`；流式路径因此漏掉 `/v1`，在 GPROXY 上返回 HTTP 404。
+- **处理结论**：
+  - 标准路径已由 `deriveCustomApiBaseUrl(profile)` 修复：与 legacy 共用 `normalizeApiBaseUrl` 根地址，`/v1/chat/completions` → `{root}/v1`，`/chat/completions` → `{root}`；已含 `/v1` 的 baseUrl 不重复拼接。
+  - 非标准 `endpointPath`（含 query/fragment、自定义路径）在显式 stream 发送前以 `STREAM_ENDPOINT_UNSUPPORTED` 拒绝，且不调用 generateRaw / legacy fetch。
+  - legacy 非标准 endpoint 继续走 `buildApiUrl` + fetch，行为不变。
+  - 模型列表 `/v1/models` 拉取未改动。
+- **剩余风险**：非标准 endpoint 的流式等价仍无法通过 TavernHelper `custom_api` 保证；若未来生产路径依赖自定义 endpoint，需另开阶段评估是否支持扩展映射或方案 B SSE。
+- **最终关闭记录**：关闭阶段：Phase 4.6-S1-B Review Fix；版本基线：`0.17.22`；验证结论：自动测试覆盖标准 `/v1` 补全、不重复拼接、`/chat/completions` 根地址、非标准 stream 拒绝、legacy 非标准仍可用；实机 GPROXY/DS 短流式由用户 push 后验收。关闭日期：2026-08-04。

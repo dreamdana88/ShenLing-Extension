@@ -2,6 +2,7 @@ import {
   buildApiUrl,
   buildCustomApiFromProfile,
   sanitizeCustomApiForDiagnostics,
+  STREAM_ENDPOINT_UNSUPPORTED,
 } from './api.js';
 import {
   RuntimeGenerationError,
@@ -90,6 +91,16 @@ function buildSafeDiagnostics(source = {}) {
   if (typeof source.url === 'string') {
     diagnostics.url = sanitizeUrl(source.url);
   }
+  if (typeof source.baseUrl === 'string') {
+    const safeBaseUrl = sanitizeUrl(source.baseUrl)
+      || sanitizeSensitiveText(source.baseUrl).slice(0, 512);
+    if (safeBaseUrl) {
+      diagnostics.baseUrl = safeBaseUrl;
+    }
+  }
+  if (typeof source.endpointPath === 'string') {
+    diagnostics.endpointPath = sanitizeSensitiveText(source.endpointPath).slice(0, 256);
+  }
   if (source.httpStatus === null || Number.isFinite(source.httpStatus)) {
     diagnostics.httpStatus = source.httpStatus;
   }
@@ -98,6 +109,9 @@ function buildSafeDiagnostics(source = {}) {
   }
   if (typeof source.stream === 'boolean') {
     diagnostics.stream = source.stream;
+  }
+  if (source.transportMode === 'stream' || source.transportMode === 'legacy') {
+    diagnostics.transportMode = source.transportMode;
   }
   if (typeof source.generationId === 'string') {
     diagnostics.generationId = source.generationId.slice(0, 200);
@@ -541,6 +555,25 @@ export async function generateWithSecondaryApi({
         error?.message || String(error),
         [apiKey],
       );
+      if (error?.code === STREAM_ENDPOINT_UNSUPPORTED) {
+        throw new GenerationTransportError(originalMessage, {
+          code: STREAM_ENDPOINT_UNSUPPORTED,
+          stage: 'build_request',
+          diagnostics: {
+            provider: 'secondary',
+            profileName,
+            model,
+            url: safeUrl,
+            baseUrl: String(profile.baseUrl || ''),
+            endpointPath: String(profile.endpointPath || ''),
+            messageCount,
+            stream: true,
+            transportMode: 'stream',
+            durationMs: getDurationMs(startedAt),
+          },
+          cause: error,
+        });
+      }
       throw new GenerationTransportError(
         `无法构建副 API custom_api：${originalMessage}`,
         {

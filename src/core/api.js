@@ -1,6 +1,18 @@
 ﻿/** TavernHelper custom_api source for OpenAI-compatible secondary APIs. Not a Profile display name. */
 export const SECONDARY_CUSTOM_API_SOURCE = 'openai';
 
+/** Stream-only: Profile endpointPath cannot be safely mapped to custom_api.apiurl. */
+export const STREAM_ENDPOINT_UNSUPPORTED = 'STREAM_ENDPOINT_UNSUPPORTED';
+
+export const STREAM_ENDPOINT_UNSUPPORTED_MESSAGE = (
+  '当前副 API 的 endpointPath 无法安全映射到 TavernHelper custom_api。'
+  + '请使用标准 /v1/chat/completions 或 /chat/completions，'
+  + '或关闭后台流式并继续使用 legacy 模式。'
+);
+
+const STANDARD_V1_CHAT_COMPLETIONS = '/v1/chat/completions';
+const STANDARD_CHAT_COMPLETIONS = '/chat/completions';
+
 export function normalizeApiPath(path) {
   const raw = String(path || '/v1/chat/completions').trim();
   return raw.startsWith('/') ? raw : `/${raw}`;
@@ -15,9 +27,7 @@ export function normalizeApiBaseUrl(url) {
 }
 
 /**
- * Normalize Profile baseUrl for TavernHelper custom_api.apiurl.
- * Only trims and strips trailing slashes; does not strip `/v1` and does not append
- * endpointPath (TavernHelper / ST openai-compatible source owns path construction).
+ * Normalize a bare URL for display / simple trim. Prefer deriveCustomApiBaseUrl for streaming.
  */
 export function normalizeCustomApiUrl(url) {
   return String(url || '').trim().replace(/\/+$/, '');
@@ -31,26 +41,74 @@ export function buildApiUrl(profile) {
   return `${baseUrl}${normalizeApiPath(profile.endpointPath)}`;
 }
 
+function createStreamEndpointUnsupportedError(profile, endpointPath) {
+  const error = new Error(STREAM_ENDPOINT_UNSUPPORTED_MESSAGE);
+  error.name = 'CustomApiMappingError';
+  error.code = STREAM_ENDPOINT_UNSUPPORTED;
+  error.diagnostics = Object.freeze({
+    baseUrl: String(profile?.baseUrl ?? ''),
+    endpointPath: String(endpointPath ?? profile?.endpointPath ?? ''),
+  });
+  return error;
+}
+
+/**
+ * Derive TavernHelper custom_api.apiurl from Profile baseUrl + endpointPath.
+ *
+ * Uses the same root normalization as legacy buildApiUrl (strip trailing / and trailing /v1),
+ * then absorbs only standard endpointPath semantics into the OpenAI-compatible API root:
+ *
+ * - /v1/chat/completions  → `{root}/v1`
+ * - /chat/completions      → `{root}`
+ *
+ * Examples:
+ * - base https://example.com + /v1/chat/completions → https://example.com/v1
+ * - base https://example.com/v1 + /v1/chat/completions → https://example.com/v1 (no /v1/v1)
+ * - base https://example.com + /chat/completions → https://example.com
+ *
+ * Non-standard paths, query strings, and fragments throw STREAM_ENDPOINT_UNSUPPORTED
+ * before any generateRaw / fetch is started on the stream path.
+ */
+export function deriveCustomApiBaseUrl(profile) {
+  const rawEndpoint = String(profile?.endpointPath ?? '').trim();
+  const endpointPath = normalizeApiPath(rawEndpoint || STANDARD_V1_CHAT_COMPLETIONS);
+
+  if (endpointPath.includes('?') || endpointPath.includes('#')) {
+    throw createStreamEndpointUnsupportedError(profile, endpointPath);
+  }
+
+  const pathOnly = endpointPath.replace(/\/+$/, '') || '/';
+  const pathKey = pathOnly.toLowerCase();
+  const root = normalizeApiBaseUrl(profile?.baseUrl);
+  if (!root) {
+    throw new Error('请先填写请求地址。');
+  }
+
+  if (pathKey === STANDARD_V1_CHAT_COMPLETIONS) {
+    return `${root}/v1`;
+  }
+  if (pathKey === STANDARD_CHAT_COMPLETIONS) {
+    return root;
+  }
+
+  throw createStreamEndpointUnsupportedError(profile, pathOnly);
+}
+
 /**
  * Derive a temporary TavernHelper custom_api object from a Secondary Profile.
  * Does not mutate or persist the Profile schema.
  *
- * Mapping (S0-verified OpenAI-compatible contract):
- * - baseUrl → apiurl (trim + strip trailing / only)
+ * Mapping:
+ * - baseUrl + endpointPath → apiurl via deriveCustomApiBaseUrl (legacy-equivalent root)
  * - apiKey → key (omitted when empty)
  * - model → model (trim only; namespaces preserved)
  * - source → fixed `openai` (never Profile.name)
- * - endpointPath is intentionally not mapped: custom_api has no endpointPath field;
- *   diagnostic legacy URL continues to use buildApiUrl(profile).
  *
  * Generation sampling params (temperature, max_tokens, …) are not present on the
  * current legacy secondary requestBody, so none are invented here.
  */
 export function buildCustomApiFromProfile(profile) {
-  const apiurl = normalizeCustomApiUrl(profile?.baseUrl);
-  if (!apiurl) {
-    throw new Error('请先填写请求地址。');
-  }
+  const apiurl = deriveCustomApiBaseUrl(profile);
 
   const model = String(profile?.model || '').trim();
   if (!model) {
