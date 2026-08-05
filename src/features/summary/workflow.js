@@ -1043,7 +1043,10 @@ export async function processAutoGrandMemory() {
     const prompt = buildGrandMemoryMaterialPrompt(archiveData.memoryFrom, archiveData.memoryTo, archiveData.material, {
       summary: getSummarySettings(),
     });
-    const result = await generateSummaryMemory(prompt, { type: '自动大总结' });
+    const result = await generateSummaryMemory(prompt, {
+      type: '自动大总结',
+      transportPolicy: SUMMARY_TRANSPORT_POLICY.CONFIGURED,
+    });
     if (!isCurrentChatIdentity(chatIdentity)) {
       deferGrandRecovery(chatIdentity);
       return;
@@ -1111,13 +1114,13 @@ export async function processAutoGrandMemory() {
 
 // 大总结后提炼回忆候选，暂存到 pending，交用户在回忆录面板确认（不直接写世界书）。
 // 用独立 try/catch 包裹：回忆录提炼失败绝不能影响已完成的大总结主流程。
-// 复用 generateSummaryMemory，但强制 legacy，避免继承手动父任务的 configured / stream。
+// 自动正式提炼显式 CONFIGURED：受统一后台流式开关控制，每次请求独立解析 transportPlan。
 async function tryExtractMemoirAfterGrandSummary(archiveRecord, grandMemoryText) {
   try {
     const result = await tryExtractMemoirFromGrandSummary(archiveRecord, {
       generate: (prompt, opts = {}) => generateSummaryMemory(prompt, {
         ...opts,
-        transportPolicy: SUMMARY_TRANSPORT_POLICY.LEGACY,
+        transportPolicy: SUMMARY_TRANSPORT_POLICY.CONFIGURED,
         transportPlan: null,
       }),
       grandMemoryText,
@@ -1366,7 +1369,7 @@ export async function processAutoTotalGrandMemory() {
   const chatState = getChatState();
   if (!shouldTriggerAutoTotalGrandMemory(chatState, settings)) return;
   await processTotalGrandMemory({
-    transportPolicy: SUMMARY_TRANSPORT_POLICY.LEGACY,
+    transportPolicy: SUMMARY_TRANSPORT_POLICY.CONFIGURED,
   });
 }
 
@@ -1602,7 +1605,10 @@ export async function generateConfirmedSummaryForTask(messageId) {
       buildPlotOutlineProgressPromptSection(chatState),
     ),
   });
-  const effectResult = await generateSummaryMemory(prompt, { type: 'confirmed 自动小总结' });
+  const effectResult = await generateSummaryMemory(prompt, {
+    type: 'confirmed 自动小总结',
+    transportPolicy: SUMMARY_TRANSPORT_POLICY.CONFIGURED,
+  });
   const affectionAnalysis = prepareAffectionUpdateFromSummaryResult(effectResult, { settings, chatState });
   const memory = stripMemoryChangedControlLines(
     affectionAnalysis?.normalizedMemory || normalizeMemoryBlock(effectResult),

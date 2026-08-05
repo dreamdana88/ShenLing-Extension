@@ -16,6 +16,7 @@ import {
   shouldAnalyzeEmotionProfile,
 } from '../emotion-profile/workflow.js';
 import {
+  AFFECTION_TRANSPORT_POLICY,
   commitAffectionUpdateFromConfirmedSummary,
   isAffectionAnalysisActive,
 } from '../affection/workflow.js';
@@ -83,6 +84,8 @@ export function createConfirmedEffectsCoordinator(options = {}) {
         chatState: state,
         chatId: task.chatIdentity,
         isCurrentChat: () => getIdentity() === task.chatIdentity,
+        // Confirmed formal path only: each first-build request resolves transport independently.
+        transportPolicy: AFFECTION_TRANSPORT_POLICY.CONFIGURED,
       });
       return;
     }

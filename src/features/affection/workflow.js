@@ -1547,6 +1547,8 @@ export async function commitAffectionUpdateFromConfirmedSummary(
     chatId = getContextInfo().chatId,
     persist = true,
     isCurrentChat = () => true,
+    // Default remains legacy; confirmed formal path must pass CONFIGURED explicitly.
+    transportPolicy = AFFECTION_TRANSPORT_POLICY.LEGACY,
   } = {},
 ) {
   if (!isAffectionAnalysisActive(settings)) return { active: false };
@@ -1591,6 +1593,7 @@ export async function commitAffectionUpdateFromConfirmedSummary(
       chatState,
       chatId,
       persist,
+      transportPolicy,
     });
     if (!isCurrentChat()) return { ...prepared, fingerprint, ...summary };
 

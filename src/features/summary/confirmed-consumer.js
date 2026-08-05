@@ -390,7 +390,12 @@ export function createConfirmedSummaryConsumer(options = {}) {
           cancelTask(latestTask, 'SUMMARY_DISABLED');
         } else {
           latestTask.status = 'FAILED';
-          latestTask.lastErrorCode = ['MAIN_TIMEOUT', 'SECONDARY_TIMEOUT', 'SUMMARY_TRANSPORT_TIMEOUT'].includes(error?.code)
+          latestTask.lastErrorCode = [
+            'MAIN_TIMEOUT',
+            'SECONDARY_TIMEOUT',
+            'TIMEOUT_ABORT',
+            'SUMMARY_TRANSPORT_TIMEOUT',
+          ].includes(error?.code)
             ? 'SUMMARY_TRANSPORT_TIMEOUT'
             : 'SUMMARY_GENERATION_FAILED';
           latestTask.updatedAt = formatTimestamp();

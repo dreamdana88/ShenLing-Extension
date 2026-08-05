@@ -571,15 +571,28 @@ test('manual configured options pass 300000 timeoutMs', async () => {
   assert.equal(seenTimeout === null || seenTimeout === 300000, true);
 });
 
-test('processAutoTotalGrandMemory forces legacy policy', async () => {
+test('auto Grand / Total / Memoir formal paths pass CONFIGURED policy', async () => {
   const source = await readFile(new URL('../src/features/summary/workflow.js', import.meta.url), 'utf8');
   assert.match(
     source,
-    /processAutoTotalGrandMemory[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.LEGACY/,
+    /processAutoTotalGrandMemory[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
   );
   assert.match(
     source,
-    /tryExtractMemoirAfterGrandSummary[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.LEGACY/,
+    /tryExtractMemoirAfterGrandSummary[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
+  );
+  assert.match(
+    source,
+    /type:\s*'自动大总结'[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
+  );
+  assert.match(
+    source,
+    /type:\s*'confirmed 自动小总结'[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
+  );
+  // Shared defaults remain legacy so unknown callers stay conservative.
+  assert.match(
+    source,
+    /transportPolicy\s*=\s*SUMMARY_TRANSPORT_POLICY\.LEGACY/,
   );
 });
 

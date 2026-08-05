@@ -276,7 +276,7 @@ test('a cross-chat RUNNING request retains its disable cancellation intent after
   assert.equal(stateA.summary.confirmedTasks[0].reasonCode, 'SUMMARY_DISABLED');
 });
 
-for (const timeoutCode of ['MAIN_TIMEOUT', 'SECONDARY_TIMEOUT']) {
+for (const timeoutCode of ['MAIN_TIMEOUT', 'SECONDARY_TIMEOUT', 'TIMEOUT_ABORT', 'SUMMARY_TRANSPORT_TIMEOUT']) {
   test(`${timeoutCode} is persisted as the safe Summary transport timeout code`, async () => {
     const harness = createHarness([task('1', '2026-07-30T00:00:01.000Z')], {
       generate: async () => {

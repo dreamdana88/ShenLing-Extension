@@ -501,7 +501,7 @@ test('memoir settings-off legacy failure keeps legacy plan', async () => {
   });
 });
 
-test('static scan: pending/confirmed paths do not pass configured policy', async () => {
+test('static scan: pending defaults legacy; confirmed formal path can pass configured', async () => {
   const source = await readFile(new URL('../src/features/affection/workflow.js', import.meta.url), 'utf8');
   // Manual entries must explicitly use CONFIGURED.
   assert.match(
@@ -512,11 +512,30 @@ test('static scan: pending/confirmed paths do not pass configured policy', async
     source,
     /regenerateAffectionProfileStages[\s\S]*?transportPolicy:\s*AFFECTION_TRANSPORT_POLICY\.CONFIGURED/,
   );
-  // Auto entry points must not pass CONFIGURED.
+  // Shared auto entry defaults remain legacy (callers must opt in).
   const autoSection = source.slice(
     source.indexOf('export async function startAffectionProfileBuildsForPending'),
     source.indexOf('export async function runAffectionProfileBuildApiPreview'),
   );
   assert.equal(autoSection.includes('AFFECTION_TRANSPORT_POLICY.CONFIGURED'), false);
   assert.match(autoSection, /transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/);
+
+  // commitAffectionUpdateFromConfirmedSummary defaults legacy and forwards transportPolicy.
+  assert.match(
+    source,
+    /export async function commitAffectionUpdateFromConfirmedSummary[\s\S]*?transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/,
+  );
+  assert.match(
+    source,
+    /await startAffectionProfileBuildsForPending\(buildPending,\s*\{[\s\S]*?transportPolicy,/,
+  );
+
+  const effectsSource = await readFile(
+    new URL('../src/features/summary/confirmed-effects.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    effectsSource,
+    /commitAffectionUpdateFromConfirmedSummary\([\s\S]*?transportPolicy:\s*AFFECTION_TRANSPORT_POLICY\.CONFIGURED/,
+  );
 });
