@@ -28,10 +28,8 @@ import { applyReplacementRulesByScope } from '../word-replace/core.js';
 import {
   buildEmotionUpdatePromptSection,
 } from '../emotion-profile/workflow.js';
-import {
-  buildAffectionUpdatePromptSection,
-  prepareAffectionUpdateFromSummaryResult,
-} from '../affection/workflow.js';
+import { prepareAffectionUpdateFromSummaryResult } from '../affection/lifecycle.js';
+import { buildAffectionUpdatePromptSection } from '../affection/workflow.js';
 import {
   buildPlotOutlineProgressPromptSection,
 } from '../plot-outline/workflow.js';

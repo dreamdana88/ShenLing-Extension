@@ -15,11 +15,9 @@ import {
   commitEmotionUpdateFromConfirmedSummary,
   shouldAnalyzeEmotionProfile,
 } from '../emotion-profile/workflow.js';
-import {
-  AFFECTION_TRANSPORT_POLICY,
-  commitAffectionUpdateFromConfirmedSummary,
-  isAffectionAnalysisActive,
-} from '../affection/workflow.js';
+import { AFFECTION_TRANSPORT_POLICY } from '../affection/generation.js';
+import { commitAffectionUpdateFromConfirmedSummary } from '../affection/lifecycle.js';
+import { isAffectionAnalysisActive } from '../affection/runtime.js';
 import { applyPlotOutlineProgressUpdate } from '../plot-outline/workflow.js';
 
 const SAFE_EFFECT_REASON_CODE = 'CONFIRMED_EFFECT_FAILED';

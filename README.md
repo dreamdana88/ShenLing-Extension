@@ -2,7 +2,7 @@
 
 蜃灵助手是一个面向 SillyTavern 长篇角色扮演的剧情辅助插件。它围绕“长线剧情不丢线、角色状态有沉淀、灵感入口随手可用”来工作：自动整理聊天记忆，维护大总结与剧情大纲，生成七日剧情机会，把关键回忆写入世界书，并提供日记、小剧场、词汇替换和上下文诊断等配套工具。
 
-当前版本：`0.17.28`
+当前版本：`0.17.29`
 
 仓库地址：
 
@@ -243,6 +243,12 @@ Phase 4 Generation 重构已在 `0.17.16` 收尾；延迟总结 / Swipe 定稿�
 - Phase 6A 将 Summary 的 runtime、generation、state、manual guard、manual actions 与 archive 拆分为独立职责模块。
 - 业务语义、Prompt、Transport、状态 schema 与 UI 行为保持不变。
 - 本版本为纯结构重构；Phase 5A-1 用户实机已豁免未执行，Phase 6A 默认不要求实机。
+
+### Affection 结构拆分（0.17.29 / Phase 6B）
+
+- Phase 6B 将 Affection 的 runtime、Profile 阶段资料、Generation、build / pending 生命周期和 Prompt injection 拆分为独立职责模块。
+- 好感数值、Prompt、Transport、状态 schema、提交语义与 UI 行为保持不变。
+- 本版本为纯结构重构；默认不要求实机。
 
 ## 数据说明
 

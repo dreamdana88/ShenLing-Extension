@@ -6,10 +6,8 @@ import {
   LONG_FORM_GENERATION_TIMEOUT_MS,
 } from '../src/constants.js';
 import { DIARY_GENERATION_TIMEOUT_MS } from '../src/features/diary/panel.js';
-import {
-  AFFECTION_PROFILE_BUILDING_MAX_AGE_MS,
-  AFFECTION_PROFILE_BUILD_TIMEOUT_MS,
-} from '../src/features/affection/workflow.js';
+import { AFFECTION_PROFILE_BUILD_TIMEOUT_MS } from '../src/features/affection/generation.js';
+import { AFFECTION_PROFILE_BUILDING_MAX_AGE_MS } from '../src/features/affection/lifecycle.js';
 import { CAPTURE_GENERATION_TIMEOUT_MS } from '../src/features/memoir/workflow.js';
 import { OUTLINE_GENERATION_TIMEOUT_MS } from '../src/features/plot-outline/workflow.js';
 import { SCHEDULE_GENERATION_TIMEOUT_MS } from '../src/features/schedule/workflow.js';

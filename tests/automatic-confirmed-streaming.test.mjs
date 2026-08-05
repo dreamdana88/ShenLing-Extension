@@ -3,10 +3,8 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { CHAT_STATE_KEY, MODULE_NAME } from '../src/constants.js';
-import {
-  AFFECTION_TRANSPORT_POLICY,
-  startAffectionProfileBuildsForPending,
-} from '../src/features/affection/workflow.js';
+import { AFFECTION_TRANSPORT_POLICY } from '../src/features/affection/generation.js';
+import { startAffectionProfileBuildsForPending } from '../src/features/affection/lifecycle.js';
 import { createConfirmedSummaryConsumer } from '../src/features/summary/confirmed-consumer.js';
 import {
   processAutoGrandMemory,
@@ -168,7 +166,7 @@ test('S3-C wiring: formal auto paths use CONFIGURED; shared defaults stay LEGACY
   const workflowSource = await readFile(new URL('../src/features/summary/workflow.js', import.meta.url), 'utf8');
   const archiveSource = await readFile(new URL('../src/features/summary/archive.js', import.meta.url), 'utf8');
   const effectsSource = await readFile(new URL('../src/features/summary/confirmed-effects.js', import.meta.url), 'utf8');
-  const affectionSource = await readFile(new URL('../src/features/affection/workflow.js', import.meta.url), 'utf8');
+  const affectionLifecycle = await readFile(new URL('../src/features/affection/lifecycle.js', import.meta.url), 'utf8');
   const consumerSource = await readFile(new URL('../src/features/summary/confirmed-consumer.js', import.meta.url), 'utf8');
 
   assert.match(
@@ -190,9 +188,9 @@ test('S3-C wiring: formal auto paths use CONFIGURED; shared defaults stay LEGACY
 
   const generationSource = await readFile(new URL('../src/features/summary/generation.js', import.meta.url), 'utf8');
   assert.match(generationSource, /transportPolicy\s*=\s*SUMMARY_TRANSPORT_POLICY\.LEGACY/);
-  assert.match(affectionSource, /transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/);
+  assert.match(affectionLifecycle, /transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/);
   assert.match(
-    affectionSource,
+    affectionLifecycle,
     /export async function commitAffectionUpdateFromConfirmedSummary[\s\S]*?transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/,
   );
   assert.match(effectsSource, /transportPolicy:\s*AFFECTION_TRANSPORT_POLICY\.CONFIGURED/);
@@ -663,7 +661,7 @@ test('shared affection build default remains legacy; explicit CONFIGURED can str
   assert.equal(AFFECTION_TRANSPORT_POLICY.CONFIGURED, 'configured');
 
   // Default parameter contract: startAffectionProfileBuildsForPending defaults to LEGACY.
-  const source = await readFile(new URL('../src/features/affection/workflow.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/features/affection/lifecycle.js', import.meta.url), 'utf8');
   assert.match(
     source,
     /export async function startAffectionProfileBuildsForPending[\s\S]{0,500}transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/,

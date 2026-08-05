@@ -438,6 +438,7 @@ test('S3-B transport resolver allowlist includes Summary workflow but not confir
     /schedule\/workflow\.js$/,
     /plot-outline\/workflow\.js$/,
     /affection\/workflow\.js$/,
+    /affection\/generation\.js$/,
     /memoir\/workflow\.js$/,
     /summary\/workflow\.js$/,
     /summary\/generation\.js$/,

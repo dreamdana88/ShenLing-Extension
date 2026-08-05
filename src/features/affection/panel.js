@@ -49,28 +49,32 @@ import {
 import { stripMemoryChangedControlLines } from '../../core/summary.js';
 import { MEMORY_FIELD_CONFIG } from '../chat-beautify/field-config.js';
 import { formatMemoryMultiRowParts } from '../chat-beautify/render-memory.js';
+import { runAffectionProfileBuildApiPreview } from './generation.js';
 import {
   AFFECTION_STATE_INJECT_POSITION,
   AFFECTION_STATE_PROMPT_ID,
-  adjustAffectionProfileValue,
-  applyAffectionProfileStages,
   buildAffectionInjection,
-  buildAffectionUpdatePromptSection,
+  syncAffectionInjection,
+} from './injection.js';
+import {
   commitSelectedPendingAffectionUpdates,
   createAffectionBuildTaskKey,
-  createGenericAffectionStages,
-  deleteAffectionProfile,
   discardPendingAffectionItem,
   parseAffectionUpdateFromMemory,
-  regenerateAffectionProfileStages,
   retryAffectionBuildTask,
-  runAffectionProfileBuildApiPreview,
   startAffectionProfileBuildsForPending,
   storePendingAffectionUpdate,
-  syncAffectionInjection,
   updateAffectionBuildTaskInitialValue,
   updatePendingAffectionDelta,
   useGenericAffectionBuildTask,
+} from './lifecycle.js';
+import { createGenericAffectionStages } from './profile.js';
+import {
+  adjustAffectionProfileValue,
+  applyAffectionProfileStages,
+  buildAffectionUpdatePromptSection,
+  deleteAffectionProfile,
+  regenerateAffectionProfileStages,
 } from './workflow.js';
 
 const DEFAULT_CHANGE_LINES = [

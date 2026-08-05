@@ -21,12 +21,10 @@ import {
   bindDiaryPanelEvents,
   runDiaryGeneration,
 } from '../src/features/diary/panel.js';
-import {
-  configureAffectionWorkflow,
-  runAffectionProfileBuildApiPreview,
-  startAffectionProfileBuildsForPending,
-  createGenericAffectionStages,
-} from '../src/features/affection/workflow.js';
+import { runAffectionProfileBuildApiPreview } from '../src/features/affection/generation.js';
+import { startAffectionProfileBuildsForPending } from '../src/features/affection/lifecycle.js';
+import { createGenericAffectionStages } from '../src/features/affection/profile.js';
+import { configureAffectionWorkflow } from '../src/features/affection/runtime.js';
 import {
   configureCaptureWorkflow,
   runCaptureGeneration,

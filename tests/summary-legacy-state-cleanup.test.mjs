@@ -5,7 +5,7 @@ import {
   getConfirmedSummaryTasks,
   normalizeSummaryLifecycleMetadata,
 } from '../src/core/settings.js';
-import { commitAffectionUpdateFromConfirmedSummary } from '../src/features/affection/workflow.js';
+import { commitAffectionUpdateFromConfirmedSummary } from '../src/features/affection/lifecycle.js';
 import {
   commitSelectedPendingEmotionUpdates,
 } from '../src/features/emotion-profile/workflow.js';

@@ -131,10 +131,8 @@ import {
   isAffectionEditorOpen,
   renderAffectionPanel,
 } from './src/features/affection/panel.js';
-import {
-  configureAffectionWorkflow,
-  registerAffectionWorkflowEvents,
-} from './src/features/affection/workflow.js';
+import { configureAffectionWorkflow } from './src/features/affection/runtime.js';
+import { registerAffectionWorkflowEvents } from './src/features/affection/workflow.js';
 import {
   bindPromptEditorPanelEvents,
   closePromptEditorOverlays,

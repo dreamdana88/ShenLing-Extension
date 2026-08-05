@@ -273,6 +273,7 @@ test('user long-form and manual Summary share the transport resolver; confirmed 
     /schedule\/workflow\.js$/,
     /plot-outline\/workflow\.js$/,
     /affection\/workflow\.js$/,
+    /affection\/generation\.js$/,
     /memoir\/workflow\.js$/,
     /summary\/workflow\.js$/,
     /summary\/generation\.js$/,

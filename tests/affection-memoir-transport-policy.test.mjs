@@ -5,11 +5,11 @@ import test from 'node:test';
 import { CHAT_STATE_KEY, MODULE_NAME } from '../src/constants.js';
 import {
   AFFECTION_TRANSPORT_POLICY,
-  configureAffectionWorkflow,
-  regenerateAffectionProfileStages,
   runAffectionProfileBuildApiPreview,
-  startAffectionProfileBuildsForPending,
-} from '../src/features/affection/workflow.js';
+} from '../src/features/affection/generation.js';
+import { startAffectionProfileBuildsForPending } from '../src/features/affection/lifecycle.js';
+import { configureAffectionWorkflow } from '../src/features/affection/runtime.js';
+import { regenerateAffectionProfileStages } from '../src/features/affection/workflow.js';
 import {
   configureCaptureWorkflow,
   runCaptureGeneration,
@@ -285,9 +285,12 @@ test('automatic pending builds force legacy even when global streaming is on', a
 });
 
 test('default transport policy is legacy for pending entry', async () => {
-  const source = await readFile(new URL('../src/features/affection/workflow.js', import.meta.url), 'utf8');
-  assert.match(source, /transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/);
-  assert.match(source, /transportPolicy:\s*AFFECTION_TRANSPORT_POLICY\.CONFIGURED/);
+  const generation = await readFile(new URL('../src/features/affection/generation.js', import.meta.url), 'utf8');
+  const lifecycle = await readFile(new URL('../src/features/affection/lifecycle.js', import.meta.url), 'utf8');
+  const workflow = await readFile(new URL('../src/features/affection/workflow.js', import.meta.url), 'utf8');
+  assert.match(lifecycle, /transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/);
+  assert.match(generation, /transportPolicy:\s*AFFECTION_TRANSPORT_POLICY\.CONFIGURED/);
+  assert.match(workflow, /transportPolicy:\s*AFFECTION_TRANSPORT_POLICY\.CONFIGURED/);
   assert.equal(AFFECTION_TRANSPORT_POLICY.LEGACY, 'legacy');
   assert.equal(AFFECTION_TRANSPORT_POLICY.CONFIGURED, 'configured');
 });
@@ -502,31 +505,32 @@ test('memoir settings-off legacy failure keeps legacy plan', async () => {
 });
 
 test('static scan: pending defaults legacy; confirmed formal path can pass configured', async () => {
-  const source = await readFile(new URL('../src/features/affection/workflow.js', import.meta.url), 'utf8');
+  const generation = await readFile(new URL('../src/features/affection/generation.js', import.meta.url), 'utf8');
+  const lifecycle = await readFile(new URL('../src/features/affection/lifecycle.js', import.meta.url), 'utf8');
+  const workflow = await readFile(new URL('../src/features/affection/workflow.js', import.meta.url), 'utf8');
   // Manual entries must explicitly use CONFIGURED.
   assert.match(
-    source,
+    generation,
     /runAffectionProfileBuildApiPreview[\s\S]*?transportPolicy:\s*AFFECTION_TRANSPORT_POLICY\.CONFIGURED/,
   );
   assert.match(
-    source,
+    workflow,
     /regenerateAffectionProfileStages[\s\S]*?transportPolicy:\s*AFFECTION_TRANSPORT_POLICY\.CONFIGURED/,
   );
   // Shared auto entry defaults remain legacy (callers must opt in).
-  const autoSection = source.slice(
-    source.indexOf('export async function startAffectionProfileBuildsForPending'),
-    source.indexOf('export async function runAffectionProfileBuildApiPreview'),
-  );
+  const autoStart = lifecycle.indexOf('export async function startAffectionProfileBuildsForPending');
+  const autoEnd = lifecycle.indexOf('export function markAffectionStoreUpdated', autoStart);
+  const autoSection = lifecycle.slice(autoStart, autoEnd > autoStart ? autoEnd : undefined);
   assert.equal(autoSection.includes('AFFECTION_TRANSPORT_POLICY.CONFIGURED'), false);
   assert.match(autoSection, /transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/);
 
   // commitAffectionUpdateFromConfirmedSummary defaults legacy and forwards transportPolicy.
   assert.match(
-    source,
+    lifecycle,
     /export async function commitAffectionUpdateFromConfirmedSummary[\s\S]*?transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/,
   );
   assert.match(
-    source,
+    lifecycle,
     /await startAffectionProfileBuildsForPending\(buildPending,\s*\{[\s\S]*?transportPolicy,/,
   );
 

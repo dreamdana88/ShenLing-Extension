@@ -26,10 +26,15 @@ const MEMOIR_SENTINELS = [
 ];
 
 test('affection and memoir workflows keep readable UTF-8 Chinese sentinels', async () => {
-  const affectionSource = await readFile(
-    new URL('../src/features/affection/workflow.js', import.meta.url),
+  const affectionProfile = await readFile(
+    new URL('../src/features/affection/profile.js', import.meta.url),
     'utf8',
   );
+  const affectionInjection = await readFile(
+    new URL('../src/features/affection/injection.js', import.meta.url),
+    'utf8',
+  );
+  const affectionSource = `${affectionProfile}\n${affectionInjection}`;
   const memoirSource = await readFile(
     new URL('../src/features/memoir/workflow.js', import.meta.url),
     'utf8',
