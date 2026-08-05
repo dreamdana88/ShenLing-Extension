@@ -609,7 +609,10 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
     rerenderSummaryPanel();
   });
 
-  const manualConfigured = { transportPolicy: SUMMARY_TRANSPORT_POLICY.CONFIGURED };
+  const manualConfigured = {
+    transportPolicy: SUMMARY_TRANSPORT_POLICY.CONFIGURED,
+    guardChatScope: true,
+  };
 
   panelRoot.querySelector('[data-slx-start-legacy-archive]')?.addEventListener('click', event => {
     const button = event.currentTarget;

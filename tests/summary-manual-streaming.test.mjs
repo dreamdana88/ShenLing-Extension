@@ -596,9 +596,10 @@ test('auto Grand / Total / Memoir formal paths pass CONFIGURED policy', async ()
   );
 });
 
-test('panel manual buttons pass CONFIGURED policy', async () => {
+test('panel manual buttons pass CONFIGURED policy and guardChatScope', async () => {
   const source = await readFile(new URL('../src/features/summary/panel.js', import.meta.url), 'utf8');
-  assert.match(source, /manualConfigured\s*=\s*\{\s*transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED\s*\}/);
+  assert.match(source, /manualConfigured\s*=\s*\{[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/);
+  assert.match(source, /manualConfigured\s*=\s*\{[\s\S]*?guardChatScope:\s*true/);
   assert.match(source, /processLegacyGrandArchive\(manualConfigured\)/);
   assert.match(source, /regenerateLatestGrandMemory\(manualConfigured\)/);
   assert.match(source, /processTotalGrandMemory\(manualConfigured\)/);

@@ -34,6 +34,16 @@ import {
   setChatMessagesPartial,
 } from '../../core/chat.js';
 import {
+  captureChatScope,
+  evaluateChatScope,
+  isChatScopeAvailable,
+  markChatScopeChanged,
+} from '../../core/chat-scope.js';
+import {
+  createMessageContentFingerprint,
+  getAssistantMessageContentFingerprint,
+} from '../../core/message-fingerprint.js';
+import {
   getTavernEventsSafe,
   registerTavernEvent,
 } from '../../core/tavern-events.js';
@@ -53,7 +63,6 @@ import {
   getWordReplaceSettings,
   saveChatState,
 } from '../../core/settings.js';
-import { getAssistantMessageContentFingerprint } from '../../core/message-fingerprint.js';
 import { applyReplacementRulesByScope } from '../word-replace/core.js';
 import {
   buildEmotionUpdatePromptSection,
@@ -607,6 +616,210 @@ function createManualSummaryGenerationOptions(
   };
 }
 
+/** Manual long-task target / scope mismatch codes (not Generation failures). */
+export const MANUAL_CHAT_GUARD_REASON = Object.freeze({
+  CHAT_SCOPE_CHANGED: 'CHAT_SCOPE_CHANGED',
+  CHAT_SCOPE_UNAVAILABLE: 'CHAT_SCOPE_UNAVAILABLE',
+  CHAT_TARGET_CHANGED: 'CHAT_TARGET_CHANGED',
+});
+
+const MANUAL_TARGET_DISCARD_MESSAGE = '目标内容在任务期间发生变化，本次结果已丢弃，请重新执行。';
+
+function captureManualChatScopeOrThrow(guardChatScope) {
+  if (!guardChatScope) return null;
+  const scope = captureChatScope();
+  if (!isChatScopeAvailable(scope)) {
+    const error = new Error('当前聊天身份不可用，无法启动手动总结。');
+    error.code = MANUAL_CHAT_GUARD_REASON.CHAT_SCOPE_UNAVAILABLE;
+    throw error;
+  }
+  return scope;
+}
+
+function evaluateManualChatGuards(scope, isTargetValid = null) {
+  if (!scope) return { ok: true, reason: null };
+  const scopeResult = evaluateChatScope(scope);
+  if (!scopeResult.valid) {
+    return { ok: false, reason: scopeResult.reason };
+  }
+  if (typeof isTargetValid === 'function' && !isTargetValid()) {
+    return { ok: false, reason: MANUAL_CHAT_GUARD_REASON.CHAT_TARGET_CHANGED };
+  }
+  return { ok: true, reason: null };
+}
+
+/**
+ * Scope mismatch: silent discard (no toast, no write to current or left chat).
+ * Target mismatch while still in original chat: clear runningTask + neutral lastError.
+ */
+function finalizeManualGuardDiscard(reason, {
+  scope = null,
+  title = '手动总结',
+  clearIgnoredMessageId = null,
+  onTargetDiscard = null,
+} = {}) {
+  if (clearIgnoredMessageId !== null && clearIgnoredMessageId !== undefined) {
+    clearSummaryWriteIgnored(Number(clearIgnoredMessageId));
+  }
+  if (
+    reason === MANUAL_CHAT_GUARD_REASON.CHAT_SCOPE_CHANGED
+    || reason === MANUAL_CHAT_GUARD_REASON.CHAT_SCOPE_UNAVAILABLE
+  ) {
+    return { discarded: true, silent: true };
+  }
+  if (reason === MANUAL_CHAT_GUARD_REASON.CHAT_TARGET_CHANGED) {
+    if (scope && evaluateChatScope(scope).valid) {
+      if (typeof onTargetDiscard === 'function') {
+        onTargetDiscard();
+      } else {
+        const chatState = getChatState();
+        chatState.summary.runningTask = 'none';
+        chatState.summary.lastError = MANUAL_TARGET_DISCARD_MESSAGE;
+        saveChatState();
+      }
+      notifySummary('warning', MANUAL_TARGET_DISCARD_MESSAGE, title);
+      refreshSummaryPanelAfterAction();
+    }
+    return { discarded: true, silent: false };
+  }
+  return { discarded: false, silent: false };
+}
+
+function captureManualMessageTarget(messageId) {
+  const message = getChatMessageById(Number(messageId));
+  if (!message || message.role !== 'assistant') return null;
+  return Object.freeze({
+    messageId: Number(messageId),
+    role: 'assistant',
+    swipeId: Number(message.swipe_id ?? 0),
+    fingerprint: getAssistantMessageContentFingerprint(message),
+  });
+}
+
+function isManualMessageTargetValid(target) {
+  if (!target) return false;
+  const message = getChatMessageById(Number(target.messageId));
+  if (!message || message.role !== 'assistant') return false;
+  if (Number(message.swipe_id ?? 0) !== Number(target.swipeId)) return false;
+  return getAssistantMessageContentFingerprint(message) === target.fingerprint;
+}
+
+function captureGrandRecordTarget(record) {
+  if (!record) return null;
+  const summaryMessageId = Number(record.summaryMessageId);
+  const message = getChatMessageById(summaryMessageId);
+  return Object.freeze({
+    summaryMessageId,
+    archiveFrom: record.archiveFrom ?? null,
+    archiveTo: record.archiveTo ?? null,
+    memoryFrom: record.memoryFrom ?? null,
+    memoryTo: record.memoryTo ?? null,
+    recordId: record.id ?? null,
+    grandFingerprint: createMessageContentFingerprint(String(message?.message || '')),
+  });
+}
+
+function isGrandRecordTargetValid(target) {
+  if (!target) return false;
+  const chatState = getChatState();
+  const records = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [];
+  const record = records.find(item => (
+    Number(item?.summaryMessageId) === Number(target.summaryMessageId)
+    && (target.recordId == null || item?.id === target.recordId)
+  ));
+  if (!record) return false;
+  if (
+    Number(record.archiveFrom) !== Number(target.archiveFrom)
+    || Number(record.archiveTo) !== Number(target.archiveTo)
+  ) {
+    return false;
+  }
+  const message = getChatMessageById(Number(target.summaryMessageId));
+  if (!message) return false;
+  return createMessageContentFingerprint(String(message.message || '')) === target.grandFingerprint;
+}
+
+function captureTotalGrandPlanSnapshot(plan) {
+  const summaryMessageIds = plan.records.map(item => Number(item.record.summaryMessageId));
+  const fingerprints = {};
+  for (const item of plan.records) {
+    const id = Number(item.record.summaryMessageId);
+    fingerprints[id] = createMessageContentFingerprint(String(item.grandMemory || ''));
+  }
+  return Object.freeze({
+    summaryMessageIds: Object.freeze([...summaryMessageIds]),
+    fingerprints: Object.freeze({ ...fingerprints }),
+    archiveFrom: plan.archiveFrom,
+    archiveTo: plan.archiveTo,
+    memoryFrom: plan.memoryFrom,
+    memoryTo: plan.memoryTo,
+    count: plan.count,
+  });
+}
+
+function isTotalGrandPlanSnapshotValid(snapshot) {
+  if (!snapshot) return false;
+  const plan = createTotalGrandMemoryPlan();
+  if (plan.count !== snapshot.count) return false;
+  if (
+    Number(plan.archiveFrom) !== Number(snapshot.archiveFrom)
+    || Number(plan.archiveTo) !== Number(snapshot.archiveTo)
+    || Number(plan.memoryFrom) !== Number(snapshot.memoryFrom)
+    || Number(plan.memoryTo) !== Number(snapshot.memoryTo)
+  ) {
+    return false;
+  }
+  const ids = plan.records.map(item => Number(item.record.summaryMessageId));
+  if (ids.length !== snapshot.summaryMessageIds.length) return false;
+  for (let index = 0; index < ids.length; index += 1) {
+    if (ids[index] !== Number(snapshot.summaryMessageIds[index])) return false;
+    const fp = createMessageContentFingerprint(String(plan.records[index].grandMemory || ''));
+    if (fp !== snapshot.fingerprints[ids[index]]) return false;
+  }
+  return true;
+}
+
+function captureLegacyArchiveSnapshot(plan, batchSize) {
+  return Object.freeze({
+    batchSize,
+    batchTotal: plan.batchTotal,
+    totalMessages: plan.totalMessages,
+    archiveFrom: plan.archiveFrom,
+    archiveTo: plan.archiveTo,
+    entries: Object.freeze(plan.entries.map(entry => Object.freeze({
+      messageId: entry.messageId,
+      role: entry.role,
+      fingerprint: createMessageContentFingerprint(String(entry.content || '')),
+    }))),
+  });
+}
+
+function isLegacyArchiveSnapshotValid(snapshot) {
+  if (!snapshot) return false;
+  const plan = createLegacyArchivePlan(snapshot.batchSize);
+  if (
+    plan.batchTotal !== snapshot.batchTotal
+    || plan.totalMessages !== snapshot.totalMessages
+    || plan.archiveFrom !== snapshot.archiveFrom
+    || plan.archiveTo !== snapshot.archiveTo
+    || plan.entries.length !== snapshot.entries.length
+  ) {
+    return false;
+  }
+  for (let index = 0; index < snapshot.entries.length; index += 1) {
+    const expected = snapshot.entries[index];
+    const actual = plan.entries[index];
+    if (
+      expected.messageId !== actual.messageId
+      || expected.role !== actual.role
+      || createMessageContentFingerprint(String(actual.content || '')) !== expected.fingerprint
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Deep-clone the current Active Profile for multi-request archive freeze.
  * Keeps full Profile fields (including secrets for request use only).
@@ -827,10 +1040,12 @@ export async function writeManualMemoryToMessage(messageId, memoryContent) {
 
 export async function summarizeOpeningMessage({
   transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+  guardChatScope = false,
 } = {}) {
   const chatState = getChatState();
   if (chatState.summary.runningTask !== 'none') return;
 
+  const scope = captureManualChatScopeOrThrow(guardChatScope);
   const openingMessage = getChatMessageById(0);
   if (!openingMessage) throw new Error('未找到第 0 楼。');
   if (openingMessage.role !== 'assistant') throw new Error('第 0 楼不是 AI 回复，不能生成小总结。');
@@ -838,6 +1053,8 @@ export async function summarizeOpeningMessage({
   const body = stripMemoryBlock(openingMessage.message);
   const summaryBody = extractSummarySourceContent(body, getSummarySettings());
   if (!summaryBody) throw new Error('第 0 楼没有可总结的正文。');
+  const target = guardChatScope ? captureManualMessageTarget(0) : null;
+  if (guardChatScope && !target) throw new Error('未找到第 0 楼。');
 
   chatState.summary.runningTask = 'opening_memory';
   chatState.summary.lastError = '';
@@ -856,6 +1073,17 @@ export async function summarizeOpeningMessage({
         '如果角色基础信息与0楼正文冲突，以0楼正文为准。',
       ].join('\n'),
     }), createManualSummaryGenerationOptions('0楼小总结', transportPolicy));
+
+    const guard = evaluateManualChatGuards(scope, () => isManualMessageTargetValid(target));
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, {
+        scope,
+        title: '小总结管理',
+        clearIgnoredMessageId: 0,
+      });
+      return;
+    }
+
     const memory = stripMemoryEmotionControlLines(forceMemoryNumber(result, 0));
     const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
     if (memoryReplacementResult.errors.length > 0) {
@@ -870,6 +1098,13 @@ export async function summarizeOpeningMessage({
     notifySummary('success', '已为第 0 楼写入小总结。', '小总结管理');
     refreshSummaryPanelAfterAction();
   } catch (error) {
+    if (scope) {
+      const scopeResult = evaluateChatScope(scope);
+      if (!scopeResult.valid) {
+        clearSummaryWriteIgnored(0);
+        return;
+      }
+    }
     clearSummaryWriteIgnored(0);
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = error.message || String(error);
@@ -881,10 +1116,12 @@ export async function summarizeOpeningMessage({
 
 export async function regenerateMemoryForMessage(messageId, {
   transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+  guardChatScope = false,
 } = {}) {
   const chatState = getChatState();
   if (chatState.summary.runningTask !== 'none') return;
 
+  const scope = captureManualChatScopeOrThrow(guardChatScope);
   const chatMessage = getEditableSummaryMessage(messageId);
   const rawBody = stripMemoryBlock(chatMessage.message);
   if (!rawBody) throw new Error(`第 ${Number(messageId)} 楼没有可总结的正文。`);
@@ -892,6 +1129,8 @@ export async function regenerateMemoryForMessage(messageId, {
   const summary = getSummarySettings();
   const material = createSummarySourceMaterial(Number(messageId), summary, { allowHidden: true });
   if (!material) throw new Error(`第 ${Number(messageId)} 楼净化后没有可总结的正文。`);
+  const target = guardChatScope ? captureManualMessageTarget(Number(messageId)) : null;
+  if (guardChatScope && !target) throw new Error(`第 ${Number(messageId)} 楼目标不可用。`);
 
   chatState.summary.runningTask = 'manual_memory';
   chatState.summary.lastError = '';
@@ -906,6 +1145,17 @@ export async function regenerateMemoryForMessage(messageId, {
     const result = await generateSummaryMemory(buildMemorySummaryPrompt(material.promptContent, priorMemories, summary, {
       extraInstructions: joinSummaryExtraInstructions(emotionPromptSection, plotOutlineProgressSection),
     }), createManualSummaryGenerationOptions('手动重写小总结', transportPolicy));
+
+    const guard = evaluateManualChatGuards(scope, () => isManualMessageTargetValid(target));
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, {
+        scope,
+        title: '重写小总结',
+        clearIgnoredMessageId: Number(messageId),
+      });
+      return;
+    }
+
     const memory = stripMemoryEmotionControlLines(normalizeMemoryBlock(result));
     const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
     if (memoryReplacementResult.errors.length > 0) {
@@ -920,6 +1170,13 @@ export async function regenerateMemoryForMessage(messageId, {
     await processPlotOutlineProgressFromMemory(result, { messageId: Number(messageId) });
     refreshSummaryPanelAfterAction();
   } catch (error) {
+    if (scope) {
+      const scopeResult = evaluateChatScope(scope);
+      if (!scopeResult.valid) {
+        clearSummaryWriteIgnored(Number(messageId));
+        return;
+      }
+    }
     clearSummaryWriteIgnored(Number(messageId));
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = error.message || String(error);
@@ -1150,6 +1407,7 @@ export function shouldTriggerAutoTotalGrandMemory(chatState = getChatState(), se
 
 export async function regenerateLatestGrandMemory({
   transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+  guardChatScope = false,
 } = {}) {
   const chatState = getChatState();
   const record = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords.at(-1) : null;
@@ -1158,6 +1416,9 @@ export async function regenerateLatestGrandMemory({
     return;
   }
   if (chatState.summary.runningTask !== 'none') return;
+
+  const scope = captureManualChatScopeOrThrow(guardChatScope);
+  const target = guardChatScope ? captureGrandRecordTarget(record) : null;
 
   chatState.summary.runningTask = 'grand_memory';
   chatState.summary.lastError = '';
@@ -1179,6 +1440,17 @@ export async function regenerateLatestGrandMemory({
       prompt,
       createManualSummaryGenerationOptions('重新生成大总结', transportPolicy),
     );
+
+    const guard = evaluateManualChatGuards(scope, () => isGrandRecordTargetValid(target));
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, {
+        scope,
+        title: '归档管理器',
+        clearIgnoredMessageId: Number(record.summaryMessageId),
+      });
+      return;
+    }
+
     const grandMemory = forceGrandMemoryRange(result, archiveData.memoryFrom, archiveData.memoryTo);
     markSummaryWriteIgnored(Number(record.summaryMessageId));
     await setChatMessageContent(Number(record.summaryMessageId), grandMemory);
@@ -1192,6 +1464,13 @@ export async function regenerateLatestGrandMemory({
     notifySummary('success', `已重新生成第 ${record.summaryMessageId} 楼大总结。`, '归档管理器');
     refreshSummaryPanelAfterAction();
   } catch (error) {
+    if (scope) {
+      const scopeResult = evaluateChatScope(scope);
+      if (!scopeResult.valid) {
+        clearSummaryWriteIgnored(Number(record.summaryMessageId));
+        return;
+      }
+    }
     clearSummaryWriteIgnored(Number(record.summaryMessageId));
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = error.message || String(error);
@@ -1282,17 +1561,20 @@ export function buildTotalGrandMemoryMaterial(records) {
 
 export async function processTotalGrandMemory({
   transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+  guardChatScope = false,
 } = {}) {
   const settings = getGlobalSettings();
   const summary = getSummarySettings(settings);
   const chatState = getChatState();
   if (chatState.summary.runningTask !== 'none') return;
 
+  const scope = captureManualChatScopeOrThrow(guardChatScope);
   const plan = createTotalGrandMemoryPlan();
   if (plan.count < 2) {
     notifySummary('warning', '至少需要 2 条未合并的大总结。', '总档案压缩');
     return;
   }
+  const planSnapshot = guardChatScope ? captureTotalGrandPlanSnapshot(plan) : null;
 
   chatState.summary.runningTask = 'total_grand_memory';
   chatState.summary.lastError = '';
@@ -1305,7 +1587,7 @@ export async function processTotalGrandMemory({
     const memoryFrom = plan.memoryFrom ?? plan.archiveFrom;
     const memoryTo = plan.memoryTo ?? plan.archiveTo;
     const prompt = buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, material, { summary });
-    // Manual panel passes configured; auto total always calls with legacy.
+    // Manual panel passes configured; auto total keeps its own transportPolicy and leaves guard off (5A-2).
     const generationOptions = transportPolicy === SUMMARY_TRANSPORT_POLICY.CONFIGURED
       ? createManualSummaryGenerationOptions('合并大总结', transportPolicy)
       : {
@@ -1313,8 +1595,26 @@ export async function processTotalGrandMemory({
         transportPolicy: SUMMARY_TRANSPORT_POLICY.LEGACY,
       };
     const result = await generateSummaryMemory(prompt, generationOptions);
+
+    let guard = evaluateManualChatGuards(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot));
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, { scope, title: '总档案压缩' });
+      return;
+    }
+
     const grandMemory = forceGrandMemoryRange(result, memoryFrom, memoryTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
+
+    guard = evaluateManualChatGuards(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot));
+    if (!guard.ok) {
+      // May leave an orphan total floor in A; full rollback is Phase 5C.
+      finalizeManualGuardDiscard(guard.reason, {
+        scope,
+        title: '总档案压缩',
+        clearIgnoredMessageId: Number(summaryMessageId),
+      });
+      return;
+    }
 
     markSummaryWriteIgnored(Number(summaryMessageId));
 
@@ -1325,6 +1625,16 @@ export async function processTotalGrandMemory({
         hideIds.map(message_id => ({ message_id, is_hidden: true })),
         { refresh: 'all' },
       );
+    }
+
+    guard = evaluateManualChatGuards(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot));
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, {
+        scope,
+        title: '总档案压缩',
+        clearIgnoredMessageId: Number(summaryMessageId),
+      });
+      return;
     }
 
     const currentChatState = getChatState();
@@ -1355,6 +1665,10 @@ export async function processTotalGrandMemory({
     notifySummary('success', `已生成第 ${summaryMessageId} 楼总档案，并合并 ${plan.count} 条大总结。`, '总档案压缩');
     refreshSummaryPanelAfterAction();
   } catch (error) {
+    if (scope) {
+      const scopeResult = evaluateChatScope(scope);
+      if (!scopeResult.valid) return;
+    }
     const currentChatState = getChatState();
     currentChatState.summary.runningTask = 'none';
     currentChatState.summary.lastError = error.message || String(error);
@@ -1420,18 +1734,21 @@ export function updateLegacyArchiveStatus(patch = {}) {
 
 export async function processLegacyGrandArchive({
   transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+  guardChatScope = false,
 } = {}) {
   const settings = getGlobalSettings();
   const summary = getSummarySettings(settings);
   const chatState = getChatState();
   if (chatState.summary.runningTask !== 'none') return;
 
+  const scope = captureManualChatScopeOrThrow(guardChatScope);
   const batchSize = getLegacyArchiveBatchSize(summary);
   const plan = createLegacyArchivePlan(batchSize);
   if (!plan.totalMessages) {
     notifySummary('warning', '没有读取到可归档的旧聊天正文。', '旧聊天归档');
     return;
   }
+  const archiveSnapshot = guardChatScope ? captureLegacyArchiveSnapshot(plan, batchSize) : null;
 
   // Freeze transport + secondary Profile for the whole multi-request archive at start.
   const frozenTransportPlan = resolveSummaryTransportPlan({
@@ -1468,6 +1785,11 @@ export async function processLegacyGrandArchive({
   notifySummary('info', '旧聊天归档开始：' + plan.batchTotal + ' 批。', '旧聊天归档');
   refreshSummaryPanelAfterAction();
 
+  const checkArchiveGuards = () => evaluateManualChatGuards(
+    scope,
+    () => isLegacyArchiveSnapshotValid(archiveSnapshot),
+  );
+
   try {
     let finalMaterial = '';
     if (plan.batchTotal === 1) {
@@ -1475,6 +1797,11 @@ export async function processLegacyGrandArchive({
     } else {
       const batchSummaries = [];
       for (const [index, batch] of plan.batches.entries()) {
+        let guard = checkArchiveGuards();
+        if (!guard.ok) {
+          finalizeManualGuardDiscard(guard.reason, { scope, title: '旧聊天归档' });
+          return;
+        }
         updateLegacyArchiveStatus({
           phase: 'batching',
           batchIndex: index + 1,
@@ -1482,6 +1809,11 @@ export async function processLegacyGrandArchive({
         });
         const prompt = buildLegacyArchiveBatchPrompt(batch, index, plan.batchTotal);
         const result = await generateSummaryMemory(prompt, batchGenerationOptions);
+        guard = checkArchiveGuards();
+        if (!guard.ok) {
+          finalizeManualGuardDiscard(guard.reason, { scope, title: '旧聊天归档' });
+          return;
+        }
         batchSummaries.push({
           archiveFrom: batch[0]?.messageId ?? plan.archiveFrom,
           archiveTo: batch.at(-1)?.messageId ?? plan.archiveTo,
@@ -1489,6 +1821,12 @@ export async function processLegacyGrandArchive({
         });
       }
       finalMaterial = buildLegacyArchiveFinalMaterial(batchSummaries);
+    }
+
+    let guard = checkArchiveGuards();
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, { scope, title: '旧聊天归档' });
+      return;
     }
 
     updateLegacyArchiveStatus({
@@ -1503,8 +1841,25 @@ export async function processLegacyGrandArchive({
       extraInstructions: emotionPromptSection,
     });
     const result = await generateSummaryMemory(prompt, finalGenerationOptions);
+
+    guard = checkArchiveGuards();
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, { scope, title: '旧聊天归档' });
+      return;
+    }
+
     const grandMemory = forceGrandMemoryRange(result, plan.archiveFrom, plan.archiveTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
+
+    guard = checkArchiveGuards();
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, {
+        scope,
+        title: '旧聊天归档',
+        clearIgnoredMessageId: Number(summaryMessageId),
+      });
+      return;
+    }
 
     markSummaryWriteIgnored(Number(summaryMessageId));
 
@@ -1512,6 +1867,16 @@ export async function processLegacyGrandArchive({
       plan.entries.map(entry => ({ message_id: entry.messageId, is_hidden: true })),
       { refresh: 'all' },
     );
+
+    guard = checkArchiveGuards();
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, {
+        scope,
+        title: '旧聊天归档',
+        clearIgnoredMessageId: Number(summaryMessageId),
+      });
+      return;
+    }
 
     const archiveRecord = {
       id: String(summaryMessageId) + '-' + Date.now(),
@@ -1549,6 +1914,10 @@ export async function processLegacyGrandArchive({
     await processAutoTotalGrandMemory();
     refreshSummaryPanelAfterAction();
   } catch (error) {
+    if (scope) {
+      const scopeResult = evaluateChatScope(scope);
+      if (!scopeResult.valid) return;
+    }
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = error.message || String(error);
     chatState.summary.legacyArchiveStatus = {
@@ -1675,6 +2044,8 @@ export function registerImmediateWordReplaceEvents() {
     if (messageId !== null) scheduleImmediateWordReplace(messageId);
   };
   const handleChatChanged = () => {
+    // Epoch first so in-flight manual tasks become invalid even on A→B→A.
+    markChatScopeChanged();
     immediateWordReplaceTimers.forEach(timer => window.clearTimeout(timer));
     immediateWordReplaceTimers.clear();
     clearStaleSummaryRunningTask('聊天切换');
