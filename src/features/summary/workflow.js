@@ -1,5 +1,7 @@
 import {
   GRAND_MEMORY_BLOCK_RE,
+  getLongFormGenerationTimeoutMessage,
+  LONG_FORM_GENERATION_TIMEOUT_MS,
   SUMMARY_EVENT_DELAY_MS,
 } from '../../constants.js';
 import {
@@ -9,9 +11,12 @@ import {
 } from '../../utils/text.js';
 import { buildCharacterFoundationBlock } from '../../core/character.js';
 import {
+  buildGenerationTransportLog,
   generateWithMainApi,
   generateWithSecondaryApi,
   getGenerationErrorContext,
+  notifyBackgroundStreamingFallbackOnce,
+  resolveConfiguredGenerationTransport,
 } from '../../core/generation.js';
 import {
   replacePromptMacros,
@@ -37,6 +42,7 @@ import {
   synchronizeConfirmedTaskAfterReplacement,
 } from './confirmed-lifecycle.js';
 import {
+  getBackgroundStreamingEnabled,
   getChatState,
   getConfirmedSummaryTasks,
   getContextInfo,
@@ -384,18 +390,100 @@ export function collectPriorMemoriesForSummary(messageId) {
   return latestGrandMemory && allPriorMemories.length < 4 ? [latestGrandMemory, ...priorMemories] : priorMemories;
 }
 
-export async function generateSummaryMemory(prompt, { type = '自动小总结', apiMode = '' } = {}) {
-  const settings = getGlobalSettings();
+/**
+ * Summary transport policy.
+ * - configured: user-triggered panel actions; read global backgroundStreamingEnabled
+ * - legacy: automatic / confirmed paths; never read streaming setting
+ * Default is legacy so new call sites cannot accidentally opt into stream.
+ */
+export const SUMMARY_TRANSPORT_POLICY = Object.freeze({
+  CONFIGURED: 'configured',
+  LEGACY: 'legacy',
+});
+
+/** Manual Summary / Grand / archive generation timeout (same long-form 300s contract). */
+export const MANUAL_SUMMARY_GENERATION_TIMEOUT_MS = LONG_FORM_GENERATION_TIMEOUT_MS;
+
+function normalizeSummaryApiMode(apiMode, settings = getGlobalSettings()) {
   const api = requireWorkflowOption('getApiSettings')(settings);
-  const resolvedApiMode = ['main_api', 'secondary_api'].includes(apiMode) ? apiMode : api.mode;
+  return ['main_api', 'secondary_api'].includes(apiMode) ? apiMode : api.mode;
+}
+
+function createLegacySummaryTransportPlan(apiMode) {
+  return Object.freeze({
+    requestedMode: 'legacy',
+    actualMode: 'legacy',
+    fallbackReason: null,
+    apiMode: normalizeSummaryApiMode(apiMode),
+  });
+}
+
+/**
+ * Pure-ish Summary transport plan resolver. Does not start model requests.
+ */
+export function resolveSummaryTransportPlan({
+  apiMode = '',
+  transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+  settings = getGlobalSettings(),
+} = {}) {
+  const resolvedApiMode = normalizeSummaryApiMode(apiMode, settings);
+  if (transportPolicy !== SUMMARY_TRANSPORT_POLICY.CONFIGURED) {
+    return createLegacySummaryTransportPlan(resolvedApiMode);
+  }
+
+  const profile = resolvedApiMode === 'secondary_api'
+    ? requireWorkflowOption('getActiveApiProfile')(settings)
+    : null;
+  const plan = resolveConfiguredGenerationTransport({
+    backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
+    apiMode: resolvedApiMode,
+    profile,
+  });
+  notifyBackgroundStreamingFallbackOnce(plan.fallbackReason, message => {
+    notifySummary('warning', message, '后台流式');
+  });
+  return plan;
+}
+
+function buildManualSummaryTimeoutMessage(featureName, apiMode, transportPlan) {
+  return getLongFormGenerationTimeoutMessage(featureName, apiMode, {
+    transportMode: transportPlan?.actualMode || 'legacy',
+  });
+}
+
+export async function generateSummaryMemory(prompt, {
+  type = '自动小总结',
+  apiMode = '',
+  transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+  transportPlan = null,
+  timeoutMs,
+  timeoutMessage,
+} = {}) {
+  const settings = getGlobalSettings();
   const addCommunicationLog = requireWorkflowOption('addCommunicationLog');
   const startedAt = performance.now();
   const messages = replacePromptMessageMacros(buildMemorySummaryMessages(prompt));
+  // Explicit plan freezes multi-request tasks (e.g. legacy archive); otherwise resolve once here.
+  const plan = transportPlan || resolveSummaryTransportPlan({
+    apiMode,
+    transportPolicy,
+    settings,
+  });
+  const resolvedApiMode = plan.apiMode || normalizeSummaryApiMode(apiMode, settings);
+  const generationOptions = {
+    messages,
+    transportMode: plan.actualMode,
+  };
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    generationOptions.timeoutMs = timeoutMs;
+    generationOptions.timeoutMessage = timeoutMessage
+      || buildManualSummaryTimeoutMessage(type, resolvedApiMode, plan);
+  }
 
   if (resolvedApiMode === 'main_api') {
     let apiResult = null;
     try {
-      apiResult = await generateWithMainApi({ messages });
+      apiResult = await generateWithMainApi(generationOptions);
       addCommunicationLog({
         moduleName: '自动总结 / 主 API',
         taskType: type,
@@ -409,6 +497,7 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
         requestBody: apiResult.requestBody,
         responseText: apiResult.responseText,
         parsedResult: apiResult.content,
+        transport: buildGenerationTransportLog(plan, apiResult),
       });
       return String(apiResult.content || '').trim();
     } catch (error) {
@@ -429,6 +518,7 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
         messages,
         requestBody: apiResult?.requestBody || null,
         responseText: diagnostics?.responseText || '',
+        transport: buildGenerationTransportLog(plan, apiResult, diagnostics),
         errorCode,
         errorStage,
         errorStack: error.stack || error.message || error,
@@ -440,13 +530,14 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
   const profile = requireWorkflowOption('getActiveApiProfile')(settings);
   let apiResult = null;
   try {
-    apiResult = await generateWithSecondaryApi({ profile, messages });
-    if (apiResult.responseJson === null) {
-      throw new Error(`接口返回成功，但没有读取到回复正文：${apiResult.responseText}`);
-    }
+    apiResult = await generateWithSecondaryApi({
+      profile,
+      ...generationOptions,
+    });
+    // Stream path may return responseJson=null with full content; content is authoritative.
     const content = String(apiResult.content || '').trim();
     if (!content) {
-      throw new Error(`接口返回成功，但没有读取到回复正文：${apiResult.responseText}`);
+      throw new Error(`接口返回成功，但没有读取到回复正文：${apiResult.responseText || ''}`);
     }
     addCommunicationLog({
       moduleName: '自动总结 / 副 API',
@@ -462,6 +553,7 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
       requestBody: apiResult.requestBody,
       responseText: apiResult.responseText,
       parsedResult: content,
+      transport: buildGenerationTransportLog(plan, apiResult),
     });
     return content;
   } catch (error) {
@@ -482,12 +574,28 @@ export async function generateSummaryMemory(prompt, { type = '自动小总结', 
       messages,
       requestBody: apiResult?.requestBody || null,
       responseText: diagnostics?.responseText || '',
+      transport: buildGenerationTransportLog(plan, apiResult, diagnostics),
       errorCode,
       errorStage,
       errorStack: error.stack || error.message || error,
     });
     throw error;
   }
+}
+
+function createManualSummaryGenerationOptions(type, transportPolicy, transportPlan = null) {
+  const settings = getGlobalSettings();
+  const plan = transportPlan || resolveSummaryTransportPlan({
+    transportPolicy,
+    settings,
+  });
+  return {
+    type,
+    transportPolicy,
+    transportPlan: plan,
+    timeoutMs: MANUAL_SUMMARY_GENERATION_TIMEOUT_MS,
+    timeoutMessage: buildManualSummaryTimeoutMessage(type, plan.apiMode, plan),
+  };
 }
 
 export function parseGrandMemoryRange(content) {
@@ -697,7 +805,9 @@ export async function writeManualMemoryToMessage(messageId, memoryContent) {
   markManualMemoryProcessed(Number(messageId), body);
 }
 
-export async function summarizeOpeningMessage() {
+export async function summarizeOpeningMessage({
+  transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+} = {}) {
   const chatState = getChatState();
   if (chatState.summary.runningTask !== 'none') return;
 
@@ -725,7 +835,7 @@ export async function summarizeOpeningMessage() {
         '【0楼正文】才是本次需要总结为剧情事实的内容。',
         '如果角色基础信息与0楼正文冲突，以0楼正文为准。',
       ].join('\n'),
-    }), { type: '0楼小总结' });
+    }), createManualSummaryGenerationOptions('0楼小总结', transportPolicy));
     const memory = stripMemoryEmotionControlLines(forceMemoryNumber(result, 0));
     const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
     if (memoryReplacementResult.errors.length > 0) {
@@ -749,7 +859,9 @@ export async function summarizeOpeningMessage() {
   }
 }
 
-export async function regenerateMemoryForMessage(messageId) {
+export async function regenerateMemoryForMessage(messageId, {
+  transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+} = {}) {
   const chatState = getChatState();
   if (chatState.summary.runningTask !== 'none') return;
 
@@ -773,9 +885,7 @@ export async function regenerateMemoryForMessage(messageId) {
     const plotOutlineProgressSection = buildPlotOutlineProgressPromptSection(getChatState());
     const result = await generateSummaryMemory(buildMemorySummaryPrompt(material.promptContent, priorMemories, summary, {
       extraInstructions: joinSummaryExtraInstructions(emotionPromptSection, plotOutlineProgressSection),
-    }), {
-      type: '手动重写小总结',
-    });
+    }), createManualSummaryGenerationOptions('手动重写小总结', transportPolicy));
     const memory = stripMemoryEmotionControlLines(normalizeMemoryBlock(result));
     const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
     if (memoryReplacementResult.errors.length > 0) {
@@ -981,11 +1091,15 @@ export async function processAutoGrandMemory() {
 
 // 大总结后提炼回忆候选，暂存到 pending，交用户在回忆录面板确认（不直接写世界书）。
 // 用独立 try/catch 包裹：回忆录提炼失败绝不能影响已完成的大总结主流程。
-// 复用 generateSummaryMemory 作为生成函数，使提炼跟随设置里选的主/副 API（与大总结一致）。
+// 复用 generateSummaryMemory，但强制 legacy，避免继承手动父任务的 configured / stream。
 async function tryExtractMemoirAfterGrandSummary(archiveRecord, grandMemoryText) {
   try {
     const result = await tryExtractMemoirFromGrandSummary(archiveRecord, {
-      generate: generateSummaryMemory,
+      generate: (prompt, opts = {}) => generateSummaryMemory(prompt, {
+        ...opts,
+        transportPolicy: SUMMARY_TRANSPORT_POLICY.LEGACY,
+        transportPlan: null,
+      }),
       grandMemoryText,
     });
     if (result.skipped) {
@@ -1011,7 +1125,9 @@ export function shouldTriggerAutoTotalGrandMemory(chatState = getChatState(), se
   return Boolean(chatState.summary.runningTask === 'none' && plan.freshCount >= threshold);
 }
 
-export async function regenerateLatestGrandMemory() {
+export async function regenerateLatestGrandMemory({
+  transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+} = {}) {
   const chatState = getChatState();
   const record = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords.at(-1) : null;
   if (!record) {
@@ -1036,7 +1152,10 @@ export async function regenerateLatestGrandMemory() {
       regenerate: true,
       summary: getSummarySettings(),
     });
-    const result = await generateSummaryMemory(prompt, { type: '重新生成大总结' });
+    const result = await generateSummaryMemory(
+      prompt,
+      createManualSummaryGenerationOptions('重新生成大总结', transportPolicy),
+    );
     const grandMemory = forceGrandMemoryRange(result, archiveData.memoryFrom, archiveData.memoryTo);
     markSummaryWriteIgnored(Number(record.summaryMessageId));
     await setChatMessageContent(Number(record.summaryMessageId), grandMemory);
@@ -1138,7 +1257,9 @@ export function buildTotalGrandMemoryMaterial(records) {
   }).join('\n\n');
 }
 
-export async function processTotalGrandMemory() {
+export async function processTotalGrandMemory({
+  transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+} = {}) {
   const settings = getGlobalSettings();
   const summary = getSummarySettings(settings);
   const chatState = getChatState();
@@ -1161,7 +1282,14 @@ export async function processTotalGrandMemory() {
     const memoryFrom = plan.memoryFrom ?? plan.archiveFrom;
     const memoryTo = plan.memoryTo ?? plan.archiveTo;
     const prompt = buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, material, { summary });
-    const result = await generateSummaryMemory(prompt, { type: '合并大总结' });
+    // Manual panel passes configured; auto total always calls with legacy.
+    const generationOptions = transportPolicy === SUMMARY_TRANSPORT_POLICY.CONFIGURED
+      ? createManualSummaryGenerationOptions('合并大总结', transportPolicy)
+      : {
+        type: '合并大总结',
+        transportPolicy: SUMMARY_TRANSPORT_POLICY.LEGACY,
+      };
+    const result = await generateSummaryMemory(prompt, generationOptions);
     const grandMemory = forceGrandMemoryRange(result, memoryFrom, memoryTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
 
@@ -1217,7 +1345,9 @@ export async function processAutoTotalGrandMemory() {
   const settings = getGlobalSettings();
   const chatState = getChatState();
   if (!shouldTriggerAutoTotalGrandMemory(chatState, settings)) return;
-  await processTotalGrandMemory();
+  await processTotalGrandMemory({
+    transportPolicy: SUMMARY_TRANSPORT_POLICY.LEGACY,
+  });
 }
 
 export function cleanLegacyArchiveMessageContent(message, summary = getSummarySettings()) {
@@ -1265,7 +1395,9 @@ export function updateLegacyArchiveStatus(patch = {}) {
   return chatState.summary.legacyArchiveStatus;
 }
 
-export async function processLegacyGrandArchive() {
+export async function processLegacyGrandArchive({
+  transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
+} = {}) {
   const settings = getGlobalSettings();
   const summary = getSummarySettings(settings);
   const chatState = getChatState();
@@ -1277,6 +1409,22 @@ export async function processLegacyGrandArchive() {
     notifySummary('warning', '没有读取到可归档的旧聊天正文。', '旧聊天归档');
     return;
   }
+
+  // Freeze transport for the whole multi-request archive operation at start.
+  const frozenTransportPlan = resolveSummaryTransportPlan({
+    transportPolicy,
+    settings,
+  });
+  const batchGenerationOptions = createManualSummaryGenerationOptions(
+    '旧聊天批次摘要',
+    transportPolicy,
+    frozenTransportPlan,
+  );
+  const finalGenerationOptions = createManualSummaryGenerationOptions(
+    '旧聊天大总结',
+    transportPolicy,
+    frozenTransportPlan,
+  );
 
   chatState.summary.runningTask = 'legacy_grand_memory';
   chatState.summary.lastError = '';
@@ -1305,7 +1453,7 @@ export async function processLegacyGrandArchive() {
           lastResult: '正在生成批次 ' + (index + 1) + ' / ' + plan.batchTotal,
         });
         const prompt = buildLegacyArchiveBatchPrompt(batch, index, plan.batchTotal);
-        const result = await generateSummaryMemory(prompt, { type: '旧聊天批次摘要' });
+        const result = await generateSummaryMemory(prompt, batchGenerationOptions);
         batchSummaries.push({
           archiveFrom: batch[0]?.messageId ?? plan.archiveFrom,
           archiveTo: batch.at(-1)?.messageId ?? plan.archiveTo,
@@ -1326,7 +1474,7 @@ export async function processLegacyGrandArchive() {
       summary,
       extraInstructions: emotionPromptSection,
     });
-    const result = await generateSummaryMemory(prompt, { type: '旧聊天大总结' });
+    const result = await generateSummaryMemory(prompt, finalGenerationOptions);
     const grandMemory = forceGrandMemoryRange(result, plan.archiveFrom, plan.archiveTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
 

@@ -40,6 +40,7 @@ import {
   regenerateMemoryForMessage,
   scanExistingSummaryState,
   summarizeOpeningMessage,
+  SUMMARY_TRANSPORT_POLICY,
   updateLegacyArchiveStatus,
   writeManualMemoryToMessage,
 } from './workflow.js';
@@ -608,11 +609,13 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
     rerenderSummaryPanel();
   });
 
+  const manualConfigured = { transportPolicy: SUMMARY_TRANSPORT_POLICY.CONFIGURED };
+
   panelRoot.querySelector('[data-slx-start-legacy-archive]')?.addEventListener('click', event => {
     const button = event.currentTarget;
     syncLegacyArchiveBatchSize();
     button.disabled = true;
-    void processLegacyGrandArchive().catch(error => {
+    void processLegacyGrandArchive(manualConfigured).catch(error => {
       notifySummary('warning', error.message || String(error), '旧聊天归档失败');
     }).finally(() => {
       button.disabled = false;
@@ -621,7 +624,7 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
   panelRoot.querySelector('[data-slx-regenerate-grand-memory]')?.addEventListener('click', event => {
     const button = event.currentTarget;
     button.disabled = true;
-    void regenerateLatestGrandMemory().catch(error => {
+    void regenerateLatestGrandMemory(manualConfigured).catch(error => {
       notifySummary('warning', error.message || String(error), '重新生成大总结失败');
     }).finally(() => {
       button.disabled = false;
@@ -630,7 +633,7 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
   panelRoot.querySelector('[data-slx-compress-grand-memories]')?.addEventListener('click', event => {
     const button = event.currentTarget;
     button.disabled = true;
-    void processTotalGrandMemory().catch(error => {
+    void processTotalGrandMemory(manualConfigured).catch(error => {
       notifySummary('warning', error.message || String(error), '总档案压缩失败');
     }).finally(() => {
       button.disabled = false;
@@ -639,7 +642,7 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
   panelRoot.querySelector('[data-slx-generate-opening-memory]')?.addEventListener('click', event => {
     const button = event.currentTarget;
     button.disabled = true;
-    void summarizeOpeningMessage().catch(error => {
+    void summarizeOpeningMessage(manualConfigured).catch(error => {
       notifySummary('warning', error.message || String(error), '0楼小总结失败');
     }).finally(() => {
       button.disabled = false;
@@ -655,7 +658,7 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
       return;
     }
     button.disabled = true;
-    void regenerateMemoryForMessage(messageId).catch(error => {
+    void regenerateMemoryForMessage(messageId, manualConfigured).catch(error => {
       notifySummary('warning', error.message || String(error), '重写小总结失败');
     }).finally(() => {
       button.disabled = false;

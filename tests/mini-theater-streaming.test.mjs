@@ -265,7 +265,7 @@ test('mini-theater keeps the shared 300s timeout contract', () => {
   assert.equal(THEATER_GENERATION_TIMEOUT_MS, 300000);
 });
 
-test('user long-form features share the transport resolver; Summary does not', async () => {
+test('user long-form and manual Summary share the transport resolver; confirmed modules do not', async () => {
   const featureFiles = await listJavaScriptFiles(new URL('../src/features/', import.meta.url));
   const allowed = [
     /mini-theater\/panel\.js$/,
@@ -274,11 +274,11 @@ test('user long-form features share the transport resolver; Summary does not', a
     /plot-outline\/workflow\.js$/,
     /affection\/workflow\.js$/,
     /memoir\/workflow\.js$/,
+    /summary\/workflow\.js$/,
   ];
   const forbidden = [
-    /summary\//,
     /emotion-profile\//,
-    /confirmed/,
+    /confirmed-/,
   ];
   const users = [];
   for (const fileUrl of featureFiles) {
@@ -297,7 +297,7 @@ test('user long-form features share the transport resolver; Summary does not', a
       `forbidden path resolved transport: ${path}`,
     );
   }
-  assert.ok(users.length >= 6);
+  assert.ok(users.length >= 7);
 });
 
 test('mini-theater main_api uses TavernHelper stream with ordered prompts and never legacy prompt path', async () => {

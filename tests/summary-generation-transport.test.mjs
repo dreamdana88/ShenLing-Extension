@@ -134,17 +134,16 @@ test('Summary secondary API preserves URL, Bearer, model, messages, stream, and 
   });
 });
 
-test('Summary preserves old rejection of HTTP 200 non-JSON secondary responses', async () => {
+test('Summary accepts secondary content when responseJson is null (stream-compatible contract)', async () => {
+  // Legacy Core may return non-JSON body as content; stream path returns responseJson=null with content.
   await withSummaryHarness({
     mode: 'secondary_api',
-    fetch: async () => createResponse({ body: 'plain text is not a summary response' }),
+    fetch: async () => createResponse({ body: '<memory>plain text content body</memory>' }),
   }, async ({ logs }) => {
-    await assert.rejects(
-      generateSummaryMemory('non-json'),
-      /接口返回成功，但没有读取到回复正文：plain text is not a summary response/,
-    );
-    assert.equal(logs[0].status, 'failure');
-    assert.equal(logs[0].url, 'https://example.invalid/chat/completions');
+    const result = await generateSummaryMemory('non-json-content');
+    assert.equal(result, '<memory>plain text content body</memory>');
+    assert.equal(logs[0].status, 'success');
+    assert.equal(logs[0].transport?.actualMode, 'legacy');
   });
 });
 

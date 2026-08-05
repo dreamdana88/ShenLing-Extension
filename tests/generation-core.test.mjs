@@ -429,7 +429,7 @@ test('explicit stream mode fails clearly when the runtime capability is unavaila
   });
 });
 
-test('S3-A transport resolver allowlist excludes Summary and effects features', async () => {
+test('S3-B transport resolver allowlist includes Summary workflow but not confirmed/effects modules', async () => {
   const featureRoot = new URL('../src/features/', import.meta.url);
   const featureFiles = await listJavaScriptFiles(featureRoot);
   const allowed = [
@@ -439,6 +439,7 @@ test('S3-A transport resolver allowlist excludes Summary and effects features', 
     /plot-outline\/workflow\.js$/,
     /affection\/workflow\.js$/,
     /memoir\/workflow\.js$/,
+    /summary\/workflow\.js$/,
   ];
   for (const fileUrl of featureFiles) {
     const source = await readFile(fileUrl, 'utf8');
@@ -449,7 +450,8 @@ test('S3-A transport resolver allowlist excludes Summary and effects features', 
       true,
       `unexpected transport resolver user: ${path}`,
     );
-    assert.equal(/summary\//.test(path), false);
+    assert.equal(/confirmed-/.test(path), false);
+    assert.equal(/emotion-profile\//.test(path), false);
   }
 });
 

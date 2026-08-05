@@ -890,7 +890,7 @@ test('Summary main provider failure logs MAIN_PROVIDER_FAILED without secondary 
   });
 });
 
-test('Summary secondary HTTP error enriches failure log; non-JSON remains Feature Error', async () => {
+test('Summary secondary HTTP error enriches failure log; content is authoritative over responseJson', async () => {
   let mainCalls = 0;
   await withHarness({
     mode: 'secondary_api',
@@ -918,19 +918,15 @@ test('Summary secondary HTTP error enriches failure log; non-JSON remains Featur
     assert.equal(logs[0].httpStatus, 503);
   });
 
+  // S3-B: non-JSON body with non-empty content is accepted (stream-compatible content contract).
   await withHarness({
     mode: 'secondary_api',
-    fetchImpl: async () => createResponse({ body: 'plain text is not a summary response' }),
+    fetchImpl: async () => createResponse({ body: 'plain text summary body' }),
     configure: options => configureSummaryWorkflow(options),
   }, async ({ logs }) => {
-    await assert.rejects(
-      generateSummaryMemory('non-json'),
-      /接口返回成功，但没有读取到回复正文：plain text is not a summary response/,
-    );
-    assert.equal(logs[0].status, 'failure');
-    assert.equal(logs[0].errorCode, '');
-    assert.equal(logs[0].errorStage, '');
-    assert.equal(getGenerationErrorContext(new Error(logs[0].errorStack)), null);
+    const result = await generateSummaryMemory('non-json content');
+    assert.equal(result, 'plain text summary body');
+    assert.equal(logs[0].status, 'success');
     assert.equal(logs[0].url, 'https://example.invalid/chat/completions');
     assert.ok(logs[0].messages.length > 0);
   });
