@@ -1,4 +1,4 @@
-﻿import {
+import {
   formatTimestamp,
   isPlainObject,
 } from '../../utils/text.js';
@@ -165,17 +165,17 @@ export function buildKnownAffectionText(profiles = {}) {
       const ledger = recalculateAffectionLedger(profile.initialValueTenths, profile.records);
       const recent = ledger.records.slice(-3).map(record => {
         const source = record.sourceMessageId === null || record.sourceMessageId === undefined
-          ? '鎵嬪姩璋冩暣'
-          : `绗?{record.sourceMessageId}妤糮;
+          ? '手动调整'
+          : `第${record.sourceMessageId}楼`;
         const deltaTenths = Number(record.deltaTenths);
         const deltaValue = Number.isInteger(deltaTenths) ? (deltaTenths / 10).toFixed(1) : '0.0';
         const delta = deltaTenths > 0 ? `+${deltaValue}` : deltaValue;
-        return `${source}${delta}鈫?{formatAffectionValueTenths(record.valueAfterTenths)}`;
+        return `${source}${delta}→${formatAffectionValueTenths(record.valueAfterTenths)}`;
       });
-      return `銆?{roleName}銆戝凡寤烘。锛屽綋鍓嶅ソ鎰?${formatAffectionValueTenths(ledger.valueTenths)}/100${recent.length ? `锛涜繎鏈燂細${recent.join('銆?)}` : '锛涙殏鏃犳寮忓彉鍖栬褰?}`;
+      return `【${roleName}】已建档，当前好感 ${formatAffectionValueTenths(ledger.valueTenths)}/100${recent.length ? `；近期：${recent.join('、')}` : '；暂无正式变化记录'}`;
     })
     .filter(Boolean);
-  return lines.length ? lines.join('\n') : '鏆傛棤宸插缓妗ｈ鑹层€?;
+  return lines.length ? lines.join('\n') : '暂无已建档角色。';
 }
 
 function buildAffectionStageBehaviorText(stage) {
@@ -183,9 +183,9 @@ function buildAffectionStageBehaviorText(stage) {
   const behaviors = (Array.isArray(stage?.behaviors) ? stage.behaviors : [])
     .map(item => String(item || '').trim())
     .filter(Boolean);
-  return [meaning, behaviors.length ? behaviors.join('锛?) : '']
+  return [meaning, behaviors.length ? behaviors.join('；') : '']
     .filter(Boolean)
-    .join('锛?);
+    .join('；');
 }
 
 export function buildAffectionInjection(chatState = getChatState()) {
@@ -203,11 +203,11 @@ export function buildAffectionInjection(chatState = getChatState()) {
       const boundary = String(stage?.boundary || '').trim();
       if (!stageName || !behavior || !trend || !boundary) return '';
       return [
-        `[铚冪伒鏀荤暐鐘舵€侊細${roleName}]`,
-        `${roleName}瀵箋{user}}鐨勫ソ鎰熷害锛?{formatAffectionValueTenths(ledger.valueTenths)}/100锛岄樁娈点€?{stageName}銆嶃€俙,
-        `褰撳墠闃舵琛ㄧ幇锛?{behavior}`,
-        `鍙樺寲鍊惧悜锛?{trend}`,
-        `绂佹锛氫笉瑕佹挱鎶ユ暟鍊兼垨闃舵鍚嶇О锛?{boundary}锛涗笉瑕佽繚鑳岃鑹叉牳蹇冧汉璁俱€俙,
+        `[蜃灵攻略状态：${roleName}]`,
+        `${roleName}对{{user}}的好感度：${formatAffectionValueTenths(ledger.valueTenths)}/100，阶段「${stageName}」。`,
+        `当前阶段表现：${behavior}`,
+        `变化倾向：${trend}`,
+        `禁止：不要播报数值或阶段名称；${boundary}；不要违背角色核心人设。`,
       ].join('\n');
     })
     .filter(Boolean);
@@ -219,39 +219,39 @@ export function buildAffectionInjection(chatState = getChatState()) {
 
 const GENERIC_AFFECTION_STAGE_CONTENT = Object.freeze([
   Object.freeze({
-    name: '闄岃矾鏄熻景',
-    meaning: '浠嶆槸闇€瑕佷繚鎸佽窛绂讳笌瑙傚療鐨勯檶鐢熶汉銆?,
-    behaviors: ['淇濇寔鍩烘湰绀艰矊涓庡繀瑕佷氦娴?, '浼樺厛瑙傚療 {{user}} 鐨勮█琛屼笌杈圭晫', '涓嶄富鍔ㄩ€忛湶绉佷汉鎯呯华涓庨噸瑕佺瀵?],
-    trend: '寮€濮嬭浣?{{user}} 鐨勪範鎯紝骞舵効鎰忓欢闀挎櫘閫氫氦娴併€?,
-    boundary: '涓嶆彁鍓嶈〃鐜颁翰瀵嗕緷璧栥€佹毀鏄у崰鏈夋垨鏃犳潯浠朵俊浠汇€?,
+    name: '陌路星辰',
+    meaning: '仍是需要保持距离与观察的陌生人。',
+    behaviors: ['保持基本礼貌与必要交流', '优先观察 {{user}} 的言行与边界', '不主动透露私人情绪与重要秘密'],
+    trend: '开始记住 {{user}} 的习惯，并愿意延长普通交流。',
+    boundary: '不提前表现亲密依赖、暧昧占有或无条件信任。',
   }),
   Object.freeze({
-    name: '寰厜鍒濈幇',
-    meaning: '鎶?{{user}} 瑙嗕负鍙互缁х画鎺ヨЕ鐨勭啛浜轰笌鏈嬪弸銆?,
-    behaviors: ['鎰挎剰鍥炲簲鏃ュ父鍏冲績涓庢櫘閫氶個绾?, '鍦ㄥ姏鎵€鑳藉強鐨勮寖鍥存彁渚涘府鍔?, '鍋跺皵鍒嗕韩涓嶆晱鎰熺殑涓汉鎯虫硶'],
-    trend: '閫愭笎涓诲姩瀵绘壘鍏卞悓璇濋锛屽苟鍦ㄦ剰 {{user}} 鐨勮瘎浠枫€?,
-    boundary: '涓嶆彁鍓嶄綔鍑烘亱鐖辨壙璇烘垨琛ㄧ幇寮虹儓鎺掍粬鎬с€?,
+    name: '微光初现',
+    meaning: '把 {{user}} 视为可以继续接触的熟人与朋友。',
+    behaviors: ['愿意回应日常关心与普通邀约', '在力所能及的范围提供帮助', '偶尔分享不敏感的个人想法'],
+    trend: '逐渐主动寻找共同话题，并在意 {{user}} 的评价。',
+    boundary: '不提前作出恋爱承诺或表现强烈排他性。',
   }),
   Object.freeze({
-    name: '鎯呮劔鏆楃敓',
-    meaning: '宸蹭骇鐢熸槑纭ソ鎰燂紝浣嗕粛鍦ㄧ‘璁ゅ郊姝ゅ績鎰忋€?,
-    behaviors: ['鏇翠富鍔ㄥ叧娉?{{user}} 鐨勬儏缁彉鍖?, '鎰挎剰鍒涢€犲崟鐙浉澶勪笌娣卞叆浜ゆ祦鐨勬満浼?, '鍦ㄥ叧閿椂鍒荤粰浜堝甫鏈変釜浜哄€惧悜鐨勬敮鎸?],
-    trend: '璇曟帰褰兼杈圭晫锛屽苟閫愭笎鏄鹃湶鍖哄埆浜庢櫘閫氭湅鍙嬬殑鍦ㄦ剰銆?,
-    boundary: '涓嶆妸灏氭湭纭鐨勫ソ鎰熺洿鎺ユ紨鎴愮ǔ瀹氫即渚ｅ叧绯汇€?,
+    name: '情愫暗生',
+    meaning: '已产生明确好感，但仍在确认彼此心意。',
+    behaviors: ['更主动关注 {{user}} 的情绪变化', '愿意创造单独相处与深入交流的机会', '在关键时刻给予带有个人倾向的支持'],
+    trend: '试探彼此边界，并逐渐显露区别于普通朋友的在意。',
+    boundary: '不把尚未确认的好感直接演成稳定伴侣关系。',
   }),
   Object.freeze({
-    name: '蹇冩剰鐩搁€?,
-    meaning: '宸茬‘璁ゅ郊姝ゅ叿鏈変翰瀵嗗€惧悜锛屽叧绯昏繘鍏ョǔ瀹氱（鍚堛€?,
-    behaviors: ['涓诲姩琛ㄨ揪鎬濆康銆佸叧蹇冧笌浜插瘑闇€姹?, '鎶?{{user}} 绾冲叆閲嶈璁″垝涓庡喅瀹?, '閬囧埌鍒嗘鏃舵効鎰忔矡閫氬苟淇鍏崇郴'],
-    trend: '閫愭寤虹珛鏇存繁鐨勬壙璇恒€侀粯濂戜笌鍏卞悓鐢熸椿鎰熴€?,
-    boundary: '涓嶅拷鐣ヨ鑹茶嚜韬師鍒欙紝涔熶笉鎶婁翰瀵嗙瓑鍚屼簬澶卞幓鐙珛鎬с€?,
+    name: '心意相通',
+    meaning: '已确认彼此具有亲密倾向，关系进入稳定磨合。',
+    behaviors: ['主动表达思念、关心与亲密需求', '把 {{user}} 纳入重要计划与决定', '遇到分歧时愿意沟通并修复关系'],
+    trend: '逐步建立更深的承诺、默契与共同生活感。',
+    boundary: '不忽略角色自身原则，也不把亲密等同于失去独立性。',
   }),
   Object.freeze({
-    name: '鐏甸瓊浜よ瀺',
-    meaning: '鎶?{{user}} 瑙嗕负娣卞害淇¤禆骞舵効鎰忛暱鏈熺浉浼寸殑鐖变汉銆?,
-    behaviors: ['鑷劧鍒嗕韩鏈€閲嶈鐨勮剢寮便€佺瀵嗕笌闀挎湡鎰挎櫙', '鍦ㄥ皧閲嶅郊姝や富浣撴€х殑鍓嶆彁涓嬫壙鎷呭叡鍚岃矗浠?, '浠ョǔ瀹氳€屽叿浣撶殑琛屽姩缁存姢鍙屾柟鍏崇郴'],
-    trend: '缁х画娣卞寲鍏卞悓缁忓巻涓庨暱鏈熸壙璇猴紝鑰岄潪鏈烘閲嶅绀虹埍銆?,
-    boundary: '涓嶅洜楂樺ソ鎰熷彇娑堜汉璁俱€佺幇瀹炵煕鐩俱€佷釜浜鸿竟鐣屾垨鍚堢悊鍒嗘銆?,
+    name: '灵魂交融',
+    meaning: '把 {{user}} 视为深度信赖并愿意长期相伴的爱人。',
+    behaviors: ['自然分享最重要的脆弱、秘密与长期愿景', '在尊重彼此主体性的前提下承担共同责任', '以稳定而具体的行动维护双方关系'],
+    trend: '继续深化共同经历与长期承诺，而非机械重复示爱。',
+    boundary: '不因高好感取消人设、现实矛盾、个人边界或合理分歧。',
   }),
 ]);
 
@@ -276,7 +276,7 @@ export function createGenericAffectionStages() {
 export function normalizeAffectionProfileStages(value) {
   const stages = Array.isArray(value?.stages) ? value.stages : Array.isArray(value) ? value : [];
   if (stages.length !== AFFECTION_STAGE_RANGES.length) {
-    throw new Error('涓撳睘闃舵琛ㄥ繀椤绘伆濂藉寘鍚簲涓樁娈点€?);
+    throw new Error('专属阶段表必须恰好包含五个阶段。');
   }
 
   return AFFECTION_STAGE_RANGES.map((range, index) => {
@@ -289,7 +289,7 @@ export function normalizeAffectionProfileStages(value) {
       .map(item => sanitizeAffectionStageText(item, 100))
       .filter(Boolean);
     if (!name || !meaning || !trend || !boundary || behaviors.length !== 3) {
-      throw new Error(`涓撳睘闃舵琛ㄧ ${index + 1} 闃舵瀛楁涓嶅畬鏁达紝涓?behaviors 蹇呴』鎭板ソ涓夋潯闈炵┖鏂囨湰銆俙);
+      throw new Error(`专属阶段表第 ${index + 1} 阶段字段不完整，且 behaviors 必须恰好三条非空文本。`);
     }
     return {
       ...range,
@@ -317,7 +317,7 @@ function parseAffectionProfileResponse(value) {
   try {
     return JSON.parse(jsonText);
   } catch {
-    throw new Error('涓撳睘闃舵琛ㄨ繑鍥炰笉鏄悎娉?JSON銆?);
+    throw new Error('专属阶段表返回不是合法 JSON。');
   }
 }
 
@@ -420,7 +420,7 @@ function resolveAffectionTransportPlan(apiMode, transportPolicy = AFFECTION_TRAN
     });
     notifyBackgroundStreamingFallbackOnce(plan.fallbackReason, message => {
       const toastr = globalThis.toastr || globalThis.parent?.toastr;
-      toastr?.warning?.(message, '鍚庡彴娴佸紡');
+      toastr?.warning?.(message, '后台流式');
     });
     return plan;
   }
@@ -438,7 +438,7 @@ async function requestAffectionProfileStages({
   const profile = normalizeAffectionApiMode(apiMode) === 'secondary_api'
     ? getWorkflowOption('getActiveApiProfile')?.(settings)
     : null;
-  const timeoutMessage = getLongFormGenerationTimeoutMessage('涓撳睘闃舵琛?, apiMode, {
+  const timeoutMessage = getLongFormGenerationTimeoutMessage('专属阶段表', apiMode, {
     transportMode: transportPlan.actualMode,
   });
 
@@ -639,19 +639,19 @@ function getCurrentTaskState(task, {
 }) {
   const snapshot = getCurrentSnapshot(task.messageId);
   if (String(snapshot?.chatId || '') !== task.chatId) {
-    return { valid: false, reason: '鑱婂ぉ宸插垏鎹€?, canWrite: false, task: null };
+    return { valid: false, reason: '聊天已切换。', canWrite: false, task: null };
   }
   const currentChatState = getCurrentChatState();
   const currentStore = getAffectionSystemState(currentChatState);
   const currentTask = currentStore.buildTasks[task.taskKey];
   if (!isPlainObject(currentTask) || currentTask.buildRequestId !== task.buildRequestId) {
-    return { valid: false, reason: '寤烘。浠诲姟宸茶鏇挎崲鎴栨竻鐞嗐€?, canWrite: true, task: currentTask || null };
+    return { valid: false, reason: '建档任务已被替换或清理。', canWrite: true, task: currentTask || null };
   }
   if (snapshot?.active !== true) {
-    return { valid: false, reason: '濂芥劅妯″潡鎴栬嚜鍔ㄥ皬鎬荤粨宸插叧闂€?, canWrite: true, task: currentTask };
+    return { valid: false, reason: '好感模块或自动小总结已关闭。', canWrite: true, task: currentTask };
   }
   if (String(snapshot?.fingerprint || '') !== task.fingerprint) {
-    return { valid: false, reason: '褰撳墠閫変腑 swipe 宸插彉鍖栥€?, canWrite: true, task: currentTask };
+    return { valid: false, reason: '当前选中 swipe 已变化。', canWrite: true, task: currentTask };
   }
   return { valid: true, reason: '', canWrite: true, task: currentTask };
 }
@@ -687,22 +687,22 @@ function logAffectionProfileBuild({
     || error?.transportPlan
     || null;
   getWorkflowOption('addCommunicationLog')?.({
-    moduleName: task.apiMode === 'main_api' ? '濂芥劅搴﹀缓妗?/ 涓?API' : '濂芥劅搴﹀缓妗?/ 鍓?API',
+    moduleName: task.apiMode === 'main_api' ? '好感度建档 / 主 API' : '好感度建档 / 副 API',
     taskType: task.operation === 'regenerate'
-      ? '涓撳睘闃舵琛ㄤ富鍔ㄩ噸鏂扮敓鎴?
-      : task.buildMode === 'generic' ? '閫氱敤闃舵琛ㄩ寤烘。' : '涓撳睘闃舵琛ㄩ寤烘。',
+      ? '专属阶段表主动重新生成'
+      : task.buildMode === 'generic' ? '通用阶段表预建档' : '专属阶段表预建档',
     status,
     startedAt,
     durationMs: diagnostics?.durationMs ?? Math.round(performance.now() - startedMs),
     profileName: diagnostics?.profileName
       || apiResult?.profileName
-      || (task.apiMode === 'main_api' ? '閰掗褰撳墠杩炴帴' : ''),
+      || (task.apiMode === 'main_api' ? '酒馆当前连接' : ''),
     model: diagnostics?.model
       || apiResult?.model
-      || (task.apiMode === 'main_api' ? '閰掗涓?API' : ''),
+      || (task.apiMode === 'main_api' ? '酒馆主 API' : ''),
     url: diagnostics?.url
       || apiResult?.url
-      || (task.apiMode === 'main_api' ? '閰掗褰撳墠杩炴帴' : ''),
+      || (task.apiMode === 'main_api' ? '酒馆当前连接' : ''),
     httpStatus: diagnostics?.httpStatus ?? apiResult?.httpStatus ?? '',
     transport: buildGenerationTransportLog(plan, apiResult, diagnostics),
     messages,
@@ -806,7 +806,7 @@ async function runAffectionBuildCandidate(candidate, pending, options) {
     stages: [],
     profileDraft: null,
     source: candidate.source,
-    error: candidate.initialValueTenths === null ? '缂哄皯鍚堟硶 affection_first 鍒濆€笺€? : '',
+    error: candidate.initialValueTenths === null ? '缺少合法 affection_first 初值。' : '',
     createdAt: now,
     createdAtMs: Date.now(),
     updatedAt: now,
@@ -871,7 +871,7 @@ async function runAffectionBuildCandidate(candidate, pending, options) {
         apiResult: result.apiResult,
         transportPlan: result.apiResult?.transportPlan || null,
         parsedResult: result.parsed,
-        error: new Error(`寤烘。缁撴灉澶辨晥锛?{validation.reason}`),
+        error: new Error(`建档结果失效：${validation.reason}`),
       });
       return validation.task || { ...task, buildStatus: 'stale', error: validation.reason };
     }
@@ -968,9 +968,9 @@ export async function startAffectionProfileBuildsForPending(
 export async function runAffectionProfileBuildApiPreview({ roleName, initialValueTenths } = {}) {
   const normalizedRoleName = normalizeAffectionRoleName(roleName);
   const value = Number(initialValueTenths);
-  if (!normalizedRoleName) throw new Error('璇疯緭鍏ヨ娴嬭瘯鐨勮鑹插悕銆?);
+  if (!normalizedRoleName) throw new Error('请输入要测试的角色名。');
   if (!Number.isInteger(value) || value < 0 || value > 1000) {
-    throw new Error('鍒濆濂芥劅蹇呴』鏄?0鈥?00銆佹渶澶氫竴浣嶅皬鏁般€?);
+    throw new Error('初始好感必须是 0—100、最多一位小数。');
   }
   const settings = getGlobalSettings();
   const affection = getAffectionSettings(settings);
@@ -1049,16 +1049,16 @@ export function updatePendingAffectionDelta({
   const cleanFingerprint = String(fingerprint || '').trim();
   const nextDeltaTenths = Number(deltaTenths);
   if (!cleanRoleName || !cleanFingerprint || !AFFECTION_ALLOWED_DELTA_TENTHS.includes(nextDeltaTenths)) {
-    throw new Error('寰呯‘璁ゅソ鎰熷彉鍖栧弬鏁版棤鏁堛€?);
+    throw new Error('待确认好感变化参数无效。');
   }
   const store = getAffectionSystemState(chatState);
   const pending = getAffectionPendingItem(store, messageId, cleanFingerprint);
-  if (!pending) throw new Error('褰撳墠閫変腑鍥炲娌℃湁鍙紪杈戠殑濂芥劅 pending銆?);
+  if (!pending) throw new Error('当前选中回复没有可编辑的好感 pending。');
   const change = (Array.isArray(pending.changes) ? pending.changes : [])
     .find(item => normalizeAffectionRoleName(item?.roleName) === cleanRoleName);
-  if (!change) throw new Error(`鏈壘鍒般€?{cleanRoleName}銆嶇殑寰呯‘璁ゅ彉鍖栥€俙);
+  if (!change) throw new Error(`未找到「${cleanRoleName}」的待确认变化。`);
   const profile = isPlainObject(store.profiles?.[cleanRoleName]) ? store.profiles[cleanRoleName] : null;
-  if (!profile) throw new Error(`銆?{cleanRoleName}銆嶅皻鏃犳寮忓ソ鎰熸。妗堛€俙);
+  if (!profile) throw new Error(`「${cleanRoleName}」尚无正式好感档案。`);
   const ledger = recalculateAffectionLedger(profile.initialValueTenths, profile.records);
   change.deltaTenths = nextDeltaTenths;
   change.valueBeforeTenths = ledger.valueTenths;
@@ -1121,9 +1121,9 @@ export async function adjustAffectionProfileValue({
   const target = Number(targetValueTenths);
   const store = getAffectionSystemState(chatState);
   const profile = isPlainObject(store.profiles?.[cleanRoleName]) ? store.profiles[cleanRoleName] : null;
-  if (!profile) throw new Error(`鏈壘鍒般€?{cleanRoleName}銆嶇殑濂芥劅妗ｆ銆俙);
+  if (!profile) throw new Error(`未找到「${cleanRoleName}」的好感档案。`);
   if (!Number.isInteger(target) || target < 0 || target > 1000) {
-    throw new Error('褰撳墠濂芥劅蹇呴』鏄?0鈥?00銆佹渶澶氫竴浣嶅皬鏁般€?);
+    throw new Error('当前好感必须是 0—100、最多一位小数。');
   }
   const timestamp = formatTimestamp();
   const record = createManualAffectionAdjustmentRecord({
@@ -1177,7 +1177,7 @@ export async function applyAffectionProfileStages({
   const cleanRoleName = normalizeAffectionRoleName(roleName);
   const store = getAffectionSystemState(chatState);
   const profile = isPlainObject(store.profiles?.[cleanRoleName]) ? store.profiles[cleanRoleName] : null;
-  if (!profile) throw new Error(`鏈壘鍒般€?{cleanRoleName}銆嶇殑濂芥劅妗ｆ銆俙);
+  if (!profile) throw new Error(`未找到「${cleanRoleName}」的好感档案。`);
   const normalizedStages = normalizeAffectionProfileStages(stages);
   const ledger = recalculateAffectionLedger(profile.initialValueTenths, profile.records);
   store.profiles[cleanRoleName] = {
@@ -1209,7 +1209,7 @@ export async function regenerateAffectionProfileStages({
   const cleanRoleName = normalizeAffectionRoleName(roleName);
   const store = getAffectionSystemState(chatState);
   const profile = isPlainObject(store.profiles?.[cleanRoleName]) ? store.profiles[cleanRoleName] : null;
-  if (!profile) throw new Error(`鏈壘鍒般€?{cleanRoleName}銆嶇殑濂芥劅妗ｆ銆俙);
+  if (!profile) throw new Error(`未找到「${cleanRoleName}」的好感档案。`);
   const affection = getAffectionSettings(settings);
   const cleanApiMode = ['main_api', 'secondary_api'].includes(apiMode)
     ? apiMode
@@ -1275,9 +1275,9 @@ export async function retryAffectionBuildTask({ taskKey } = {}, {
 } = {}) {
   const store = getAffectionSystemState(chatState);
   const task = store.buildTasks?.[String(taskKey || '')];
-  if (!isPlainObject(task)) throw new Error('寰呴噸璇曠殑涓撳睘寤烘。浠诲姟宸茬粡涓嶅瓨鍦ㄣ€?);
+  if (!isPlainObject(task)) throw new Error('待重试的专属建档任务已经不存在。');
   const pending = getAffectionPendingItem(store, task.messageId, task.fingerprint);
-  if (!pending) throw new Error('寤烘。鏉ユ簮鍥炲宸茬粡澶辨晥锛屾棤娉曢噸璇曘€?);
+  if (!pending) throw new Error('建档来源回复已经失效，无法重试。');
   return startAffectionProfileBuildsForPending(pending, {
     settings,
     chatState,
@@ -1297,12 +1297,12 @@ export function updateAffectionBuildTaskInitialValue({
   const value = Number(initialValueTenths);
   const store = getAffectionSystemState(chatState);
   const task = store.buildTasks?.[String(taskKey || '')];
-  if (!isPlainObject(task)) throw new Error('寰呭鐞嗙殑棣栨寤烘。浠诲姟宸茬粡涓嶅瓨鍦ㄣ€?);
+  if (!isPlainObject(task)) throw new Error('待处理的首次建档任务已经不存在。');
   if (!Number.isInteger(value) || value < 0 || value > 1000) {
-    throw new Error('鍒濆濂芥劅蹇呴』鏄?0鈥?00銆佹渶澶氫竴浣嶅皬鏁般€?);
+    throw new Error('初始好感必须是 0—100、最多一位小数。');
   }
   const pending = getAffectionPendingItem(store, task.messageId, task.fingerprint);
-  if (!pending) throw new Error('寤烘。鏉ユ簮鍥炲宸茬粡澶辨晥锛屾棤娉曡ˉ鍏呭垵濮嬪ソ鎰熴€?);
+  if (!pending) throw new Error('建档来源回复已经失效，无法补充初始好感。');
   task.initialValueTenths = value;
   task.error = '';
   task.updatedAt = formatTimestamp();
@@ -1322,7 +1322,7 @@ export async function useGenericAffectionBuildTask({ taskKey } = {}, {
   const store = getAffectionSystemState(chatState);
   const task = store.buildTasks?.[String(taskKey || '')];
   if (!isPlainObject(task) || !Number.isInteger(Number(task.initialValueTenths))) {
-    throw new Error('璇ュ缓妗ｄ换鍔＄己灏戝悎娉曞垵濮嬪ソ鎰燂紝鏃犳硶鏀圭敤閫氱敤闃舵銆?);
+    throw new Error('该建档任务缺少合法初始好感，无法改用通用阶段。');
   }
   task.buildMode = 'generic';
   task.stages = createGenericAffectionStages();
@@ -1366,7 +1366,7 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
         index,
         roleName: entry.roleName,
         value: entry.extraParts.join('|'),
-        message: 'AI 寮傚父杈撳嚭浜?affection 绗笁娈碉紝宸插拷鐣ュ苟鐢辫处鏈噸绠椼€?,
+        message: 'AI 异常输出了 affection 第三段，已忽略并由账本重算。',
       });
     }
     return entry;
@@ -1378,7 +1378,7 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
         code: 'first_extra_fields',
         index,
         roleName: entry.roleName,
-        message: 'affection_first 鍙厑璁歌鑹插悕涓庡垵濮嬪ソ鎰熶袱娈碉紝澶氫綑瀛楁宸插拷鐣ャ€?,
+        message: 'affection_first 只允许角色名与初始好感两段，多余字段已忽略。',
       });
     }
     return entry;
@@ -1403,7 +1403,7 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
       diagnostics.push({
         code: 'change_without_profile_or_first',
         roleName: item.roleName,
-        message: `銆?{item.roleName}銆嶅皻鏈缓妗ｄ笖鏈疆娌℃湁鍚堟硶 affection_first锛屾棤娉曡绠楀綋鍓嶅ソ鎰燂紝宸叉嫆缁濊 affection銆俙,
+        message: `「${item.roleName}」尚未建档且本轮没有合法 affection_first，无法计算当前好感，已拒绝该 affection。`,
       });
       return [];
     }
@@ -1412,7 +1412,7 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
       diagnostics.push({
         code: 'first_suppresses_same_turn_change',
         roleName: item.roleName,
-        message: `銆?{item.roleName}銆嶆湰杞负棣栨寤烘。锛宎ffection_first 宸茶〃绀烘ゼ灞傜粨鏉熷悗鐨勫垵濮嬪ソ鎰燂紱鍚岃鑹?affection 宸插拷鐣ャ€俙,
+        message: `「${item.roleName}」本轮为首次建档，affection_first 已表示楼层结束后的初始好感；同角色 affection 已忽略。`,
       });
       return [];
     }
@@ -1433,7 +1433,7 @@ export function parseAffectionUpdateFromMemory(memoryText, { profiles = {} } = {
   ) {
     diagnostics.push({
       code: 'no_resolvable_change',
-      message: '鏈疆娌℃湁鍙绠楀綋鍓嶅€肩殑 affection锛屽凡瑙勮寖鍖栦负鏃犲彉鍖栥€?,
+      message: '本轮没有可计算当前值的 affection，已规范化为无变化。',
     });
   }
   const firsts = normalizedFirsts.items;
@@ -1516,7 +1516,7 @@ export function processAffectionUpdateFromSummaryResult(
   if (!isAffectionAnalysisActive(settings)) return null;
   const prepared = analysis || prepareAffectionUpdateFromSummaryResult(result, { settings, chatState });
   if (!prepared) {
-    console.warn('[铚冪伒鍔╂墜] 鏈疆灏忔€荤粨鏈繑鍥?affection / affection_first锛屽凡璺宠繃濂芥劅 pending銆?);
+    console.warn('[蜃灵助手] 本轮小总结未返回 affection / affection_first，已跳过好感 pending。');
     return null;
   }
   const fingerprint = getMessageContentFingerprint(messageId, settings);
@@ -1532,7 +1532,7 @@ export function processAffectionUpdateFromSummaryResult(
       chatId: getContextInfo().chatId,
       persist,
     }).catch(error => {
-      console.error('[铚冪伒鍔╂墜] 濂芥劅棣栨瑙掕壊棰勫缓妗ｅけ璐ャ€?, error);
+      console.error('[蜃灵助手] 好感首次角色预建档失败。', error);
     });
   }
   return { ...prepared, pending, fingerprint };
@@ -1604,7 +1604,7 @@ export async function commitAffectionUpdateFromConfirmedSummary(
         roleName,
       });
       if (!isMatchingReadyProfileDraft(task, first)) {
-        throw new Error(`濂芥劅棣栨寤烘。鏈畬鎴愶細${roleName || '鏈煡瑙掕壊'}`);
+        throw new Error(`好感首次建档未完成：${roleName || '未知角色'}`);
       }
       const ledger = recalculateAffectionLedger(task.profileDraft.initialValueTenths, task.profileDraft.records);
       store.profiles[roleName] = {
@@ -1846,7 +1846,7 @@ export function registerAffectionWorkflowEvents() {
   const tavernEvents = getTavernEventsSafe();
   const syncHandler = () => {
     void syncAffectionInjection().catch(error => {
-      console.warn('[铚冪伒鍔╂墜] 濂芥劅鏀荤暐鐘舵€佹敞鍏ュ埛鏂板け璐ャ€?, error);
+      console.warn('[蜃灵助手] 好感攻略状态注入刷新失败。', error);
     });
   };
   [
