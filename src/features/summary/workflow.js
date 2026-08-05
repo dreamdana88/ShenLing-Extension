@@ -5,6 +5,7 @@ import {
   SUMMARY_EVENT_DELAY_MS,
 } from '../../constants.js';
 import {
+  cloneData,
   extractSummarySourceContent,
   formatTimestamp,
   isPlainObject,
@@ -456,6 +457,7 @@ export async function generateSummaryMemory(prompt, {
   apiMode = '',
   transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
   transportPlan = null,
+  profileSnapshot = null,
   timeoutMs,
   timeoutMessage,
 } = {}) {
@@ -527,7 +529,8 @@ export async function generateSummaryMemory(prompt, {
     }
   }
 
-  const profile = requireWorkflowOption('getActiveApiProfile')(settings);
+  // Multi-request tasks may pass a frozen profileSnapshot; do not re-read Active Profile.
+  const profile = profileSnapshot || requireWorkflowOption('getActiveApiProfile')(settings);
   let apiResult = null;
   try {
     apiResult = await generateWithSecondaryApi({
@@ -583,7 +586,12 @@ export async function generateSummaryMemory(prompt, {
   }
 }
 
-function createManualSummaryGenerationOptions(type, transportPolicy, transportPlan = null) {
+function createManualSummaryGenerationOptions(
+  type,
+  transportPolicy,
+  transportPlan = null,
+  profileSnapshot = null,
+) {
   const settings = getGlobalSettings();
   const plan = transportPlan || resolveSummaryTransportPlan({
     transportPolicy,
@@ -593,9 +601,21 @@ function createManualSummaryGenerationOptions(type, transportPolicy, transportPl
     type,
     transportPolicy,
     transportPlan: plan,
+    profileSnapshot,
     timeoutMs: MANUAL_SUMMARY_GENERATION_TIMEOUT_MS,
     timeoutMessage: buildManualSummaryTimeoutMessage(type, plan.apiMode, plan),
   };
+}
+
+/**
+ * Deep-clone the current Active Profile for multi-request archive freeze.
+ * Keeps full Profile fields (including secrets for request use only).
+ * Never put the snapshot into transportPlan or communication logs.
+ */
+function freezeSecondaryProfileSnapshot(settings = getGlobalSettings()) {
+  const profile = requireWorkflowOption('getActiveApiProfile')(settings);
+  if (!profile || typeof profile !== 'object') return null;
+  return cloneData(profile);
 }
 
 export function parseGrandMemoryRange(content) {
@@ -1410,20 +1430,25 @@ export async function processLegacyGrandArchive({
     return;
   }
 
-  // Freeze transport for the whole multi-request archive operation at start.
+  // Freeze transport + secondary Profile for the whole multi-request archive at start.
   const frozenTransportPlan = resolveSummaryTransportPlan({
     transportPolicy,
     settings,
   });
+  const frozenProfileSnapshot = frozenTransportPlan.apiMode === 'secondary_api'
+    ? freezeSecondaryProfileSnapshot(settings)
+    : null;
   const batchGenerationOptions = createManualSummaryGenerationOptions(
     '旧聊天批次摘要',
     transportPolicy,
     frozenTransportPlan,
+    frozenProfileSnapshot,
   );
   const finalGenerationOptions = createManualSummaryGenerationOptions(
     '旧聊天大总结',
     transportPolicy,
     frozenTransportPlan,
+    frozenProfileSnapshot,
   );
 
   chatState.summary.runningTask = 'legacy_grand_memory';
