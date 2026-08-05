@@ -1,8 +1,9 @@
-import { isPlainObject } from '../../utils/text.js';
 import {
   getMemoirState,
+  normalizeCaptureDraft,
   saveChatState,
 } from '../../core/settings.js';
+import { getWorldbookApi } from '../../core/worldbook.js';
 import {
   ensureMemoirWorldbook,
   updateWorldbookWithVerification,

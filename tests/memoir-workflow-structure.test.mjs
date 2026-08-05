@@ -228,3 +228,30 @@ test('runtime configureCaptureWorkflow is a single ESM singleton', () => {
   assert.equal(getWorkflowOption('missing'), null);
   assert.equal(getWorkflowOption('addCommunicationLog')(), 1);
 });
+
+test('commit entrypoints own required external imports after Phase 6C Review Fix', async () => {
+  const captureCommit = await readMemoir('capture-commit.js');
+  const memoirCommit = await readMemoir('memoir-commit.js');
+
+  assert.match(
+    captureCommit,
+    /import\s*\{[\s\S]*\bnormalizeCaptureDraft\b[\s\S]*\}\s*from\s*['"]\.\.\/\.\.\/core\/settings\.js['"]/,
+  );
+  assert.match(
+    captureCommit,
+    /import\s*\{\s*getWorldbookApi\s*\}\s*from\s*['"]\.\.\/\.\.\/core\/worldbook\.js['"]/,
+  );
+  assert.equal(/from\s*['"]\.\.\/\.\.\/utils\/text\.js['"]/.test(captureCommit), false);
+  assert.equal(/\bisPlainObject\b/.test(captureCommit), false);
+
+  assert.match(
+    memoirCommit,
+    /import\s*\{\s*getWorldbookApi\s*\}\s*from\s*['"]\.\.\/\.\.\/core\/worldbook\.js['"]/,
+  );
+  assert.equal(/\bisPlainObject\b/.test(memoirCommit), false);
+  assert.equal(
+    /import\s*\{[\s\S]*\bverifyWorldbookEntries\b[\s\S]*\}\s*from\s*['"]\.\/worldbook-manager\.js['"]/.test(memoirCommit),
+    false,
+  );
+  assert.equal(/\bverifyWorldbookEntries\b/.test(memoirCommit), false);
+});

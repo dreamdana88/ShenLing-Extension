@@ -1,13 +1,13 @@
-import { formatTimestamp, isPlainObject } from '../../utils/text.js';
+import { formatTimestamp } from '../../utils/text.js';
 import {
   getMemoirState,
   saveChatState,
 } from '../../core/settings.js';
+import { getWorldbookApi } from '../../core/worldbook.js';
 import {
   buildMemoirBlueContent,
   ensureMemoirWorldbook,
   updateWorldbookWithVerification,
-  verifyWorldbookEntries,
 } from './worldbook-manager.js';
 
 const MEMOIR_GREEN_NAME_PREFIX = 'SLX-Memoir-Green-';
