@@ -120,7 +120,7 @@ import {
 } from './src/features/schedule/workflow.js';
 import {
   configureCaptureWorkflow,
-} from './src/features/memoir/workflow.js';
+} from './src/features/memoir/runtime.js';
 import {
   configurePlotOutlineWorkflow,
   registerPlotOutlineEvents,

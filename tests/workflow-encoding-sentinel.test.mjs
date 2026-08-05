@@ -35,10 +35,15 @@ test('affection and memoir workflows keep readable UTF-8 Chinese sentinels', asy
     'utf8',
   );
   const affectionSource = `${affectionProfile}\n${affectionInjection}`;
-  const memoirSource = await readFile(
-    new URL('../src/features/memoir/workflow.js', import.meta.url),
-    'utf8',
-  );
+  const memoirSources = await Promise.all([
+    readFile(new URL('../src/features/memoir/workflow.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/memoir/extraction.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/memoir/pending.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/memoir/memoir-commit.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/memoir/capture-generation.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/features/memoir/worldbook-manager.js', import.meta.url), 'utf8'),
+  ]);
+  const memoirSource = memoirSources.join('\n');
 
   for (const sentinel of AFFECTION_SENTINELS) {
     assert.equal(

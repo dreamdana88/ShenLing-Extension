@@ -1,36 +1,34 @@
 // 回忆录世界书面板：开关、pending 候选确认/编辑/删除、写入世界书、已记录条目、手动提炼。
 import { escapeHtml, formatTimestamp } from '../../utils/text.js';
-import {
-  getChatState,
-  getMemoirSettings,
-  getMemoirState,
-  saveChatState,
-  saveGlobalSettings,
-} from '../../core/settings.js';
 import { collectRecentGrandMemories } from '../../core/context-resolver.js';
-import { generateSummaryMemory } from '../summary/generation.js';
-import {
-  commitMemoirCandidates,
-  discardMemoirPending,
-  runManualMemoirExtraction,
-} from './workflow.js';
-import { getContextInfo } from '../../core/settings.js';
 import {
   CAPTURE_POSITIONS,
   CAPTURE_SOURCE_MODES,
   CAPTURE_TYPES,
-  buildCaptureSourceMaterial,
   clearCaptureDrafts,
-  commitCaptureDrafts,
+  getChatState,
+  getContextInfo,
+  getMemoirSettings,
+  getMemoirState,
+  removeCaptureDrafts,
+  saveChatState,
+  saveGlobalSettings,
+} from '../../core/settings.js';
+import { generateSummaryMemory } from '../summary/generation.js';
+import { commitCaptureDrafts } from './capture-commit.js';
+import { runCaptureGeneration } from './capture-generation.js';
+import {
+  buildCaptureSourceMaterial,
   filterCaptureWorldbookEntries,
   inspectCaptureOptionalSources,
   listCaptureWorldbooks,
   loadCaptureWorldbookEntries,
-  removeCaptureDrafts,
-  runCaptureGeneration,
   setCaptureWorldbookRefsForBook,
   toggleCaptureWorldbookRef,
-} from './workflow.js';
+} from './capture-material.js';
+import { commitMemoirCandidates } from './memoir-commit.js';
+import { discardMemoirPending } from './pending.js';
+import { runManualMemoirExtraction } from './workflow.js';
 import { reconcileMemoirWorldbookState } from './worldbook-manager.js';
 
 let panelOptions = { refreshPanel: () => {} };

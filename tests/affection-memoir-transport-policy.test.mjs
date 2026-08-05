@@ -10,10 +10,8 @@ import {
 import { startAffectionProfileBuildsForPending } from '../src/features/affection/lifecycle.js';
 import { configureAffectionWorkflow } from '../src/features/affection/runtime.js';
 import { regenerateAffectionProfileStages } from '../src/features/affection/workflow.js';
-import {
-  configureCaptureWorkflow,
-  runCaptureGeneration,
-} from '../src/features/memoir/workflow.js';
+import { runCaptureGeneration } from '../src/features/memoir/capture-generation.js';
+import { configureCaptureWorkflow } from '../src/features/memoir/runtime.js';
 
 const SECRET = 'sk-policy-secret-never-log';
 const secondaryProfile = {

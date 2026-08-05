@@ -26,10 +26,10 @@ import { startAffectionProfileBuildsForPending } from '../src/features/affection
 import { createGenericAffectionStages } from '../src/features/affection/profile.js';
 import { configureAffectionWorkflow } from '../src/features/affection/runtime.js';
 import {
-  configureCaptureWorkflow,
-  runCaptureGeneration,
   parseCaptureGenerationResponse,
-} from '../src/features/memoir/workflow.js';
+  runCaptureGeneration,
+} from '../src/features/memoir/capture-generation.js';
+import { configureCaptureWorkflow } from '../src/features/memoir/runtime.js';
 import { generateSummaryMemory } from '../src/features/summary/generation.js';
 import { configureSummaryWorkflow } from '../src/features/summary/runtime.js';
 import { getGenerationErrorContext } from '../src/core/generation.js';

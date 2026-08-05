@@ -42,7 +42,8 @@ import {
   buildLegacyArchiveEmotionUpdatePromptSection,
   processEmotionUpdateFromArchiveResult,
 } from '../emotion-profile/workflow.js';
-import { stageMemoirCandidates, tryExtractMemoirFromGrandSummary } from '../memoir/workflow.js';
+import { tryExtractMemoirFromGrandSummary } from '../memoir/extraction.js';
+import { stageMemoirCandidates } from '../memoir/pending.js';
 import {
   createManualSummaryGenerationOptions,
   freezeSecondaryProfileSnapshot,

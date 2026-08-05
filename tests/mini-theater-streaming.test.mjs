@@ -275,6 +275,7 @@ test('user long-form and manual Summary share the transport resolver; confirmed 
     /affection\/workflow\.js$/,
     /affection\/generation\.js$/,
     /memoir\/workflow\.js$/,
+    /memoir\/capture-generation\.js$/,
     /summary\/workflow\.js$/,
     /summary\/generation\.js$/,
   ];
