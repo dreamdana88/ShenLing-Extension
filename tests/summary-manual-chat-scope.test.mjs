@@ -468,3 +468,237 @@ test('unavailable chat scope fails closed before model request', async () => {
     assert.equal(hostCalls.generate, 0);
   });
 });
+
+function installDeferredSetChatMessages(hostCalls, getCurrent) {
+  let resolveWrite;
+  const writeGate = new Promise(resolve => { resolveWrite = resolve; });
+  let writeStarted = false;
+  const successNotices = [];
+  const originalInfo = console.info;
+  console.info = (...args) => {
+    const text = args.map(String).join(' ');
+    if (/已为第|已重写|已重新生成/.test(text)) successNotices.push(text);
+    return originalInfo(...args);
+  };
+
+  globalThis.setChatMessages = async updates => {
+    writeStarted = true;
+    hostCalls.set.push({
+      chatId: getCurrent().chatId,
+      updates: updates.map(item => ({ ...item })),
+      phase: 'pending',
+    });
+    await writeGate;
+    for (const update of updates) {
+      const target = getCurrent().chat[Number(update.message_id)];
+      if (target) Object.assign(target, update);
+    }
+    hostCalls.set.at(-1).phase = 'done';
+    hostCalls.set.at(-1).chatIdAfter = getCurrent().chatId;
+  };
+
+  return {
+    resolveWrite: () => resolveWrite(),
+    isWriteStarted: () => writeStarted,
+    successNotices,
+    restoreConsole: () => { console.info = originalInfo; },
+  };
+}
+
+async function waitUntil(predicate, attempts = 40) {
+  for (let index = 0; index < attempts && !predicate(); index += 1) {
+    await Promise.resolve();
+  }
+}
+
+test('opening host-write pending A→B discards metadata and success path', async () => {
+  await withManualScopeHarness({}, async ({
+    contextA,
+    contextB,
+    hostCalls,
+    switchToB,
+    resolveGenerate,
+    getCurrent,
+    manualOptions,
+  }) => {
+    const write = installDeferredSetChatMessages(hostCalls, getCurrent);
+    try {
+      const run = summarizeOpeningMessage(manualOptions);
+      await Promise.resolve();
+      resolveGenerate('<memory>[n:0]\n写入后迟到\n</memory>');
+      await waitUntil(() => write.isWriteStarted());
+      assert.equal(write.isWriteStarted(), true);
+
+      const fingerprintsBeforeB = {
+        ...contextB.chatMetadata[CHAT_STATE_KEY].summary.processedMessageFingerprints,
+      };
+      const lastErrorBeforeB = contextB.chatMetadata[CHAT_STATE_KEY].summary.lastError;
+
+      switchToB();
+      write.resolveWrite();
+      await run;
+
+      assert.deepEqual(
+        contextB.chatMetadata[CHAT_STATE_KEY].summary.processedMessageFingerprints,
+        fingerprintsBeforeB,
+      );
+      assert.equal(contextB.chatMetadata[CHAT_STATE_KEY].summary.lastError, lastErrorBeforeB);
+      assert.equal(contextB.chatMetadata[CHAT_STATE_KEY].summary.runningTask, 'none');
+      // markManualMemoryProcessed must not run against either chat after scope discard.
+      assert.equal(
+        Object.keys(contextA.chatMetadata[CHAT_STATE_KEY].summary.processedMessageFingerprints || {}).length,
+        0,
+      );
+      assert.equal(write.successNotices.length, 0);
+    } finally {
+      write.restoreConsole();
+    }
+  });
+});
+
+test('rewrite host-write pending A→B skips markProcessed, Emotion and Plot', async () => {
+  await withManualScopeHarness({
+    chatA: [assistant(0, 'pad'), assistant(1, 'A 可重写正文')],
+    chatB: [assistant(0, 'pad-b'), assistant(1, 'B 同楼号不同正文')],
+  }, async ({
+    contextA,
+    contextB,
+    hostCalls,
+    switchToB,
+    resolveGenerate,
+    getCurrent,
+    manualOptions,
+  }) => {
+    contextA.chatMetadata[CHAT_STATE_KEY].emotionProfiles = { profiles: { kept: true }, pendingByMessage: {} };
+    contextB.chatMetadata[CHAT_STATE_KEY].emotionProfiles = { profiles: { kept: true }, pendingByMessage: {} };
+    contextA.chatMetadata[CHAT_STATE_KEY].outline = { enabled: true, progress: { a: 1 }, progressSources: {} };
+    contextB.chatMetadata[CHAT_STATE_KEY].outline = { enabled: true, progress: { b: 1 }, progressSources: {} };
+
+    const write = installDeferredSetChatMessages(hostCalls, getCurrent);
+    try {
+      const run = regenerateMemoryForMessage(1, manualOptions);
+      await Promise.resolve();
+      resolveGenerate('<memory>\n重写写入后迟到\n</memory>');
+      await waitUntil(() => write.isWriteStarted());
+      assert.equal(write.isWriteStarted(), true);
+
+      switchToB();
+      write.resolveWrite();
+      await run;
+
+      assert.deepEqual(
+        contextB.chatMetadata[CHAT_STATE_KEY].summary.processedMessageFingerprints,
+        {},
+      );
+      assert.deepEqual(contextB.chatMetadata[CHAT_STATE_KEY].emotionProfiles, {
+        profiles: { kept: true },
+        pendingByMessage: {},
+      });
+      assert.deepEqual(contextB.chatMetadata[CHAT_STATE_KEY].outline.progress, { b: 1 });
+      assert.equal(
+        Object.keys(contextA.chatMetadata[CHAT_STATE_KEY].summary.processedMessageFingerprints || {}).length,
+        0,
+      );
+      assert.equal(write.successNotices.length, 0);
+    } finally {
+      write.restoreConsole();
+    }
+  });
+});
+
+test('grand host-write pending A→B does not mutate records or scan metadata', async () => {
+  const grandA = '<grand_memory>\n[volume:0-0]\nA grand\n</grand_memory>';
+  const grandB = '<grand_memory>\n[volume:0-0]\nB grand\n</grand_memory>';
+  await withManualScopeHarness({
+    chatA: [assistant(0, 'A body\n<memory>A</memory>', { is_hidden: true }), assistant(1, grandA)],
+    chatB: [assistant(0, 'B body', { is_hidden: true }), assistant(1, grandB)],
+    summaryA: {
+      archiveRecords: [{
+        id: 'rec-a',
+        summaryMessageId: 1,
+        archiveFrom: 0,
+        archiveTo: 0,
+        memoryFrom: 0,
+        memoryTo: 0,
+      }],
+    },
+    summaryB: {
+      archiveRecords: [{
+        id: 'rec-b',
+        summaryMessageId: 1,
+        archiveFrom: 0,
+        archiveTo: 0,
+        memoryFrom: 9,
+        memoryTo: 9,
+      }],
+    },
+  }, async ({
+    contextA,
+    contextB,
+    hostCalls,
+    switchToB,
+    resolveGenerate,
+    getCurrent,
+    manualOptions,
+  }) => {
+    const write = installDeferredSetChatMessages(hostCalls, getCurrent);
+    const recordA = contextA.chatMetadata[CHAT_STATE_KEY].summary.archiveRecords[0];
+    const recordBBefore = structuredClone(contextB.chatMetadata[CHAT_STATE_KEY].summary.archiveRecords);
+    try {
+      const run = regenerateLatestGrandMemory(manualOptions);
+      await Promise.resolve();
+      resolveGenerate('<grand_memory>\n[volume:0-0]\n写入后迟到 grand\n</grand_memory>');
+      await waitUntil(() => write.isWriteStarted());
+      assert.equal(write.isWriteStarted(), true);
+
+      switchToB();
+      write.resolveWrite();
+      await run;
+
+      assert.deepEqual(contextB.chatMetadata[CHAT_STATE_KEY].summary.archiveRecords, recordBBefore);
+      assert.equal(recordA.memoryFrom, 0);
+      assert.equal(recordA.memoryTo, 0);
+      assert.equal(contextA.chatMetadata[CHAT_STATE_KEY].summary.runningTask, 'grand_memory');
+      assert.equal(contextB.chatMetadata[CHAT_STATE_KEY].summary.runningTask, 'none');
+      assert.equal(write.successNotices.length, 0);
+    } finally {
+      write.restoreConsole();
+    }
+  });
+});
+
+test('host-write pending A→B→A still discards post-write metadata commit', async () => {
+  await withManualScopeHarness({}, async ({
+    contextA,
+    hostCalls,
+    switchToB,
+    switchToA,
+    resolveGenerate,
+    getCurrent,
+    manualOptions,
+  }) => {
+    const write = installDeferredSetChatMessages(hostCalls, getCurrent);
+    try {
+      const run = summarizeOpeningMessage(manualOptions);
+      await Promise.resolve();
+      resolveGenerate('<memory>[n:0]\nA-B-A 写入后迟到\n</memory>');
+      await waitUntil(() => write.isWriteStarted());
+
+      switchToB();
+      switchToA();
+      // Returning to A clears stale runningTask the same way CHAT_CHANGED does.
+      contextA.chatMetadata[CHAT_STATE_KEY].summary.runningTask = 'none';
+      write.resolveWrite();
+      await run;
+
+      assert.equal(
+        Object.keys(contextA.chatMetadata[CHAT_STATE_KEY].summary.processedMessageFingerprints || {}).length,
+        0,
+      );
+      assert.equal(write.successNotices.length, 0);
+      assert.equal(contextA.chatMetadata[CHAT_STATE_KEY].summary.runningTask, 'none');
+    } finally {
+      write.restoreConsole();
+    }
+  });
+});

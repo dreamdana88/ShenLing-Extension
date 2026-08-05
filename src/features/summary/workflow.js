@@ -656,10 +656,15 @@ function finalizeManualGuardDiscard(reason, {
   scope = null,
   title = '手动总结',
   clearIgnoredMessageId = null,
+  clearIgnoredChatId = null,
   onTargetDiscard = null,
 } = {}) {
   if (clearIgnoredMessageId !== null && clearIgnoredMessageId !== undefined) {
-    clearSummaryWriteIgnored(Number(clearIgnoredMessageId));
+    // Prefer the original task chatId so we never clear B's ignore key by accident.
+    const chatIdentity = clearIgnoredChatId
+      ?? (scope && Object.hasOwn(scope, 'chatId') ? scope.chatId : undefined)
+      ?? getContextInfo().chatId;
+    clearSummaryWriteIgnored(Number(clearIgnoredMessageId), chatIdentity);
   }
   if (
     reason === MANUAL_CHAT_GUARD_REASON.CHAT_SCOPE_CHANGED
@@ -737,6 +742,22 @@ function isGrandRecordTargetValid(target) {
   const message = getChatMessageById(Number(target.summaryMessageId));
   if (!message) return false;
   return createMessageContentFingerprint(String(message.message || '')) === target.grandFingerprint;
+}
+
+/** Post-write: record binding still present; Grand floor content is expected to change. */
+function isGrandRecordTargetStillBound(target) {
+  if (!target) return false;
+  const chatState = getChatState();
+  const records = Array.isArray(chatState.summary.archiveRecords) ? chatState.summary.archiveRecords : [];
+  const record = records.find(item => (
+    Number(item?.summaryMessageId) === Number(target.summaryMessageId)
+    && (target.recordId == null || item?.id === target.recordId)
+  ));
+  if (!record) return false;
+  return (
+    Number(record.archiveFrom) === Number(target.archiveFrom)
+    && Number(record.archiveTo) === Number(target.archiveTo)
+  );
 }
 
 function captureTotalGrandPlanSnapshot(plan) {
@@ -1027,15 +1048,33 @@ export function markManualMemoryProcessed(messageId, body) {
   saveChatState();
 }
 
-export async function writeManualMemoryToMessage(messageId, memoryContent) {
+/**
+ * Write a manual memory block to a floor.
+ * Optional validateAfterWrite runs after the host write settles and before metadata commit.
+ * Default path (editor save) keeps the original markIgnored → write → markProcessed behavior.
+ */
+export async function writeManualMemoryToMessage(messageId, memoryContent, {
+  validateAfterWrite = null,
+  chatIdentity = undefined,
+} = {}) {
   const chatMessage = getEditableSummaryMessage(messageId);
   const body = stripMemoryBlock(chatMessage.message);
   if (!body) throw new Error(`第 ${Number(messageId)} 楼没有可保留的正文。`);
 
   const memory = normalizeMemoryBlock(memoryContent);
-  markSummaryWriteIgnored(Number(messageId));
+  const ignoreChatId = chatIdentity !== undefined ? chatIdentity : getContextInfo().chatId;
+  markSummaryWriteIgnored(Number(messageId), 1500, ignoreChatId);
   await setChatMessageContent(Number(messageId), `${body}\n\n${memory}`);
+
+  if (typeof validateAfterWrite === 'function') {
+    const validation = validateAfterWrite();
+    if (validation && validation.ok === false) {
+      return validation;
+    }
+  }
+
   markManualMemoryProcessed(Number(messageId), body);
+  return { ok: true, reason: null };
 }
 
 export async function summarizeOpeningMessage({
@@ -1074,7 +1113,7 @@ export async function summarizeOpeningMessage({
       ].join('\n'),
     }), createManualSummaryGenerationOptions('0楼小总结', transportPolicy));
 
-    const guard = evaluateManualChatGuards(scope, () => isManualMessageTargetValid(target));
+    let guard = evaluateManualChatGuards(scope, () => isManualMessageTargetValid(target));
     if (!guard.ok) {
       finalizeManualGuardDiscard(guard.reason, {
         scope,
@@ -1089,8 +1128,21 @@ export async function summarizeOpeningMessage({
     if (memoryReplacementResult.errors.length > 0) {
       throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
     }
-    markSummaryWriteIgnored(0);
+    const ignoreChatId = scope?.chatId ?? getContextInfo().chatId;
+    markSummaryWriteIgnored(0, 1500, ignoreChatId);
     await setChatMessageContent(0, `${body}\n\n${memoryReplacementResult.text}`);
+
+    // Host write may race with CHAT_CHANGED; re-check before any metadata / success path.
+    guard = evaluateManualChatGuards(scope, () => isManualMessageTargetValid(target));
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, {
+        scope,
+        title: '小总结管理',
+        clearIgnoredMessageId: 0,
+      });
+      return;
+    }
+
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = '';
     saveChatState();
@@ -1101,11 +1153,11 @@ export async function summarizeOpeningMessage({
     if (scope) {
       const scopeResult = evaluateChatScope(scope);
       if (!scopeResult.valid) {
-        clearSummaryWriteIgnored(0);
+        clearSummaryWriteIgnored(0, scope.chatId);
         return;
       }
     }
-    clearSummaryWriteIgnored(0);
+    clearSummaryWriteIgnored(0, scope?.chatId);
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = error.message || String(error);
     saveChatState();
@@ -1146,7 +1198,7 @@ export async function regenerateMemoryForMessage(messageId, {
       extraInstructions: joinSummaryExtraInstructions(emotionPromptSection, plotOutlineProgressSection),
     }), createManualSummaryGenerationOptions('手动重写小总结', transportPolicy));
 
-    const guard = evaluateManualChatGuards(scope, () => isManualMessageTargetValid(target));
+    let guard = evaluateManualChatGuards(scope, () => isManualMessageTargetValid(target));
     if (!guard.ok) {
       finalizeManualGuardDiscard(guard.reason, {
         scope,
@@ -1161,7 +1213,24 @@ export async function regenerateMemoryForMessage(messageId, {
     if (memoryReplacementResult.errors.length > 0) {
       throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
     }
-    await writeManualMemoryToMessage(Number(messageId), memoryReplacementResult.text);
+
+    // Scheme A: host write first; markProcessed only if post-write scope/target still valid.
+    const writeResult = await writeManualMemoryToMessage(Number(messageId), memoryReplacementResult.text, {
+      chatIdentity: scope?.chatId,
+      validateAfterWrite: () => evaluateManualChatGuards(
+        scope,
+        () => isManualMessageTargetValid(target),
+      ),
+    });
+    if (writeResult && writeResult.ok === false) {
+      finalizeManualGuardDiscard(writeResult.reason, {
+        scope,
+        title: '重写小总结',
+        clearIgnoredMessageId: Number(messageId),
+      });
+      return;
+    }
+
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = '';
     saveChatState();
@@ -1173,11 +1242,11 @@ export async function regenerateMemoryForMessage(messageId, {
     if (scope) {
       const scopeResult = evaluateChatScope(scope);
       if (!scopeResult.valid) {
-        clearSummaryWriteIgnored(Number(messageId));
+        clearSummaryWriteIgnored(Number(messageId), scope.chatId);
         return;
       }
     }
-    clearSummaryWriteIgnored(Number(messageId));
+    clearSummaryWriteIgnored(Number(messageId), scope?.chatId);
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = error.message || String(error);
     saveChatState();
@@ -1441,7 +1510,7 @@ export async function regenerateLatestGrandMemory({
       createManualSummaryGenerationOptions('重新生成大总结', transportPolicy),
     );
 
-    const guard = evaluateManualChatGuards(scope, () => isGrandRecordTargetValid(target));
+    let guard = evaluateManualChatGuards(scope, () => isGrandRecordTargetValid(target));
     if (!guard.ok) {
       finalizeManualGuardDiscard(guard.reason, {
         scope,
@@ -1452,8 +1521,21 @@ export async function regenerateLatestGrandMemory({
     }
 
     const grandMemory = forceGrandMemoryRange(result, archiveData.memoryFrom, archiveData.memoryTo);
-    markSummaryWriteIgnored(Number(record.summaryMessageId));
+    const ignoreChatId = scope?.chatId ?? getContextInfo().chatId;
+    markSummaryWriteIgnored(Number(record.summaryMessageId), 1500, ignoreChatId);
     await setChatMessageContent(Number(record.summaryMessageId), grandMemory);
+
+    // Floor content intentionally changed; re-check scope + record binding only.
+    guard = evaluateManualChatGuards(scope, () => isGrandRecordTargetStillBound(target));
+    if (!guard.ok) {
+      finalizeManualGuardDiscard(guard.reason, {
+        scope,
+        title: '归档管理器',
+        clearIgnoredMessageId: Number(record.summaryMessageId),
+      });
+      return;
+    }
+
     record.memoryFrom = archiveData.memoryFrom;
     record.memoryTo = archiveData.memoryTo;
 
@@ -1467,11 +1549,11 @@ export async function regenerateLatestGrandMemory({
     if (scope) {
       const scopeResult = evaluateChatScope(scope);
       if (!scopeResult.valid) {
-        clearSummaryWriteIgnored(Number(record.summaryMessageId));
+        clearSummaryWriteIgnored(Number(record.summaryMessageId), scope.chatId);
         return;
       }
     }
-    clearSummaryWriteIgnored(Number(record.summaryMessageId));
+    clearSummaryWriteIgnored(Number(record.summaryMessageId), scope?.chatId);
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = error.message || String(error);
     saveChatState();
