@@ -1,9 +1,4 @@
-// 回忆录世界书业务流程。
-// 阶段 3a：确保当前聊天有经过用户确认的可写入世界书。
-//   - 当前聊天无绑定 -> 新建「蜃灵回忆录｜<聊天标识>」并绑定。
-//   - 已绑定且本聊天确认过 -> 直接复用。
-//   - 已绑定但未确认/绑定已变化 -> 由 UI 询问：复用当前书，或创建蜃灵专属书并切换绑定。
-
+﻿// 鍥炲繂褰曚笘鐣屼功涓氬姟娴佺▼銆?// 闃舵 3a锛氱‘淇濆綋鍓嶈亰澶╂湁缁忚繃鐢ㄦ埛纭鐨勫彲鍐欏叆涓栫晫涔︺€?//   - 褰撳墠鑱婂ぉ鏃犵粦瀹?-> 鏂板缓銆岃渻鐏靛洖蹇嗗綍锝?鑱婂ぉ鏍囪瘑>銆嶅苟缁戝畾銆?//   - 宸茬粦瀹氫笖鏈亰澶╃‘璁よ繃 -> 鐩存帴澶嶇敤銆?//   - 宸茬粦瀹氫絾鏈‘璁?缁戝畾宸插彉鍖?-> 鐢?UI 璇㈤棶锛氬鐢ㄥ綋鍓嶄功锛屾垨鍒涘缓铚冪伒涓撳睘涔﹀苟鍒囨崲缁戝畾銆?
 import {
   GRAND_MEMORY_BLOCK_RE,
   getLongFormGenerationTimeoutMessage,
@@ -69,9 +64,9 @@ import {
 
 export { ensureMemoirWorldbook, isDedicatedMemoirBook } from './worldbook-manager.js';
 
-// ── 阶段 3b：大总结后提炼回忆候选（只解析，不写入世界书）──────────────
+// 鈹€鈹€ 闃舵 3b锛氬ぇ鎬荤粨鍚庢彁鐐煎洖蹇嗗€欓€夛紙鍙В鏋愶紝涓嶅啓鍏ヤ笘鐣屼功锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-/** 用大总结的 messageId + 区间作为幂等键，避免同一次归档重复提炼。 */
+/** 鐢ㄥぇ鎬荤粨鐨?messageId + 鍖洪棿浣滀负骞傜瓑閿紝閬垮厤鍚屼竴娆″綊妗ｉ噸澶嶆彁鐐笺€?*/
 function buildSourceKey(archiveRecord = {}) {
   const id = archiveRecord.summaryMessageId ?? archiveRecord.id ?? '';
   const from = archiveRecord.memoryFrom ?? archiveRecord.archiveFrom ?? '';
@@ -79,22 +74,22 @@ function buildSourceKey(archiveRecord = {}) {
   return `grand:${id}:${from}-${to}`;
 }
 
-/** 把情感档案压成提炼素材可读的短文本。 */
+/** 鎶婃儏鎰熸。妗堝帇鎴愭彁鐐肩礌鏉愬彲璇荤殑鐭枃鏈€?*/
 function buildEmotionMaterial() {
   const profiles = collectEmotionProfiles({ includeAll: true });
   if (!profiles.length) return '';
   return profiles
     .map(p => {
       const parts = [
-        p.currentStatus ? `状态：${p.currentStatus}` : '',
-        p.relationshipToUser ? `与{{user}}关系：${p.relationshipToUser}` : '',
-      ].filter(Boolean).join('；');
-      return `- ${p.roleName}｜${parts}`;
+        p.currentStatus ? `鐘舵€侊細${p.currentStatus}` : '',
+        p.relationshipToUser ? `涓巤{user}}鍏崇郴锛?{p.relationshipToUser}` : '',
+      ].filter(Boolean).join('锛?);
+      return `- ${p.roleName}锝?{parts}`;
     })
     .join('\n');
 }
 
-/** 把已记录条目压成「事件 / 人 / 关键锚点」简表，供 AI 去重参考。 */
+/** 鎶婂凡璁板綍鏉＄洰鍘嬫垚銆屼簨浠?/ 浜?/ 鍏抽敭閿氱偣銆嶇畝琛紝渚?AI 鍘婚噸鍙傝€冦€?*/
 function buildRecordedList(memoir) {
   const entries = Array.isArray(memoir.entries) ? memoir.entries : [];
   if (!entries.length) return '';
@@ -102,15 +97,15 @@ function buildRecordedList(memoir) {
     .map(e => {
       const people = Array.isArray(e.mainKeywords) ? e.mainKeywords.slice(0, 2).join('/') : '';
       const anchor = Array.isArray(e.filterKeywords) ? e.filterKeywords.slice(0, 2).join('/') : '';
-      return `- ${e.title || '未命名'}${people ? ` / ${people}` : ''}${anchor ? ` / ${anchor}` : ''}`;
+      return `- ${e.title || '鏈懡鍚?}${people ? ` / ${people}` : ''}${anchor ? ` / ${anchor}` : ''}`;
     })
     .join('\n');
 }
 
-/** 宽松解析模型输出：容忍 ```json 代码块包裹或前后杂讯。 */
+/** 瀹芥澗瑙ｆ瀽妯″瀷杈撳嚭锛氬蹇?```json 浠ｇ爜鍧楀寘瑁规垨鍓嶅悗鏉傝銆?*/
 function parseMemoirJson(raw) {
   const text = String(raw || '').trim();
-  if (!text) throw new Error('模型无输出。');
+  if (!text) throw new Error('妯″瀷鏃犺緭鍑恒€?);
   let jsonText = text;
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fence) {
@@ -124,7 +119,7 @@ function parseMemoirJson(raw) {
   try {
     parsed = JSON.parse(jsonText);
   } catch (error) {
-    throw new Error(`回忆录 JSON 解析失败：${error.message}`);
+    throw new Error(`鍥炲繂褰?JSON 瑙ｆ瀽澶辫触锛?{error.message}`);
   }
   const memories = Array.isArray(parsed?.memories) ? parsed.memories : [];
   const overview = Array.isArray(parsed?.overview) ? parsed.overview : [];
@@ -132,16 +127,10 @@ function parseMemoirJson(raw) {
 }
 
 /**
- * 大总结完成后尝试提炼回忆候选。
- * 只负责「门控 → 幂等 → 收集素材 → 调 API → 解析」，不写世界书、不改 sourceProcessed。
- * 写入与幂等标记留待阶段四/五。
- *
- * @param {object} archiveRecord 来自 processAutoGrandMemory 的归档记录
- * @param {object} deps
- *   - generate: (prompt, opts) => Promise<string>  复用大总结链路（跟随设置里选的主/副 API）
- *   - grandMemoryText: string 本次大总结正文
- *   - force: boolean 诊断试跑用；跳过 enabled 门控与 sourceProcessed 幂等，强制走一次生成
- * @returns {Promise<{ skipped?: string, sourceKey?: string, prompt?: string, raw?: string,
+ * 澶ф€荤粨瀹屾垚鍚庡皾璇曟彁鐐煎洖蹇嗗€欓€夈€? * 鍙礋璐ｃ€岄棬鎺?鈫?骞傜瓑 鈫?鏀堕泦绱犳潗 鈫?璋?API 鈫?瑙ｆ瀽銆嶏紝涓嶅啓涓栫晫涔︺€佷笉鏀?sourceProcessed銆? * 鍐欏叆涓庡箓绛夋爣璁扮暀寰呴樁娈靛洓/浜斻€? *
+ * @param {object} archiveRecord 鏉ヨ嚜 processAutoGrandMemory 鐨勫綊妗ｈ褰? * @param {object} deps
+ *   - generate: (prompt, opts) => Promise<string>  澶嶇敤澶ф€荤粨閾捐矾锛堣窡闅忚缃噷閫夌殑涓?鍓?API锛? *   - grandMemoryText: string 鏈澶ф€荤粨姝ｆ枃
+ *   - force: boolean 璇婃柇璇曡窇鐢紱璺宠繃 enabled 闂ㄦ帶涓?sourceProcessed 骞傜瓑锛屽己鍒惰蛋涓€娆＄敓鎴? * @returns {Promise<{ skipped?: string, sourceKey?: string, prompt?: string, raw?: string,
  *   overview: any[], memories: any[] }>}
  */
 export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate, grandMemoryText, force = false } = {}) {
@@ -150,14 +139,13 @@ export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate
     return { skipped: 'disabled', overview: [], memories: [] };
   }
   if (typeof generate !== 'function') {
-    throw new Error('未提供生成函数，无法提炼回忆候选。');
+    throw new Error('鏈彁渚涚敓鎴愬嚱鏁帮紝鏃犳硶鎻愮偧鍥炲繂鍊欓€夈€?);
   }
 
-  // 提炼前先检查真实世界书；整本书已删除时清掉旧索引/来源，避免旧记录继续影响去重素材。
-  try {
+  // 鎻愮偧鍓嶅厛妫€鏌ョ湡瀹炰笘鐣屼功锛涙暣鏈功宸插垹闄ゆ椂娓呮帀鏃х储寮?鏉ユ簮锛岄伩鍏嶆棫璁板綍缁х画褰卞搷鍘婚噸绱犳潗銆?  try {
     await reconcileMemoirWorldbookState();
   } catch (error) {
-    console.warn('[蜃灵助手] 提炼前同步回忆录世界书失败，将保留现有本地状态。', error);
+    console.warn('[铚冪伒鍔╂墜] 鎻愮偧鍓嶅悓姝ュ洖蹇嗗綍涓栫晫涔﹀け璐ワ紝灏嗕繚鐣欑幇鏈夋湰鍦扮姸鎬併€?, error);
   }
   const memoir = getMemoirState();
   const sourceKey = buildSourceKey(archiveRecord);
@@ -184,13 +172,13 @@ export async function tryExtractMemoirFromGrandSummary(archiveRecord, { generate
     template: resolvePromptText(PROMPT_IDS.MEMOIR_EXTRACT, settings),
   });
 
-  const raw = await generate(prompt, { type: '回忆录提炼', apiMode: memoirSettings.apiMode });
+  const raw = await generate(prompt, { type: '鍥炲繂褰曟彁鐐?, apiMode: memoirSettings.apiMode });
   const { overview, memories } = parseMemoirJson(raw);
 
   return { sourceKey, prompt, raw, overview, memories };
 }
 
-// ── 阶段四：候选暂存到 pending，交用户确认 ────────────────────────────
+// 鈹€鈹€ 闃舵鍥涳細鍊欓€夋殏瀛樺埌 pending锛屼氦鐢ㄦ埛纭 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 function createCandidateId(index) {
   try {
@@ -201,14 +189,14 @@ function createCandidateId(index) {
   return `cand-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${index}`;
 }
 
-/** 规范化单条绿灯候选，容错缺字段。创建后即持久化稳定 candidateId，供面板和失败重试复用。 */
+/** 瑙勮寖鍖栧崟鏉＄豢鐏€欓€夛紝瀹归敊缂哄瓧娈点€傚垱寤哄悗鍗虫寔涔呭寲绋冲畾 candidateId锛屼緵闈㈡澘鍜屽け璐ラ噸璇曞鐢ㄣ€?*/
 function normalizeCandidate(mem, index) {
   const asArray = v => (Array.isArray(v) ? v.map(s => String(s).trim()).filter(Boolean) : []);
   const importance = ['high', 'medium', 'low'].includes(mem?.importance) ? mem.importance : 'medium';
   return {
     candidateId: createCandidateId(index),
-    title: String(mem?.title || '').trim() || '未命名回忆',
-    storyTime: String(mem?.storyTime || '').trim() || '未明',
+    title: String(mem?.title || '').trim() || '鏈懡鍚嶅洖蹇?,
+    storyTime: String(mem?.storyTime || '').trim() || '鏈槑',
     importance,
     participants: asArray(mem?.participants),
     mainKeywords: asArray(mem?.mainKeywords),
@@ -217,14 +205,14 @@ function normalizeCandidate(mem, index) {
   };
 }
 
-/** 把提炼结果规范化后暂存到 chatState.memoir.pending，等待用户确认。 */
+/** 鎶婃彁鐐肩粨鏋滆鑼冨寲鍚庢殏瀛樺埌 chatState.memoir.pending锛岀瓑寰呯敤鎴风‘璁ゃ€?*/
 export function stageMemoirCandidates({ sourceKey, overview, memories } = {}) {
   const memoir = getMemoirState();
   const candidates = (Array.isArray(memories) ? memories : [])
     .map((m, i) => normalizeCandidate(m, i))
-    .filter(c => c.content); // 无正文的丢弃
+    .filter(c => c.content); // 鏃犳鏂囩殑涓㈠純
 
-  // digest 从 overview 里按 title 对齐补进候选，供面板/蓝灯使用
+  // digest 浠?overview 閲屾寜 title 瀵归綈琛ヨ繘鍊欓€夛紝渚涢潰鏉?钃濈伅浣跨敤
   const overviewList = Array.isArray(overview) ? overview : [];
   const digestByTitle = new Map(
     overviewList
@@ -244,7 +232,7 @@ export function stageMemoirCandidates({ sourceKey, overview, memories } = {}) {
   const sourceKeys = [...new Set([...previousSourceKeys, sourceKey].filter(Boolean))];
 
   memoir.pending = {
-    sourceKey: sourceKeys[0] || '', // 兼容旧状态读取；新代码以 sourceKeys 为准
+    sourceKey: sourceKeys[0] || '', // 鍏煎鏃х姸鎬佽鍙栵紱鏂颁唬鐮佷互 sourceKeys 涓哄噯
     sourceKeys,
     candidates: [...(previous?.candidates || []), ...candidates],
     generatedAt: formatTimestamp(),
@@ -253,21 +241,21 @@ export function stageMemoirCandidates({ sourceKey, overview, memories } = {}) {
   return memoir.pending;
 }
 
-/** 丢弃当前 pending 候选（用户点“全部忽略”）。 */
+/** 涓㈠純褰撳墠 pending 鍊欓€夛紙鐢ㄦ埛鐐光€滃叏閮ㄥ拷鐣モ€濓級銆?*/
 export function discardMemoirPending() {
   const memoir = getMemoirState();
   memoir.pending = null;
   saveChatState();
 }
 
-// ── 阶段五：把确认后的候选写入世界书 ─────────────────────────────────
+// 鈹€鈹€ 闃舵浜旓細鎶婄‘璁ゅ悗鐨勫€欓€夊啓鍏ヤ笘鐣屼功 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 const MEMOIR_GREEN_NAME_PREFIX = 'SLX-Memoir-Green-';
-const MEMOIR_BLUE_NAME = 'SLX-Memoir-Blue-回忆录总览';
+const MEMOIR_BLUE_NAME = 'SLX-Memoir-Blue-鍥炲繂褰曟€昏';
 
-/** 绿灯条目正文：时间前置，AI 可读，不含来源信息。 */
+/** 缁跨伅鏉＄洰姝ｆ枃锛氭椂闂村墠缃紝AI 鍙锛屼笉鍚潵婧愪俊鎭€?*/
 function buildGreenContent(entry) {
-  const time = entry.storyTime && entry.storyTime !== '未明' ? `【${entry.storyTime}】` : '';
+  const time = entry.storyTime && entry.storyTime !== '鏈槑' ? `銆?{entry.storyTime}銆慲 : '';
   return `${time}${entry.content}`.trim();
 }
 
@@ -275,13 +263,10 @@ function normalizeWorldbookContent(content) {
   return String(content || '').replace(/\r\n/g, '\n').trim();
 }
 
-// 插入顺序（order）：蓝灯总览固定 900，绿灯从 901 起按记录（≈剧情）顺序逐条 +1。
-// 说明：memoir.entries 的数组顺序就是记录顺序，因大总结按剧情推进依次处理，天然即时间序；
-// storyTime 是自由文本（不同世界的纪年/时段各异），不做字符串排序，避免误排。
-const MEMOIR_BLUE_ORDER = 900;
+// 鎻掑叆椤哄簭锛坥rder锛夛細钃濈伅鎬昏鍥哄畾 900锛岀豢鐏粠 901 璧锋寜璁板綍锛堚増鍓ф儏锛夐『搴忛€愭潯 +1銆?// 璇存槑锛歮emoir.entries 鐨勬暟缁勯『搴忓氨鏄褰曢『搴忥紝鍥犲ぇ鎬荤粨鎸夊墽鎯呮帹杩涗緷娆″鐞嗭紝澶╃劧鍗虫椂闂村簭锛?// storyTime 鏄嚜鐢辨枃鏈紙涓嶅悓涓栫晫鐨勭邯骞?鏃舵鍚勫紓锛夛紝涓嶅仛瀛楃涓叉帓搴忥紝閬垮厤璇帓銆?const MEMOIR_BLUE_ORDER = 900;
 const MEMOIR_GREEN_ORDER_BASE = 901;
 
-/** 绿灯条目结构（新 schema），供 createWorldbookEntries。order 会在写入后统一重排。 */
+/** 缁跨伅鏉＄洰缁撴瀯锛堟柊 schema锛夛紝渚?createWorldbookEntries銆俹rder 浼氬湪鍐欏叆鍚庣粺涓€閲嶆帓銆?*/
 function buildGreenEntryPayload(entry, order) {
   return {
     name: `${MEMOIR_GREEN_NAME_PREFIX}${entry.title}`,
@@ -307,14 +292,8 @@ function buildGreenEntryPayload(entry, order) {
 }
 
 /**
- * 把用户确认后的候选写入世界书。
- * - 绿灯：逐条新增（增量，不动旧条目）。
- * - 蓝灯：用全量 entries 重建后覆盖（不丢旧目录）。
- * - 独立读回确认绿灯与蓝灯后，才更新 entries、sourceProcessed 并清空 pending。
- *
- * @param {Array} confirmedCandidates 用户确认保留（可能已编辑）的候选数组
- * @param {object} opts - sourceKey: 幂等键（写入后记入 sourceProcessed）
- * @returns {Promise<{ worldbookName, greenAdded, blueMode, totalEntries, verified }>}
+ * 鎶婄敤鎴风‘璁ゅ悗鐨勫€欓€夊啓鍏ヤ笘鐣屼功銆? * - 缁跨伅锛氶€愭潯鏂板锛堝閲忥紝涓嶅姩鏃ф潯鐩級銆? * - 钃濈伅锛氱敤鍏ㄩ噺 entries 閲嶅缓鍚庤鐩栵紙涓嶄涪鏃х洰褰曪級銆? * - 鐙珛璇诲洖纭缁跨伅涓庤摑鐏悗锛屾墠鏇存柊 entries銆乻ourceProcessed 骞舵竻绌?pending銆? *
+ * @param {Array} confirmedCandidates 鐢ㄦ埛纭淇濈暀锛堝彲鑳藉凡缂栬緫锛夌殑鍊欓€夋暟缁? * @param {object} opts - sourceKey: 骞傜瓑閿紙鍐欏叆鍚庤鍏?sourceProcessed锛? * @returns {Promise<{ worldbookName, greenAdded, blueMode, totalEntries, verified }>}
  */
 export async function commitMemoirCandidates(
   confirmedCandidates,
@@ -322,23 +301,22 @@ export async function commitMemoirCandidates(
 ) {
   const list = Array.isArray(confirmedCandidates) ? confirmedCandidates.filter(c => c && c.content) : [];
   if (!list.length) {
-    throw new Error('没有可写入的回忆候选。');
+    throw new Error('娌℃湁鍙啓鍏ョ殑鍥炲繂鍊欓€夈€?);
   }
 
-  // 1) 准备本轮绿灯。candidateId 来自已持久化 pending，可让失败重试保持同一 memoirId。
-  const now = formatTimestamp();
+  // 1) 鍑嗗鏈疆缁跨伅銆俢andidateId 鏉ヨ嚜宸叉寔涔呭寲 pending锛屽彲璁╁け璐ラ噸璇曚繚鎸佸悓涓€ memoirId銆?  const now = formatTimestamp();
   const newEntries = list.map((c) => {
     const memoirId = c.memoirId || (c.candidateId
       ? String(c.candidateId).replace(/^cand-/, 'mem-')
       : '');
     if (!memoirId) {
-      throw new Error('待写入候选缺少稳定 ID，请重新提炼后再试。');
+      throw new Error('寰呭啓鍏ュ€欓€夌己灏戠ǔ瀹?ID锛岃閲嶆柊鎻愮偧鍚庡啀璇曘€?);
     }
     return {
       memoirId,
       title: c.title,
       digest: c.digest || '',
-      storyTime: c.storyTime || '未明',
+      storyTime: c.storyTime || '鏈槑',
       importance: ['high', 'medium', 'low'].includes(c.importance) ? c.importance : 'medium',
       participants: Array.isArray(c.participants) ? c.participants : [],
       mainKeywords: Array.isArray(c.mainKeywords) ? c.mainKeywords : [],
@@ -349,8 +327,7 @@ export async function commitMemoirCandidates(
     };
   });
 
-  // 稳定 ID 校验通过后再解析/创建目标世界书，避免无效候选触发绑定副作用。
-  const api = getWorldbookApi();
+  // 绋冲畾 ID 鏍￠獙閫氳繃鍚庡啀瑙ｆ瀽/鍒涘缓鐩爣涓栫晫涔︼紝閬垮厤鏃犳晥鍊欓€夎Е鍙戠粦瀹氬壇浣滅敤銆?  const api = getWorldbookApi();
   const { worldbookName } = await ensureMemoirWorldbook({ confirmUseCurrent });
   const memoir = getMemoirState();
   const sourceKeys = [...new Set([
@@ -358,9 +335,7 @@ export async function commitMemoirCandidates(
     sourceKey,
   ].filter(Boolean))];
 
-  // pending 失败重试时，同一 candidateId 会得到同一 memoirId。新值覆盖本地同 ID 索引，
-  // 但不会改变原有顺序；真正是否需要补写，以世界书内的稳定 ID 为准。
-  const unkeyedEntries = memoir.entries.filter(entry => !entry?.memoirId);
+  // pending 澶辫触閲嶈瘯鏃讹紝鍚屼竴 candidateId 浼氬緱鍒板悓涓€ memoirId銆傛柊鍊艰鐩栨湰鍦板悓 ID 绱㈠紩锛?  // 浣嗕笉浼氭敼鍙樺師鏈夐『搴忥紱鐪熸鏄惁闇€瑕佽ˉ鍐欙紝浠ヤ笘鐣屼功鍐呯殑绋冲畾 ID 涓哄噯銆?  const unkeyedEntries = memoir.entries.filter(entry => !entry?.memoirId);
   const entriesById = new Map(
     memoir.entries
       .filter(entry => entry?.memoirId)
@@ -369,8 +344,7 @@ export async function commitMemoirCandidates(
   newEntries.forEach(entry => entriesById.set(entry.memoirId, entry));
   const allEntries = [...unkeyedEntries, ...entriesById.values()];
 
-  // 2) 单次更新完成绿灯新增、蓝灯创建/覆盖和全量排序，避免中途失败留下半批条目。
-  const blueContent = buildMemoirBlueContent(allEntries);
+  // 2) 鍗曟鏇存柊瀹屾垚缁跨伅鏂板銆佽摑鐏垱寤?瑕嗙洊鍜屽叏閲忔帓搴忥紝閬垮厤涓€斿け璐ョ暀涓嬪崐鎵规潯鐩€?  const blueContent = buildMemoirBlueContent(allEntries);
   const greenOrderById = new Map(
     allEntries.map((e, i) => [e.memoirId, MEMOIR_GREEN_ORDER_BASE + i]),
   );
@@ -425,18 +399,17 @@ export async function commitMemoirCandidates(
     typeValue: 'green',
   });
 
-  // 3) update 返回不等于真实持久化成功；共享管理器已独立读回并按 memoirId 核对本批绿灯。
-  const blueEntry = verification.book.find(entry => entry?.extra?.memoirType === 'blue') || null;
+  // 3) update 杩斿洖涓嶇瓑浜庣湡瀹炴寔涔呭寲鎴愬姛锛涘叡浜鐞嗗櫒宸茬嫭绔嬭鍥炲苟鎸?memoirId 鏍稿鏈壒缁跨伅銆?  const blueEntry = verification.book.find(entry => entry?.extra?.memoirType === 'blue') || null;
   const blueContentMatches = blueEntry
     && normalizeWorldbookContent(blueEntry.content) === normalizeWorldbookContent(blueContent);
   if (!verification.ok || !blueEntry || !blueContentMatches) {
     const problems = [];
     if (verification.missingIds.length) {
-      problems.push(`缺少绿灯：${verification.missingIds.join('、')}`);
+      problems.push(`缂哄皯缁跨伅锛?{verification.missingIds.join('銆?)}`);
     }
-    if (!blueEntry) problems.push('缺少蓝灯总览');
-    else if (!blueContentMatches) problems.push('蓝灯总览内容与预期不一致');
-    const error = new Error(`世界书写入后的读回核对失败（${problems.join('；')}）。待确认批次已保留，可安全重试。`);
+    if (!blueEntry) problems.push('缂哄皯钃濈伅鎬昏');
+    else if (!blueContentMatches) problems.push('钃濈伅鎬昏鍐呭涓庨鏈熶笉涓€鑷?);
+    const error = new Error(`涓栫晫涔﹀啓鍏ュ悗鐨勮鍥炴牳瀵瑰け璐ワ紙${problems.join('锛?)}锛夈€傚緟纭鎵规宸蹭繚鐣欙紝鍙畨鍏ㄩ噸璇曘€俙);
     error.name = 'WorldbookVerificationError';
     error.worldbookName = worldbookName;
     error.missingMemoirIds = verification.missingIds;
@@ -444,8 +417,7 @@ export async function commitMemoirCandidates(
     throw error;
   }
 
-  // 4) 全部读回成功后才写本地索引；UID 按稳定 ID 回填，不再按可能重名的标题匹配。
-  const verifiedById = new Map(
+  // 4) 鍏ㄩ儴璇诲洖鎴愬姛鍚庢墠鍐欐湰鍦扮储寮曪紱UID 鎸夌ǔ瀹?ID 鍥炲～锛屼笉鍐嶆寜鍙兘閲嶅悕鐨勬爣棰樺尮閰嶃€?  const verifiedById = new Map(
     verification.verifiedEntries.map(entry => [entry.extra.memoirId, entry]),
   );
   allEntries.forEach(entry => {
@@ -454,8 +426,7 @@ export async function commitMemoirCandidates(
   });
   memoir.entries = allEntries;
 
-  // 5) 只有绿灯与蓝灯均核对通过，才做幂等标记并清 pending。
-  sourceKeys.forEach((key) => {
+  // 5) 鍙湁缁跨伅涓庤摑鐏潎鏍稿閫氳繃锛屾墠鍋氬箓绛夋爣璁板苟娓?pending銆?  sourceKeys.forEach((key) => {
     if (!memoir.sourceProcessed.includes(key)) memoir.sourceProcessed.push(key);
   });
   memoir.pending = null;
@@ -471,12 +442,10 @@ export async function commitMemoirCandidates(
   };
 }
 
-// ── 手动提炼：从最新大总结提炼并暂存（供面板“手动提炼”按钮）──────────
+// 鈹€鈹€ 鎵嬪姩鎻愮偧锛氫粠鏈€鏂板ぇ鎬荤粨鎻愮偧骞舵殏瀛橈紙渚涢潰鏉库€滄墜鍔ㄦ彁鐐尖€濇寜閽級鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 /**
- * 手动触发：读最新大总结正文提炼候选并暂存到 pending。
- * @param {object} deps - generate: 生成函数（由 UI 注入 generateSummaryMemory）
- *   - grandMemoryText: 可选，指定素材；不传则由调用方读取最新大总结
+ * 鎵嬪姩瑙﹀彂锛氳鏈€鏂板ぇ鎬荤粨姝ｆ枃鎻愮偧鍊欓€夊苟鏆傚瓨鍒?pending銆? * @param {object} deps - generate: 鐢熸垚鍑芥暟锛堢敱 UI 娉ㄥ叆 generateSummaryMemory锛? *   - grandMemoryText: 鍙€夛紝鎸囧畾绱犳潗锛涗笉浼犲垯鐢辫皟鐢ㄦ柟璇诲彇鏈€鏂板ぇ鎬荤粨
  * @returns {Promise<{ staged: boolean, count: number, reason?: string }>}
  */
 export async function runManualMemoirExtraction({
@@ -506,7 +475,7 @@ export async function runManualMemoirExtraction({
   const result = await tryExtractMemoirFromGrandSummary(resolvedRecord, {
     generate,
     grandMemoryText,
-    force: true, // 手动提炼绕过 enabled/幂等，由用户主动发起
+    force: true, // 鎵嬪姩鎻愮偧缁曡繃 enabled/骞傜瓑锛岀敱鐢ㄦ埛涓诲姩鍙戣捣
   });
   if (!result.memories.length) {
     return { staged: false, count: 0, reason: 'no_memory' };
@@ -515,10 +484,9 @@ export async function runManualMemoirExtraction({
   return { staged: true, count: result.memories.length };
 }
 
-// ── 设定采集材料读取与角色绑定世界书解析 ──────────────────────────
+// 鈹€鈹€ 璁惧畾閲囬泦鏉愭枡璇诲彇涓庤鑹茬粦瀹氫笘鐣屼功瑙ｆ瀽 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// 设定采集主要剧情材料读取与预检。阶段 C 只处理聊天和大总结，不读取可选上下文。
-
+// 璁惧畾閲囬泦涓昏鍓ф儏鏉愭枡璇诲彇涓庨妫€銆傞樁娈?C 鍙鐞嗚亰澶╁拰澶ф€荤粨锛屼笉璇诲彇鍙€変笂涓嬫枃銆?
 
 export const MAX_CAPTURE_CHAT_MESSAGES = 200;
 
@@ -598,15 +566,13 @@ function resolveSpeaker(message, role, names) {
 function resolveNames(names = {}) {
   const context = getContextSafe();
   return {
-    userName: String(names.userName || context?.name1 || context?.user_name || '用户').trim() || '用户',
-    characterName: String(names.characterName || context?.name2 || context?.character?.name || '角色').trim() || '角色',
+    userName: String(names.userName || context?.name1 || context?.user_name || '鐢ㄦ埛').trim() || '鐢ㄦ埛',
+    characterName: String(names.characterName || context?.name2 || context?.character?.name || '瑙掕壊').trim() || '瑙掕壊',
   };
 }
 
 /**
- * 从真实聊天楼层中提取纯聊天。隐藏的正常用户/角色楼层仍保留，以支持读取被大总结归档的原始剧情。
- * getChatMessagesSafe 只返回当前选中的 swipe；本函数不会遍历 message.swipes。
- */
+ * 浠庣湡瀹炶亰澶╂ゼ灞備腑鎻愬彇绾亰澶┿€傞殣钘忕殑姝ｅ父鐢ㄦ埛/瑙掕壊妤煎眰浠嶄繚鐣欙紝浠ユ敮鎸佽鍙栬澶ф€荤粨褰掓。鐨勫師濮嬪墽鎯呫€? * getChatMessagesSafe 鍙繑鍥炲綋鍓嶉€変腑鐨?swipe锛涙湰鍑芥暟涓嶄細閬嶅巻 message.swipes銆? */
 export function collectPureChatMessages({ messages, summarySettings, names } = {}) {
   const rawMessages = Array.isArray(messages)
     ? messages
@@ -638,7 +604,7 @@ export function collectPureChatMessages({ messages, summarySettings, names } = {
 
 export function formatCaptureChatMessages(messages = []) {
   return (Array.isArray(messages) ? messages : [])
-    .map(message => `第 ${message.floor} 楼｜${message.speaker}：${message.content}`)
+    .map(message => `绗?${message.floor} 妤硷綔${message.speaker}锛?{message.content}`)
     .join('\n\n');
 }
 
@@ -692,7 +658,7 @@ function resolveRecentChat(source, context) {
   const count = normalizeRecentCount(source.recentCount);
   const selected = context.pureMessages.slice(-count);
   if (!selected.length) {
-    return createFailure('recent_chat', CAPTURE_MATERIAL_ERROR_CODES.EMPTY_MATERIAL, '最近聊天中没有可用的纯聊天楼层。');
+    return createFailure('recent_chat', CAPTURE_MATERIAL_ERROR_CODES.EMPTY_MATERIAL, '鏈€杩戣亰澶╀腑娌℃湁鍙敤鐨勭函鑱婂ぉ妤煎眰銆?);
   }
   const material = formatCaptureChatMessages(selected);
   return createSuccess('recent_chat', selected, material, { requestedCount: count });
@@ -705,19 +671,19 @@ function resolveFloorRange(source, context) {
     return createFailure(
       'floor_range',
       CAPTURE_MATERIAL_ERROR_CODES.INVALID_FLOOR_RANGE,
-      '指定楼层范围无效，请填写非负整数，且起始楼层不能大于结束楼层。',
+      '鎸囧畾妤煎眰鑼冨洿鏃犳晥锛岃濉啓闈炶礋鏁存暟锛屼笖璧峰妤煎眰涓嶈兘澶т簬缁撴潫妤煎眰銆?,
       { fromFloor: source.fromFloor ?? null, toFloor: source.toFloor ?? null },
     );
   }
   const { minFloor, maxFloor } = context.rawFloorBounds;
   if (minFloor === null || maxFloor === null) {
-    return createFailure('floor_range', CAPTURE_MATERIAL_ERROR_CODES.EMPTY_CHAT, '当前聊天没有任何楼层。');
+    return createFailure('floor_range', CAPTURE_MATERIAL_ERROR_CODES.EMPTY_CHAT, '褰撳墠鑱婂ぉ娌℃湁浠讳綍妤煎眰銆?);
   }
   if (fromFloor < minFloor || fromFloor > maxFloor || toFloor > maxFloor) {
     return createFailure(
       'floor_range',
       CAPTURE_MATERIAL_ERROR_CODES.FLOOR_OUT_OF_RANGE,
-      `指定楼层超出当前聊天范围 ${minFloor}—${maxFloor}。`,
+      `鎸囧畾妤煎眰瓒呭嚭褰撳墠鑱婂ぉ鑼冨洿 ${minFloor}鈥?{maxFloor}銆俙,
       { fromFloor, toFloor, minFloor, maxFloor },
     );
   }
@@ -728,7 +694,7 @@ function resolveFloorRange(source, context) {
     return createFailure(
       'floor_range',
       CAPTURE_MATERIAL_ERROR_CODES.EMPTY_MATERIAL,
-      `第 ${fromFloor}—${toFloor} 楼没有可用的纯聊天内容。`,
+      `绗?${fromFloor}鈥?{toFloor} 妤兼病鏈夊彲鐢ㄧ殑绾亰澶╁唴瀹广€俙,
       { fromFloor, toFloor },
     );
   }
@@ -736,7 +702,7 @@ function resolveFloorRange(source, context) {
     return createFailure(
       'floor_range',
       CAPTURE_MATERIAL_ERROR_CODES.TOO_MANY_MESSAGES,
-      `指定范围包含 ${selected.length} 条纯聊天，超过单次最多 ${MAX_CAPTURE_CHAT_MESSAGES} 条的保护限制。`,
+      `鎸囧畾鑼冨洿鍖呭惈 ${selected.length} 鏉＄函鑱婂ぉ锛岃秴杩囧崟娆℃渶澶?${MAX_CAPTURE_CHAT_MESSAGES} 鏉＄殑淇濇姢闄愬埗銆俙,
       { fromFloor, toFloor, messageCount: selected.length, maxMessageCount: MAX_CAPTURE_CHAT_MESSAGES },
     );
   }
@@ -801,7 +767,7 @@ function resolveGrandPlusAfter(context) {
     return createFailure(
       'grand_plus_after',
       CAPTURE_MATERIAL_ERROR_CODES.GRAND_SUMMARY_NOT_FOUND,
-      '当前聊天没有可用的大总结。',
+      '褰撳墠鑱婂ぉ娌℃湁鍙敤鐨勫ぇ鎬荤粨銆?,
     );
   }
   const messages = context.pureMessages.filter(message => message.floor > summary.messageId);
@@ -809,24 +775,23 @@ function resolveGrandPlusAfter(context) {
     return createFailure(
       'grand_plus_after',
       CAPTURE_MATERIAL_ERROR_CODES.TOO_MANY_MESSAGES,
-      `大总结后有 ${messages.length} 条纯聊天，超过单次最多 ${MAX_CAPTURE_CHAT_MESSAGES} 条的保护限制。`,
+      `澶ф€荤粨鍚庢湁 ${messages.length} 鏉＄函鑱婂ぉ锛岃秴杩囧崟娆℃渶澶?${MAX_CAPTURE_CHAT_MESSAGES} 鏉＄殑淇濇姢闄愬埗銆俙,
       { summaryMessageId: summary.messageId, messageCount: messages.length, maxMessageCount: MAX_CAPTURE_CHAT_MESSAGES },
     );
   }
   const coverage = summary.coverageFrom !== null && summary.coverageTo !== null
-    ? `｜覆盖第 ${summary.coverageFrom}—${summary.coverageTo} 楼`
+    ? `锝滆鐩栫 ${summary.coverageFrom}鈥?{summary.coverageTo} 妤糮
     : '';
-  const sections = [`【最近大总结｜第 ${summary.messageId} 楼${coverage}】\n${summary.content}`];
+  const sections = [`銆愭渶杩戝ぇ鎬荤粨锝滅 ${summary.messageId} 妤?{coverage}銆慭n${summary.content}`];
   if (messages.length) {
-    sections.push(`【大总结后的纯聊天】\n${formatCaptureChatMessages(messages)}`);
+    sections.push(`銆愬ぇ鎬荤粨鍚庣殑绾亰澶┿€慭n${formatCaptureChatMessages(messages)}`);
   }
   const material = sections.join('\n\n');
   return createSuccess('grand_plus_after', messages, material, { summary });
 }
 
 /**
- * 根据唯一来源模式构建剧情材料，并返回可供 UI 使用的结构化范围、计数与预检错误。
- */
+ * 鏍规嵁鍞竴鏉ユ簮妯″紡鏋勫缓鍓ф儏鏉愭枡锛屽苟杩斿洖鍙緵 UI 浣跨敤鐨勭粨鏋勫寲鑼冨洿銆佽鏁颁笌棰勬閿欒銆? */
 export function buildCaptureSourceMaterial(source, options = {}) {
   const normalizedSource = isCaptureMaterialObject(source) ? source : {};
   const mode = normalizedSource.mode;
@@ -834,7 +799,7 @@ export function buildCaptureSourceMaterial(source, options = {}) {
     return createFailure(
       mode || '',
       CAPTURE_MATERIAL_ERROR_CODES.INVALID_SOURCE_MODE,
-      '设定采集的主要剧情来源无效。',
+      '璁惧畾閲囬泦鐨勪富瑕佸墽鎯呮潵婧愭棤鏁堛€?,
       { mode: mode ?? null },
     );
   }
@@ -866,7 +831,7 @@ function hasActiveCharacterContext(context, characterMaterial) {
   return hasId || Boolean(context?.character) || Boolean(context?.name2);
 }
 
-/** 返回角色卡与 Persona 的当前可用状态和已经格式化的材料。 */
+/** 杩斿洖瑙掕壊鍗′笌 Persona 鐨勫綋鍓嶅彲鐢ㄧ姸鎬佸拰宸茬粡鏍煎紡鍖栫殑鏉愭枡銆?*/
 export function inspectCaptureOptionalSources(options = {}) {
   const context = getContextSafe();
   const hasInjectedCharacter = Object.hasOwn(options, 'characterCard');
@@ -882,14 +847,14 @@ export function inspectCaptureOptionalSources(options = {}) {
   return {
     characterCard: {
       available: characterAvailable && Boolean(characterMaterial),
-      reason: characterAvailable && characterMaterial ? '' : '当前没有可读取的角色卡。',
+      reason: characterAvailable && characterMaterial ? '' : '褰撳墠娌℃湁鍙鍙栫殑瑙掕壊鍗°€?,
       name: String(characterCard?.name || '').trim(),
       material: characterMaterial,
       data: characterCard || null,
     },
     persona: {
       available: Boolean(personaMaterial),
-      reason: personaMaterial ? '' : '当前 Persona 没有可读取的描述。',
+      reason: personaMaterial ? '' : '褰撳墠 Persona 娌℃湁鍙鍙栫殑鎻忚堪銆?,
       material: personaMaterial,
     },
   };
@@ -909,7 +874,7 @@ function normalizeWorldbookEntryForCapture(worldbookName, entry) {
   const uid = Number(entry?.uid);
   if (!Number.isInteger(uid) || uid < 0) return null;
   const content = String(entry?.content ?? '');
-  const name = String(entry?.name ?? '').trim() || `未命名条目 #${uid}`;
+  const name = String(entry?.name ?? '').trim() || `鏈懡鍚嶆潯鐩?#${uid}`;
   return {
     worldbookName,
     uid,
@@ -968,20 +933,17 @@ export function setCaptureWorldbookRefsForBook(refs, worldbookName, entries, sel
 }
 
 /**
- * 只返回当前角色卡绑定的世界书（primary + additional），不拉取全部世界书。
- * 设定采集只在角色卡绑定的世界书内选择条目。
- */
+ * 鍙繑鍥炲綋鍓嶈鑹插崱缁戝畾鐨勪笘鐣屼功锛坧rimary + additional锛夛紝涓嶆媺鍙栧叏閮ㄤ笘鐣屼功銆? * 璁惧畾閲囬泦鍙湪瑙掕壊鍗＄粦瀹氱殑涓栫晫涔﹀唴閫夋嫨鏉＄洰銆? */
 export async function listCaptureWorldbooks({ api } = {}) {
   try {
     const readApi = api || getWorldbookReadApi();
     if (typeof readApi.getCharWorldbookNames !== 'function') {
-      throw new Error('当前环境缺少 getCharWorldbookNames，无法读取角色卡绑定的世界书。');
+      throw new Error('褰撳墠鐜缂哄皯 getCharWorldbookNames锛屾棤娉曡鍙栬鑹插崱缁戝畾鐨勪笘鐣屼功銆?);
     }
     const bound = await Promise.resolve(readApi.getCharWorldbookNames('current'));
     const primary = String(bound?.primary || '').trim();
     const additional = Array.isArray(bound?.additional) ? bound.additional : [];
-    // primary 排在最前，additional 去重跟随；空名剔除。
-    const names = [...new Set([primary, ...additional]
+    // primary 鎺掑湪鏈€鍓嶏紝additional 鍘婚噸璺熼殢锛涚┖鍚嶅墧闄ゃ€?    const names = [...new Set([primary, ...additional]
       .map(name => String(name || '').trim())
       .filter(Boolean))];
     return { ok: true, names, primary: primary || null, error: null };
@@ -992,19 +954,19 @@ export async function listCaptureWorldbooks({ api } = {}) {
       primary: null,
       error: {
         code: CAPTURE_OPTIONAL_ERROR_CODES.WORLDBOOK_LIST_FAILED,
-        message: `读取角色卡绑定的世界书失败：${error.message || String(error)}`,
+        message: `璇诲彇瑙掕壊鍗＄粦瀹氱殑涓栫晫涔﹀け璐ワ細${error.message || String(error)}`,
       },
     };
   }
 }
 
-/** 按需加载单本世界书全部条目，保留关闭状态和激活类型供选择器展示。 */
+/** 鎸夐渶鍔犺浇鍗曟湰涓栫晫涔﹀叏閮ㄦ潯鐩紝淇濈暀鍏抽棴鐘舵€佸拰婵€娲荤被鍨嬩緵閫夋嫨鍣ㄥ睍绀恒€?*/
 export async function loadCaptureWorldbookEntries(worldbookName, { api } = {}) {
   const name = String(worldbookName || '').trim();
   try {
     const readApi = api || getWorldbookReadApi();
     const rawEntries = await readApi.getWorldbook(name);
-    if (!Array.isArray(rawEntries)) throw new Error('返回结果不是条目数组。');
+    if (!Array.isArray(rawEntries)) throw new Error('杩斿洖缁撴灉涓嶆槸鏉＄洰鏁扮粍銆?);
     const entries = rawEntries
       .map(entry => normalizeWorldbookEntryForCapture(name, entry))
       .filter(Boolean);
@@ -1016,7 +978,7 @@ export async function loadCaptureWorldbookEntries(worldbookName, { api } = {}) {
       entries: [],
       error: {
         code: CAPTURE_OPTIONAL_ERROR_CODES.WORLDBOOK_LOAD_FAILED,
-        message: `读取世界书「${name || '未命名'}」失败：${error.message || String(error)}`,
+        message: `璇诲彇涓栫晫涔︺€?{name || '鏈懡鍚?}銆嶅け璐ワ細${error.message || String(error)}`,
         worldbookName: name,
       },
     };
@@ -1035,29 +997,27 @@ export function filterCaptureWorldbookEntries(entries, query) {
 
 function formatSelectedWorldbookEntry(entry) {
   return [
-    `【世界书参考｜${entry.worldbookName}｜${entry.name}｜UID ${entry.uid}】`,
+    `銆愪笘鐣屼功鍙傝€冿綔${entry.worldbookName}锝?{entry.name}锝淯ID ${entry.uid}銆慲,
     entry.content,
   ].join('\n');
 }
 
 /**
- * 正式生成前使用：重新读取所有明确勾选的 worldbookName + uid，并构建最终附加材料。
- * 关闭、常驻、未触发、位置和递归状态均不参与筛选；缺失引用会明确报错。
- */
+ * 姝ｅ紡鐢熸垚鍓嶄娇鐢細閲嶆柊璇诲彇鎵€鏈夋槑纭嬀閫夌殑 worldbookName + uid锛屽苟鏋勫缓鏈€缁堥檮鍔犳潗鏂欍€? * 鍏抽棴銆佸父椹汇€佹湭瑙﹀彂銆佷綅缃拰閫掑綊鐘舵€佸潎涓嶅弬涓庣瓫閫夛紱缂哄け寮曠敤浼氭槑纭姤閿欍€? */
 export async function buildCaptureOptionalContextMaterial(optionalContext, options = {}) {
   const selection = isCaptureMaterialObject(optionalContext) ? optionalContext : {};
   const sources = inspectCaptureOptionalSources(options);
   const errors = [];
   const sections = [];
   if (selection.includeCharacterCard) {
-    if (sources.characterCard.available) sections.push(`【当前角色卡】\n${sources.characterCard.material}`);
+    if (sources.characterCard.available) sections.push(`銆愬綋鍓嶈鑹插崱銆慭n${sources.characterCard.material}`);
     else errors.push({
       code: CAPTURE_OPTIONAL_ERROR_CODES.CHARACTER_CARD_UNAVAILABLE,
       message: sources.characterCard.reason,
     });
   }
   if (selection.includePersona) {
-    if (sources.persona.available) sections.push(`【当前 Persona】\n${sources.persona.material}`);
+    if (sources.persona.available) sections.push(`銆愬綋鍓?Persona銆慭n${sources.persona.material}`);
     else errors.push({
       code: CAPTURE_OPTIONAL_ERROR_CODES.PERSONA_UNAVAILABLE,
       message: sources.persona.reason,
@@ -1090,7 +1050,7 @@ export async function buildCaptureOptionalContextMaterial(optionalContext, optio
         missingRefs.push(ref);
         errors.push({
           code: CAPTURE_OPTIONAL_ERROR_CODES.WORLDBOOK_REF_MISSING,
-          message: `世界书「${ref.worldbookName}」中找不到 UID ${ref.uid}（选择时标题：${ref.entryNameSnapshot || '未记录'}）。`,
+          message: `涓栫晫涔︺€?{ref.worldbookName}銆嶄腑鎵句笉鍒?UID ${ref.uid}锛堥€夋嫨鏃舵爣棰橈細${ref.entryNameSnapshot || '鏈褰?}锛夈€俙,
           ref,
         });
         return;
@@ -1113,10 +1073,9 @@ export async function buildCaptureOptionalContextMaterial(optionalContext, optio
   };
 }
 
-// ── 设定采集生成、严格解析与草稿追加 ──────────────────────────────
+// 鈹€鈹€ 璁惧畾閲囬泦鐢熸垚銆佷弗鏍艰В鏋愪笌鑽夌杩藉姞 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// 设定采集生成流程：材料预检、独立请求、严格 JSON 解析与草稿追加。
-
+// 璁惧畾閲囬泦鐢熸垚娴佺▼锛氭潗鏂欓妫€銆佺嫭绔嬭姹傘€佷弗鏍?JSON 瑙ｆ瀽涓庤崏绋胯拷鍔犮€?
 
 export const CAPTURE_GENERATION_TIMEOUT_MS = LONG_FORM_GENERATION_TIMEOUT_MS;
 
@@ -1154,12 +1113,12 @@ function createParseFailure(rawResponse, jsonText, code, message, details = {}) 
   };
 }
 
-/** 严格接受 JSON（允许完整 JSON 代码围栏），并只把模型内容字段交给草稿标准化。 */
+/** 涓ユ牸鎺ュ彈 JSON锛堝厑璁稿畬鏁?JSON 浠ｇ爜鍥存爮锛夛紝骞跺彧鎶婃ā鍨嬪唴瀹瑰瓧娈典氦缁欒崏绋挎爣鍑嗗寲銆?*/
 export function parseCaptureGenerationResponse(rawResponse) {
   const raw = String(rawResponse || '');
   const jsonText = stripMarkdownFence(raw);
   if (!jsonText) {
-    return createParseFailure(raw, jsonText, 'empty_response', '模型没有返回任何内容。');
+    return createParseFailure(raw, jsonText, 'empty_response', '妯″瀷娌℃湁杩斿洖浠讳綍鍐呭銆?);
   }
 
   let parsed;
@@ -1170,14 +1129,14 @@ export function parseCaptureGenerationResponse(rawResponse) {
       raw,
       jsonText,
       'invalid_json',
-      `设定采集结果不是合法 JSON：${error.message}`,
+      `璁惧畾閲囬泦缁撴灉涓嶆槸鍚堟硶 JSON锛?{error.message}`,
     );
   }
   if (!isPlainObject(parsed) || !Array.isArray(parsed.entries)) {
-    return createParseFailure(raw, jsonText, 'invalid_schema', 'JSON 顶层必须是包含 entries 数组的对象。');
+    return createParseFailure(raw, jsonText, 'invalid_schema', 'JSON 椤跺眰蹇呴』鏄寘鍚?entries 鏁扮粍鐨勫璞°€?);
   }
   if (parsed.entries.length === 0) {
-    return createParseFailure(raw, jsonText, 'empty_entries', '模型返回的 entries 数组为空。');
+    return createParseFailure(raw, jsonText, 'empty_entries', '妯″瀷杩斿洖鐨?entries 鏁扮粍涓虹┖銆?);
   }
   const invalidIndex = parsed.entries.findIndex(entry => !isPlainObject(entry));
   if (invalidIndex >= 0) {
@@ -1185,7 +1144,7 @@ export function parseCaptureGenerationResponse(rawResponse) {
       raw,
       jsonText,
       'invalid_entry',
-      `第 ${invalidIndex + 1} 条 entries 不是有效对象。`,
+      `绗?${invalidIndex + 1} 鏉?entries 涓嶆槸鏈夋晥瀵硅薄銆俙,
       { index: invalidIndex },
     );
   }
@@ -1210,7 +1169,7 @@ function createPreflightError(code, message, details = {}) {
   return { code, message, details };
 }
 
-/** 只整理材料和最终 messages，不调用模型、不修改状态。 */
+/** 鍙暣鐞嗘潗鏂欏拰鏈€缁?messages锛屼笉璋冪敤妯″瀷銆佷笉淇敼鐘舵€併€?*/
 export async function prepareCaptureGeneration({
   captureState,
   materialOptions = {},
@@ -1219,7 +1178,7 @@ export async function prepareCaptureGeneration({
   const capture = normalizeCaptureState(captureState || getMemoirState().capture);
   const errors = [];
   if (!capture.request.trim()) {
-    errors.push(createPreflightError('empty_request', '请先填写要采集的设定需求。'));
+    errors.push(createPreflightError('empty_request', '璇峰厛濉啓瑕侀噰闆嗙殑璁惧畾闇€姹傘€?));
   }
   const sourceResult = buildCaptureSourceMaterial(capture.source, materialOptions);
   if (!sourceResult.ok) errors.push(...sourceResult.errors);
@@ -1254,41 +1213,28 @@ function resolveApiMode(apiMode) {
   return getGlobalSettings().api?.mode === 'main_api' ? 'main_api' : 'secondary_api';
 }
 
-async function requestCaptureGeneration(messages, apiMode) {
+async function requestCaptureGeneration(messages, apiMode, transportPlan) {
   const settings = getGlobalSettings();
   const profile = apiMode === 'secondary_api'
     ? getWorkflowOption('getActiveApiProfile')?.(settings)
     : null;
-  const transportPlan = resolveConfiguredGenerationTransport({
-    backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
-    apiMode,
-    profile,
-  });
-  notifyBackgroundStreamingFallbackOnce(transportPlan.fallbackReason, message => {
-    const toastr = globalThis.toastr || globalThis.parent?.toastr;
-    toastr?.warning?.(message, '后台流式');
-  });
-  const timeoutMessage = getLongFormGenerationTimeoutMessage('设定采集', apiMode, {
+  const timeoutMessage = getLongFormGenerationTimeoutMessage('璁惧畾閲囬泦', apiMode, {
     transportMode: transportPlan.actualMode,
   });
-  const apiResult = apiMode === 'main_api'
-    ? await generateWithMainApi({
+  return apiMode === 'main_api'
+    ? generateWithMainApi({
       messages,
       timeoutMs: CAPTURE_GENERATION_TIMEOUT_MS,
       timeoutMessage,
       transportMode: transportPlan.actualMode,
     })
-    : await generateWithSecondaryApi({
+    : generateWithSecondaryApi({
       profile,
       messages,
       timeoutMs: CAPTURE_GENERATION_TIMEOUT_MS,
       timeoutMessage,
       transportMode: transportPlan.actualMode,
     });
-  return {
-    ...apiResult,
-    transportPlan,
-  };
 }
 
 function createWorkflowError(name, message, details = {}) {
@@ -1301,11 +1247,11 @@ function createWorkflowError(name, message, details = {}) {
 function saveCaptureError(message, rawResponse = '') {
   const capture = getMemoirState().capture;
   const raw = String(rawResponse || '').trim();
-  capture.lastError = raw ? `${message}\n\n【原始响应】\n${raw}` : message;
+  capture.lastError = raw ? `${message}\n\n銆愬師濮嬪搷搴斻€慭n${raw}` : message;
   saveChatState();
 }
 
-/** 用户明确触发后调用模型；成功只追加草稿，不写世界书。 */
+/** 鐢ㄦ埛鏄庣‘瑙﹀彂鍚庤皟鐢ㄦā鍨嬶紱鎴愬姛鍙拷鍔犺崏绋匡紝涓嶅啓涓栫晫涔︺€?*/
 export async function runCaptureGeneration({
   captureState,
   materialOptions = {},
@@ -1319,16 +1265,37 @@ export async function runCaptureGeneration({
   let prepared = null;
   let apiResult = null;
   let parseResult = null;
+  // Outer-scope plan so failure logs keep requested/actual/fallback after generate throws.
+  let transportPlan = null;
 
   try {
     prepared = await prepareCaptureGeneration({ captureState, materialOptions, macroOverrides });
     if (!prepared.ok) {
-      const summary = prepared.errors.map(error => error.message || error.code).filter(Boolean).join('；');
-      throw createWorkflowError('CapturePreflightError', summary || '设定采集材料预检未通过。', {
+      const summary = prepared.errors.map(error => error.message || error.code).filter(Boolean).join('锛?);
+      throw createWorkflowError('CapturePreflightError', summary || '璁惧畾閲囬泦鏉愭枡棰勬鏈€氳繃銆?, {
         preflightErrors: prepared.errors,
       });
     }
-    apiResult = await requestCaptureGeneration(prepared.messages, resolvedApiMode);
+
+    const settings = getGlobalSettings();
+    const profile = resolvedApiMode === 'secondary_api'
+      ? getWorkflowOption('getActiveApiProfile')?.(settings)
+      : null;
+    transportPlan = resolveConfiguredGenerationTransport({
+      backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
+      apiMode: resolvedApiMode,
+      profile,
+    });
+    notifyBackgroundStreamingFallbackOnce(transportPlan.fallbackReason, message => {
+      const toastr = globalThis.toastr || globalThis.parent?.toastr;
+      toastr?.warning?.(message, '鍚庡彴娴佸紡');
+    });
+
+    apiResult = await requestCaptureGeneration(
+      prepared.messages,
+      resolvedApiMode,
+      transportPlan,
+    );
     parseResult = parseCaptureGenerationResponse(apiResult.content);
     if (!parseResult.ok) {
       throw createWorkflowError('CaptureParseError', parseResult.error.message, {
@@ -1345,8 +1312,8 @@ export async function runCaptureGeneration({
     const addedCount = targetCapture.drafts.length - previousCount;
 
     getWorkflowOption('addCommunicationLog')?.({
-      moduleName: resolvedApiMode === 'main_api' ? '设定采集 / 主 API' : '设定采集 / 副 API',
-      taskType: '设定采集草稿生成',
+      moduleName: resolvedApiMode === 'main_api' ? '璁惧畾閲囬泦 / 涓?API' : '璁惧畾閲囬泦 / 鍓?API',
+      taskType: '璁惧畾閲囬泦鑽夌鐢熸垚',
       status: 'success',
       startedAt,
       durationMs: Math.round(nowMs() - startedMs),
@@ -1359,7 +1326,7 @@ export async function runCaptureGeneration({
       responseText: apiResult.responseText,
       rawResultContent: parseResult.jsonText,
       parsedResult: parseResult.entries,
-      transport: buildGenerationTransportLog(apiResult.transportPlan, apiResult),
+      transport: buildGenerationTransportLog(transportPlan, apiResult),
     });
 
     return {
@@ -1379,26 +1346,26 @@ export async function runCaptureGeneration({
     const rawResponse = error.rawResponse || parseResult?.rawResponse || apiResult?.responseText || '';
     if (persist) saveCaptureError(error.message || String(error), rawResponse);
     getWorkflowOption('addCommunicationLog')?.({
-      moduleName: resolvedApiMode === 'main_api' ? '设定采集 / 主 API' : '设定采集 / 副 API',
-      taskType: '设定采集草稿生成',
+      moduleName: resolvedApiMode === 'main_api' ? '璁惧畾閲囬泦 / 涓?API' : '璁惧畾閲囬泦 / 鍓?API',
+      taskType: '璁惧畾閲囬泦鑽夌鐢熸垚',
       status: 'failure',
       startedAt,
       durationMs: diagnostics?.durationMs ?? Math.round(nowMs() - startedMs),
       profileName: diagnostics?.profileName
         || apiResult?.profileName
-        || (resolvedApiMode === 'main_api' ? '酒馆当前连接' : ''),
+        || (resolvedApiMode === 'main_api' ? '閰掗褰撳墠杩炴帴' : ''),
       model: diagnostics?.model
         || apiResult?.model
-        || (resolvedApiMode === 'main_api' ? '酒馆主 API' : ''),
+        || (resolvedApiMode === 'main_api' ? '閰掗涓?API' : ''),
       url: diagnostics?.url
         || apiResult?.url
-        || (resolvedApiMode === 'main_api' ? '酒馆当前连接' : ''),
+        || (resolvedApiMode === 'main_api' ? '閰掗褰撳墠杩炴帴' : ''),
       httpStatus: diagnostics?.httpStatus ?? apiResult?.httpStatus ?? '',
       messages: prepared?.messages || [],
       requestBody: apiResult?.requestBody || {},
       responseText: diagnostics?.responseText || apiResult?.responseText || rawResponse,
       parsedResult: parseResult || null,
-      transport: buildGenerationTransportLog(apiResult?.transportPlan || null, apiResult, diagnostics),
+      transport: buildGenerationTransportLog(transportPlan, apiResult, diagnostics),
       errorCode,
       errorStage,
       errorStack: error.stack || error.message || error,
@@ -1407,7 +1374,7 @@ export async function runCaptureGeneration({
   }
 }
 
-// ── 阶段 G：设定草稿正式写入与 captureId 独立读回 ─────────────────
+// 鈹€鈹€ 闃舵 G锛氳瀹氳崏绋挎寮忓啓鍏ヤ笌 captureId 鐙珛璇诲洖 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 const CAPTURE_ENTRY_TYPE_LABELS = Object.freeze({
   npc: 'NPC',
@@ -1444,10 +1411,8 @@ function buildCaptureEntryPayload(draft) {
 }
 
 /**
- * 将用户明确选择的设定草稿写入当前回忆录世界书。
- * 无论更新调用是否报错，均以独立 getWorldbook() 读回的 captureId 为最终事实：
- * 已读回草稿从本地移除，缺失或无效草稿保留并返回逐条错误，重试复用原 captureId。
- */
+ * 灏嗙敤鎴锋槑纭€夋嫨鐨勮瀹氳崏绋垮啓鍏ュ綋鍓嶅洖蹇嗗綍涓栫晫涔︺€? * 鏃犺鏇存柊璋冪敤鏄惁鎶ラ敊锛屽潎浠ョ嫭绔?getWorldbook() 璇诲洖鐨?captureId 涓烘渶缁堜簨瀹烇細
+ * 宸茶鍥炶崏绋夸粠鏈湴绉婚櫎锛岀己澶辨垨鏃犳晥鑽夌淇濈暀骞惰繑鍥為€愭潯閿欒锛岄噸璇曞鐢ㄥ師 captureId銆? */
 export async function commitCaptureDrafts(
   selectedDrafts,
   {
@@ -1462,16 +1427,16 @@ export async function commitCaptureDrafts(
       .map(normalizeCaptureDraft)
       .map(draft => [draft.captureId, draft]),
   ).values()];
-  if (!uniqueDrafts.length) throw new Error('没有已选择的设定草稿。');
+  if (!uniqueDrafts.length) throw new Error('娌℃湁宸查€夋嫨鐨勮瀹氳崏绋裤€?);
 
   const invalidFailures = [];
   const validDrafts = uniqueDrafts.filter(draft => {
     const reasons = [];
-    if (!draft.title.trim()) reasons.push('标题为空');
-    if (!draft.content.trim()) reasons.push('正文为空');
-    if (!draft.mainKeywords.length && !draft.title.trim()) reasons.push('缺少可用关键词');
+    if (!draft.title.trim()) reasons.push('鏍囬涓虹┖');
+    if (!draft.content.trim()) reasons.push('姝ｆ枃涓虹┖');
+    if (!draft.mainKeywords.length && !draft.title.trim()) reasons.push('缂哄皯鍙敤鍏抽敭璇?);
     if (!reasons.length) return true;
-    invalidFailures.push({ captureId: draft.captureId, message: reasons.join('；') });
+    invalidFailures.push({ captureId: draft.captureId, message: reasons.join('锛?) });
     return false;
   });
 
@@ -1518,8 +1483,7 @@ export async function commitCaptureDrafts(
     });
   } catch (error) {
     updateError = error;
-    // updateWorldbookWith 可能在部分持久化后才抛错；必须再读一次，不能凭异常判整批失败。
-    verification = await verifyWorldbookEntries(worldbookName, {
+    // updateWorldbookWith 鍙兘鍦ㄩ儴鍒嗘寔涔呭寲鍚庢墠鎶涢敊锛涘繀椤诲啀璇讳竴娆★紝涓嶈兘鍑紓甯稿垽鏁存壒澶辫触銆?    verification = await verifyWorldbookEntries(worldbookName, {
       api,
       idField: 'captureId',
       expectedIds,
@@ -1533,8 +1497,8 @@ export async function commitCaptureDrafts(
   const missingFailures = verification.missingIds.map(captureId => ({
     captureId,
     message: updateError
-      ? `写入调用异常且读回未找到：${updateError.message || String(updateError)}`
-      : '写入后独立读回未找到该 captureId，可安全重试。',
+      ? `鍐欏叆璋冪敤寮傚父涓旇鍥炴湭鎵惧埌锛?{updateError.message || String(updateError)}`
+      : '鍐欏叆鍚庣嫭绔嬭鍥炴湭鎵惧埌璇?captureId锛屽彲瀹夊叏閲嶈瘯銆?,
   }));
   const failures = [...invalidFailures, ...missingFailures];
 

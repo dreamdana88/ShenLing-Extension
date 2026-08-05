@@ -119,3 +119,16 @@
   - 模型列表 `/v1/models` 拉取未改动。
 - **剩余风险**：非标准 endpoint 的流式等价仍无法通过 TavernHelper `custom_api` 保证；若未来生产路径依赖自定义 endpoint，需另开阶段评估是否支持扩展映射或方案 B SSE。
 - **最终关闭记录**：关闭阶段：Phase 4.6-S1-B Review Fix；版本基线：`0.17.22`；验证结论：自动测试覆盖标准 `/v1` 补全、不重复拼接、`/chat/completions` 根地址、非标准 stream 拒绝、legacy 非标准仍可用；实机 GPROXY/DS 短流式由用户 push 后验收。关闭日期：2026-08-04。
+
+## OBS-011：S3-A 自动好感建档 Transport 越界与失败日志 plan 丢失
+
+- **来源 Phase**：Phase 4.6-S3-A GitHub 审阅
+- **当前状态**：已关闭
+- **现象或能力边界**：
+  1. 好感 `requestAffectionProfileStages()` 无条件读取全局 `backgroundStreamingEnabled`，使 pending / confirmed 自动建档间接受流式设置控制，越过 S3-A「仅用户主动长任务」边界。
+  2. Affection / Memoir 仅在请求成功后把 `transportPlan` 挂到 `apiResult`，请求抛错时失败日志丢失 requested/actual/fallbackReason。
+- **处理结论**：
+  - 新增显式 `transportPolicy: 'configured' | 'legacy'`，默认 `legacy`。
+  - 手动预览 / 主动重新生成传 `configured`；`startAffectionProfileBuildsForPending` 及 confirmed 自动路径保持默认 `legacy`。
+  - 请求前解析并外层保存 `transportPlan`；失败时经 `error.transportPlan` 或外层变量写入通讯日志。
+- **最终关闭记录**：关闭阶段：Phase 4.6-S3-A Review Fix；版本基线：`0.17.24`；验证结论：全量自动测试通过；自动 pending 固定 legacy；手动预览仍受统一开关控制；失败日志保留完整 transport plan。关闭日期：2026-08-04。

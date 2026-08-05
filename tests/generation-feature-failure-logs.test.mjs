@@ -624,6 +624,10 @@ test('Affection keeps constructed messages when Core fails before returning apiR
     assert.ok(logs[0].messages.length > 0);
     assert.equal(logs[0].model, 'feature-model');
     assert.equal(logs[0].url, 'https://example.invalid/chat/completions');
+    // Automatic pending builds must force legacy even when global streaming is on.
+    assert.equal(logs[0].transport?.requestedMode, 'legacy');
+    assert.equal(logs[0].transport?.actualMode, 'legacy');
+    assert.equal(logs[0].transport?.fallbackReason, null);
   });
 });
 
