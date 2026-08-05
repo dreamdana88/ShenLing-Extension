@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   calculateSafeArchiveTo,
-  configureSummaryWorkflow,
-  createScannedSummaryState,
   processAutoGrandMemory,
   recoverDeferredAutoGrandMemory,
-} from '../src/features/summary/workflow.js';
+} from '../src/features/summary/archive.js';
+import { configureSummaryWorkflow } from '../src/features/summary/runtime.js';
+import { createScannedSummaryState } from '../src/features/summary/state.js';
 import { getAssistantMessageContentFingerprint } from '../src/core/message-fingerprint.js';
 import { CHAT_STATE_KEY, MODULE_NAME } from '../src/constants.js';
 

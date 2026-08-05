@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  configureSummaryWorkflow,
-  createScannedSummaryState,
   createTotalGrandMemoryPlan,
   processTotalGrandMemory,
   shouldTriggerAutoTotalGrandMemory,
-} from '../src/features/summary/workflow.js';
+} from '../src/features/summary/archive.js';
+import { configureSummaryWorkflow } from '../src/features/summary/runtime.js';
+import { createScannedSummaryState } from '../src/features/summary/state.js';
 import { renderSummarySettingsPanel } from '../src/features/summary/panel.js';
 import { CHAT_STATE_KEY } from '../src/constants.js';
 

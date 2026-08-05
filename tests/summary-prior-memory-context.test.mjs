@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { collectPriorMemoriesForSummary } from '../src/features/summary/workflow.js';
+import { collectPriorMemoriesForSummary } from '../src/features/summary/state.js';
 import { CHAT_STATE_KEY } from '../src/constants.js';
 
 function assistant(message_id, message) {

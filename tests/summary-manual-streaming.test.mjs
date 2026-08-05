@@ -4,14 +4,16 @@ import test from 'node:test';
 
 import { CHAT_STATE_KEY, LONG_FORM_GENERATION_TIMEOUT_MS, MODULE_NAME } from '../src/constants.js';
 import {
-  configureSummaryWorkflow,
-  generateSummaryMemory,
-  MANUAL_SUMMARY_GENERATION_TIMEOUT_MS,
   processAutoTotalGrandMemory,
   processLegacyGrandArchive,
   processTotalGrandMemory,
+} from '../src/features/summary/archive.js';
+import {
+  generateSummaryMemory,
+  MANUAL_SUMMARY_GENERATION_TIMEOUT_MS,
   SUMMARY_TRANSPORT_POLICY,
-} from '../src/features/summary/workflow.js';
+} from '../src/features/summary/generation.js';
+import { configureSummaryWorkflow } from '../src/features/summary/runtime.js';
 
 const SECRET = 'sk-summary-stream-secret';
 const profile = {
@@ -572,26 +574,28 @@ test('manual configured options pass 300000 timeoutMs', async () => {
 });
 
 test('auto Grand / Total / Memoir formal paths pass CONFIGURED policy', async () => {
-  const source = await readFile(new URL('../src/features/summary/workflow.js', import.meta.url), 'utf8');
+  const archive = await readFile(new URL('../src/features/summary/archive.js', import.meta.url), 'utf8');
+  const workflow = await readFile(new URL('../src/features/summary/workflow.js', import.meta.url), 'utf8');
+  const generation = await readFile(new URL('../src/features/summary/generation.js', import.meta.url), 'utf8');
   assert.match(
-    source,
+    archive,
     /processAutoTotalGrandMemory[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
   );
   assert.match(
-    source,
+    archive,
     /tryExtractMemoirAfterGrandSummary[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
   );
   assert.match(
-    source,
+    archive,
     /type:\s*'自动大总结'[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
   );
   assert.match(
-    source,
+    workflow,
     /type:\s*'confirmed 自动小总结'[\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
   );
   // Shared defaults remain legacy so unknown callers stay conservative.
   assert.match(
-    source,
+    generation,
     /transportPolicy\s*=\s*SUMMARY_TRANSPORT_POLICY\.LEGACY/,
   );
 });
@@ -608,7 +612,7 @@ test('panel manual buttons pass CONFIGURED policy and guardChatScope', async () 
 });
 
 test('legacy archive freezes the same transportPlan across batch and final requests', async () => {
-  const source = await readFile(new URL('../src/features/summary/workflow.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/features/summary/archive.js', import.meta.url), 'utf8');
   assert.match(source, /frozenTransportPlan\s*=\s*resolveSummaryTransportPlan/);
   assert.match(source, /createManualSummaryGenerationOptions\(\s*'旧聊天批次摘要'/);
   assert.match(source, /createManualSummaryGenerationOptions\(\s*'旧聊天大总结'/);
@@ -938,15 +942,16 @@ test('main API legacy archive does not depend on secondary Profile snapshot', as
 });
 
 test('workflow source keeps profileSnapshot out of transportPlan and freezes secondary profile', async () => {
-  const source = await readFile(new URL('../src/features/summary/workflow.js', import.meta.url), 'utf8');
-  assert.match(source, /profileSnapshot\s*=\s*null/);
-  assert.match(source, /profileSnapshot\s*\|\|\s*requireWorkflowOption\('getActiveApiProfile'\)/);
-  assert.match(source, /freezeSecondaryProfileSnapshot/);
-  assert.match(source, /frozenProfileSnapshot/);
-  assert.match(source, /cloneData\(profile\)/);
+  const generation = await readFile(new URL('../src/features/summary/generation.js', import.meta.url), 'utf8');
+  const archive = await readFile(new URL('../src/features/summary/archive.js', import.meta.url), 'utf8');
+  assert.match(generation, /profileSnapshot\s*=\s*null/);
+  assert.match(generation, /profileSnapshot\s*\|\|\s*requireWorkflowOption\('getActiveApiProfile'\)/);
+  assert.match(generation, /freezeSecondaryProfileSnapshot/);
+  assert.match(archive, /frozenProfileSnapshot/);
+  assert.match(generation, /cloneData\(profile\)/);
   // transportPlan builder must not assign profile fields
   assert.doesNotMatch(
-    source,
+    generation,
     /transportPlan\s*[:=][^\n]*profileSnapshot/,
   );
 });

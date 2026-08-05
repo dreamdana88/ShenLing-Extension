@@ -26,24 +26,28 @@ import {
   saveGlobalSettings,
 } from '../../core/settings.js';
 import {
-  clearStaleSummaryRunningTask,
-  clearSummaryWriteIgnored,
-  createTotalGrandMemoryPlan,
   createLegacyArchivePlan,
-  getEditableSummaryMessage,
-  markSummaryWriteIgnored,
-  notifySummary,
-  parseManualSummaryFloor,
+  createTotalGrandMemoryPlan,
   processLegacyGrandArchive,
   processTotalGrandMemory,
+  updateLegacyArchiveStatus,
+} from './archive.js';
+import { SUMMARY_TRANSPORT_POLICY } from './generation.js';
+import {
+  getEditableSummaryMessage,
+  parseManualSummaryFloor,
   regenerateLatestGrandMemory,
   regenerateMemoryForMessage,
-  scanExistingSummaryState,
   summarizeOpeningMessage,
-  SUMMARY_TRANSPORT_POLICY,
-  updateLegacyArchiveStatus,
   writeManualMemoryToMessage,
-} from './workflow.js';
+} from './manual.js';
+import { notifySummary } from './runtime.js';
+import {
+  clearStaleSummaryRunningTask,
+  clearSummaryWriteIgnored,
+  markSummaryWriteIgnored,
+  scanExistingSummaryState,
+} from './state.js';
 
 let memoryEditorState = null;
 let grandMemoryEditorState = null;

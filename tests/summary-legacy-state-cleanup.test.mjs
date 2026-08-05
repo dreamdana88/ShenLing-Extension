@@ -12,8 +12,8 @@ import {
 import {
   clearSummaryWriteIgnored,
   markSummaryWriteIgnored,
-  processImmediateWordReplace,
-} from '../src/features/summary/workflow.js';
+} from '../src/features/summary/state.js';
+import { processImmediateWordReplace } from '../src/features/summary/workflow.js';
 
 function task(taskKey, originalMessageId, status, effects = undefined) {
   return {

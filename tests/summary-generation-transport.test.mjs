@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  configureSummaryWorkflow,
-  generateSummaryMemory,
-} from '../src/features/summary/workflow.js';
+import { generateSummaryMemory } from '../src/features/summary/generation.js';
+import { configureSummaryWorkflow } from '../src/features/summary/runtime.js';
 
 const profile = {
   name: 'Summary Secondary',

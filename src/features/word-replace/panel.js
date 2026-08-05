@@ -18,7 +18,7 @@ import {
   replacementRuleMatchesSearch,
   splitReplacementSources,
 } from './core.js';
-import { markSummaryWriteIgnored } from '../summary/workflow.js';
+import { markSummaryWriteIgnored } from '../summary/state.js';
 
 let wordReplacePanelOptions = {
   refreshPanel: null,

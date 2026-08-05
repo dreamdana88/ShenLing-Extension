@@ -40,12 +40,13 @@ import {
   saveChatState,
   saveGlobalSettings,
 } from './src/core/settings.js';
+import { configureSummaryWorkflow, notifySummary } from './src/features/summary/runtime.js';
 import {
   clearStaleSummaryRunningTask,
-  configureSummaryWorkflow,
-  notifySummary,
-  registerImmediateWordReplaceEvents,
   scanExistingSummaryState,
+} from './src/features/summary/state.js';
+import {
+  registerImmediateWordReplaceEvents,
   generateConfirmedSummaryForTask,
   shouldRunAutoSummary,
   writeConfirmedSummaryForTask,

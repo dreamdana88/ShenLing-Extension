@@ -32,10 +32,8 @@ import {
   runCaptureGeneration,
   parseCaptureGenerationResponse,
 } from '../src/features/memoir/workflow.js';
-import {
-  configureSummaryWorkflow,
-  generateSummaryMemory,
-} from '../src/features/summary/workflow.js';
+import { generateSummaryMemory } from '../src/features/summary/generation.js';
+import { configureSummaryWorkflow } from '../src/features/summary/runtime.js';
 import { getGenerationErrorContext } from '../src/core/generation.js';
 
 const SECRET = 'sk-feature-failure-secret-never-log';

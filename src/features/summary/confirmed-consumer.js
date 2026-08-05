@@ -2,7 +2,8 @@ import { getContextSafe, getChatMessagesSafe } from '../../core/chat.js';
 import { createMessageContentFingerprint, getAssistantMessageContentFingerprint } from '../../core/message-fingerprint.js';
 import { getChatState, getConfirmedSummaryTasks, getContextInfo, saveChatState } from '../../core/settings.js';
 import { getTavernEventsSafe, registerTavernEvent } from '../../core/tavern-events.js';
-import { getAutoSummaryFingerprint, shouldRunAutoSummary } from './workflow.js';
+import { getAutoSummaryFingerprint } from './state.js';
+import { shouldRunAutoSummary } from './workflow.js';
 
 const consumerEventStops = [];
 let consumerEventsRegistered = false;

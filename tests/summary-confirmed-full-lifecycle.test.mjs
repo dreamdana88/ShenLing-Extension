@@ -7,7 +7,7 @@ import {
 import { createConfirmedEffectsCoordinator } from '../src/features/summary/confirmed-effects.js';
 import { createConfirmedSummaryConsumer } from '../src/features/summary/confirmed-consumer.js';
 import { createConfirmedLifecycleCoordinator } from '../src/features/summary/confirmed-lifecycle.js';
-import { calculateSafeArchiveTo } from '../src/features/summary/workflow.js';
+import { calculateSafeArchiveTo } from '../src/features/summary/archive.js';
 
 function user(message) {
   return { role: 'user', message };

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { getAssistantMessageContentFingerprint } from '../src/core/message-fingerprint.js';
 import { normalizeConfirmedSummaryTasks } from '../src/core/settings.js';
 import { createConfirmedEffectsCoordinator } from '../src/features/summary/confirmed-effects.js';
-import { calculateSafeArchiveTo } from '../src/features/summary/workflow.js';
+import { calculateSafeArchiveTo } from '../src/features/summary/archive.js';
 
 function task(key = 'task-a', status = 'SUMMARIZED') {
   return {

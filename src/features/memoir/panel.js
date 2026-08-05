@@ -8,7 +8,7 @@ import {
   saveGlobalSettings,
 } from '../../core/settings.js';
 import { collectRecentGrandMemories } from '../../core/context-resolver.js';
-import { generateSummaryMemory } from '../summary/workflow.js';
+import { generateSummaryMemory } from '../summary/generation.js';
 import {
   commitMemoirCandidates,
   discardMemoirPending,

@@ -9,11 +9,13 @@ import {
 } from '../src/features/affection/workflow.js';
 import { createConfirmedSummaryConsumer } from '../src/features/summary/confirmed-consumer.js';
 import {
-  configureSummaryWorkflow,
-  generateConfirmedSummaryForTask,
   processAutoGrandMemory,
   processAutoTotalGrandMemory,
-  SUMMARY_TRANSPORT_POLICY,
+} from '../src/features/summary/archive.js';
+import { SUMMARY_TRANSPORT_POLICY } from '../src/features/summary/generation.js';
+import { configureSummaryWorkflow } from '../src/features/summary/runtime.js';
+import {
+  generateConfirmedSummaryForTask,
   writeConfirmedSummaryForTask,
 } from '../src/features/summary/workflow.js';
 import { getAssistantMessageContentFingerprint } from '../src/core/message-fingerprint.js';
@@ -163,29 +165,31 @@ async function withAutoHarness({
 }
 
 test('S3-C wiring: formal auto paths use CONFIGURED; shared defaults stay LEGACY', async () => {
-  const summarySource = await readFile(new URL('../src/features/summary/workflow.js', import.meta.url), 'utf8');
+  const workflowSource = await readFile(new URL('../src/features/summary/workflow.js', import.meta.url), 'utf8');
+  const archiveSource = await readFile(new URL('../src/features/summary/archive.js', import.meta.url), 'utf8');
   const effectsSource = await readFile(new URL('../src/features/summary/confirmed-effects.js', import.meta.url), 'utf8');
   const affectionSource = await readFile(new URL('../src/features/affection/workflow.js', import.meta.url), 'utf8');
   const consumerSource = await readFile(new URL('../src/features/summary/confirmed-consumer.js', import.meta.url), 'utf8');
 
   assert.match(
-    summarySource,
+    workflowSource,
     /type:\s*'confirmed 自动小总结',\s*\r?\n\s*transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
   );
   assert.match(
-    summarySource,
+    archiveSource,
     /type:\s*'自动大总结',\s*\r?\n\s*transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
   );
   assert.match(
-    summarySource,
+    archiveSource,
     /export async function processAutoTotalGrandMemory\([\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
   );
   assert.match(
-    summarySource,
+    archiveSource,
     /async function tryExtractMemoirAfterGrandSummary\([\s\S]*?transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED/,
   );
 
-  assert.match(summarySource, /transportPolicy\s*=\s*SUMMARY_TRANSPORT_POLICY\.LEGACY/);
+  const generationSource = await readFile(new URL('../src/features/summary/generation.js', import.meta.url), 'utf8');
+  assert.match(generationSource, /transportPolicy\s*=\s*SUMMARY_TRANSPORT_POLICY\.LEGACY/);
   assert.match(affectionSource, /transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/);
   assert.match(
     affectionSource,

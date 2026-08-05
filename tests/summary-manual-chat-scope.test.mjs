@@ -8,14 +8,16 @@ import {
   resetChatScopeEpochForTests,
 } from '../src/core/chat-scope.js';
 import {
-  configureSummaryWorkflow,
   processLegacyGrandArchive,
   processTotalGrandMemory,
+} from '../src/features/summary/archive.js';
+import { SUMMARY_TRANSPORT_POLICY } from '../src/features/summary/generation.js';
+import {
   regenerateLatestGrandMemory,
   regenerateMemoryForMessage,
   summarizeOpeningMessage,
-  SUMMARY_TRANSPORT_POLICY,
-} from '../src/features/summary/workflow.js';
+} from '../src/features/summary/manual.js';
+import { configureSummaryWorkflow } from '../src/features/summary/runtime.js';
 
 const SECRET = 'sk-manual-scope-secret';
 const profile = {
@@ -196,15 +198,18 @@ async function withManualScopeHarness({
 
 test('wiring: manual entries accept guardChatScope; auto total stays unguarded', async () => {
   const workflow = await readFile(new URL('../src/features/summary/workflow.js', import.meta.url), 'utf8');
+  const archive = await readFile(new URL('../src/features/summary/archive.js', import.meta.url), 'utf8');
+  const manual = await readFile(new URL('../src/features/summary/manual.js', import.meta.url), 'utf8');
   const panel = await readFile(new URL('../src/features/summary/panel.js', import.meta.url), 'utf8');
-  assert.match(workflow, /guardChatScope\s*=\s*false/);
+  assert.match(manual, /guardChatScope\s*=\s*false/);
+  assert.match(archive, /guardChatScope\s*=\s*false/);
   assert.match(workflow, /markChatScopeChanged\(\)/);
-  assert.match(workflow, /export async function processTotalGrandMemory\(\{[\s\S]*?guardChatScope\s*=\s*false/);
+  assert.match(archive, /export async function processTotalGrandMemory\(\{[\s\S]*?guardChatScope\s*=\s*false/);
   assert.match(
-    workflow,
+    archive,
     /export async function processAutoTotalGrandMemory\([\s\S]*?processTotalGrandMemory\(\{\s*transportPolicy:\s*SUMMARY_TRANSPORT_POLICY\.CONFIGURED,\s*\}\)/,
   );
-  assert.equal(workflow.includes('processAutoTotalGrandMemory') && /processAutoTotalGrandMemory[\s\S]*?guardChatScope:\s*true/.test(workflow), false);
+  assert.equal(archive.includes('processAutoTotalGrandMemory') && /processAutoTotalGrandMemory[\s\S]*?guardChatScope:\s*true/.test(archive), false);
   assert.match(panel, /guardChatScope:\s*true/);
 });
 

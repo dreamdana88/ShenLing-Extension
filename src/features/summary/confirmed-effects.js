@@ -10,7 +10,7 @@ import {
   saveChatState,
 } from '../../core/settings.js';
 import { extractMemoryBlocks } from '../../core/summary.js';
-import { processAutoGrandMemory } from './workflow.js';
+import { processAutoGrandMemory } from './archive.js';
 import {
   commitEmotionUpdateFromConfirmedSummary,
   shouldAnalyzeEmotionProfile,

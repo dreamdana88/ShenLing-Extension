@@ -440,6 +440,7 @@ test('S3-B transport resolver allowlist includes Summary workflow but not confir
     /affection\/workflow\.js$/,
     /memoir\/workflow\.js$/,
     /summary\/workflow\.js$/,
+    /summary\/generation\.js$/,
   ];
   for (const fileUrl of featureFiles) {
     const source = await readFile(fileUrl, 'utf8');
