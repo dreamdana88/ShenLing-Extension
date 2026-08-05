@@ -429,20 +429,28 @@ test('explicit stream mode fails clearly when the runtime capability is unavaila
   });
 });
 
-test('only mini-theater Feature may opt into stream transport during S2', async () => {
+test('S3-A transport resolver allowlist excludes Summary and effects features', async () => {
   const featureRoot = new URL('../src/features/', import.meta.url);
   const featureFiles = await listJavaScriptFiles(featureRoot);
-  const optIns = [];
+  const allowed = [
+    /mini-theater\/panel\.js$/,
+    /diary\/panel\.js$/,
+    /schedule\/workflow\.js$/,
+    /plot-outline\/workflow\.js$/,
+    /affection\/workflow\.js$/,
+    /memoir\/workflow\.js$/,
+  ];
   for (const fileUrl of featureFiles) {
     const source = await readFile(fileUrl, 'utf8');
-    if (/transportMode\s*:\s*['"]stream['"]/.test(source)
-      || /transportMode:\s*THEATER_TRANSPORT_MODE/.test(source)
-      || /GENERATION_TRANSPORT_MODE\.STREAM/.test(source)) {
-      optIns.push(fileUrl.pathname.replace(/\\/g, '/'));
-    }
+    if (!source.includes('resolveConfiguredGenerationTransport')) continue;
+    const path = fileUrl.pathname.replace(/\\/g, '/');
+    assert.equal(
+      allowed.some(pattern => pattern.test(path)),
+      true,
+      `unexpected transport resolver user: ${path}`,
+    );
+    assert.equal(/summary\//.test(path), false);
   }
-  assert.equal(optIns.length, 1, `unexpected stream opt-ins: ${optIns.join(', ')}`);
-  assert.match(optIns[0], /mini-theater\/panel\.js$/);
 });
 
 test('main streaming provider failures expose NETWORK_ERROR without secondary fallback', async () => {
@@ -1904,17 +1912,12 @@ test('secondary stream rejects after partial events without returning partial co
   });
 });
 
-test('stream transport allowlist remains mini-theater only after S1-B contract tests', async () => {
-  const featureFiles = await listJavaScriptFiles(new URL('../src/features/', import.meta.url));
-  const optIns = [];
-  for (const fileUrl of featureFiles) {
-    const source = await readFile(fileUrl, 'utf8');
-    if (/transportMode\s*:\s*['"]stream['"]/.test(source)
-      || /transportMode:\s*THEATER_TRANSPORT_MODE/.test(source)
-      || /GENERATION_TRANSPORT_MODE\.STREAM/.test(source)) {
-      optIns.push(fileUrl.pathname.replace(/\\/g, '/'));
-    }
-  }
-  assert.equal(optIns.length, 1);
-  assert.match(optIns[0], /mini-theater\/panel\.js$/);
+test('Core stream remains strict without request-front fallback', async () => {
+  await withGlobals({}, async () => {
+    const error = await getRejection(generateWithMainApi({
+      messages,
+      transportMode: 'stream',
+    }));
+    assertTransportError(error, 'STREAM_UNAVAILABLE', 'resolve_provider');
+  });
 });

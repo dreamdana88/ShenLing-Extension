@@ -7,14 +7,18 @@ import {
   resolveShenlingContext,
 } from '../../core/context-resolver.js';
 import {
+  buildGenerationTransportLog,
   generateWithMainApi,
   generateWithSecondaryApi,
   getGenerationErrorContext,
+  notifyBackgroundStreamingFallbackOnce,
+  resolveConfiguredGenerationTransport,
 } from '../../core/generation.js';
 import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
   getAffectionSettings,
   getAffectionSystemState,
+  getBackgroundStreamingEnabled,
   getChatState,
   getContextInfo,
   getGlobalSettings,
@@ -380,22 +384,41 @@ async function resolveAffectionProfileContext(roleName) {
 }
 
 async function requestAffectionProfileStages({ messages, apiMode }) {
+  const settings = getGlobalSettings();
+  const profile = apiMode === 'secondary_api'
+    ? getWorkflowOption('getActiveApiProfile')?.(settings)
+    : null;
+  const transportPlan = resolveConfiguredGenerationTransport({
+    backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
+    apiMode,
+    profile,
+  });
+  notifyBackgroundStreamingFallbackOnce(transportPlan.fallbackReason, message => {
+    const toastr = globalThis.toastr || globalThis.parent?.toastr;
+    toastr?.warning?.(message, '后台流式');
+  });
+  const timeoutMessage = getLongFormGenerationTimeoutMessage('专属阶段表', apiMode, {
+    transportMode: transportPlan.actualMode,
+  });
   const apiResult = apiMode === 'main_api'
     ? await generateWithMainApi({
       messages,
       timeoutMs: AFFECTION_PROFILE_BUILD_TIMEOUT_MS,
-      timeoutMessage: getLongFormGenerationTimeoutMessage('专属阶段表', apiMode),
+      timeoutMessage,
+      transportMode: transportPlan.actualMode,
     })
     : await generateWithSecondaryApi({
-      profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
+      profile,
       messages,
       timeoutMs: AFFECTION_PROFILE_BUILD_TIMEOUT_MS,
-      timeoutMessage: getLongFormGenerationTimeoutMessage('专属阶段表', apiMode),
+      timeoutMessage,
+      transportMode: transportPlan.actualMode,
     });
 
   return {
     ...apiResult,
     rawContent: apiResult.content,
+    transportPlan,
   };
 }
 
@@ -627,6 +650,7 @@ function logAffectionProfileBuild({
       || apiResult?.url
       || (task.apiMode === 'main_api' ? '酒馆当前连接' : ''),
     httpStatus: diagnostics?.httpStatus ?? apiResult?.httpStatus ?? '',
+    transport: buildGenerationTransportLog(apiResult?.transportPlan || null, apiResult, diagnostics),
     messages,
     requestBody: apiResult?.requestBody || {
       buildRequestId: task.buildRequestId,

@@ -13,9 +13,12 @@ import {
 } from '../../constants.js';
 import { getChatMessagesSafe, getContextSafe } from '../../core/chat.js';
 import {
+  buildGenerationTransportLog,
   generateWithMainApi,
   generateWithSecondaryApi,
   getGenerationErrorContext,
+  notifyBackgroundStreamingFallbackOnce,
+  resolveConfiguredGenerationTransport,
 } from '../../core/generation.js';
 import {
   resolvePromptMessages,
@@ -25,6 +28,7 @@ import { extractSummarySourceContent, formatTimestamp, isPlainObject } from '../
 import {
   CAPTURE_SOURCE_MODES,
   appendCaptureDrafts,
+  getBackgroundStreamingEnabled,
   getChatState,
   getGlobalSettings,
   getMemoirState,
@@ -1251,18 +1255,40 @@ function resolveApiMode(apiMode) {
 }
 
 async function requestCaptureGeneration(messages, apiMode) {
-  return apiMode === 'main_api'
-    ? generateWithMainApi({
+  const settings = getGlobalSettings();
+  const profile = apiMode === 'secondary_api'
+    ? getWorkflowOption('getActiveApiProfile')?.(settings)
+    : null;
+  const transportPlan = resolveConfiguredGenerationTransport({
+    backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
+    apiMode,
+    profile,
+  });
+  notifyBackgroundStreamingFallbackOnce(transportPlan.fallbackReason, message => {
+    const toastr = globalThis.toastr || globalThis.parent?.toastr;
+    toastr?.warning?.(message, '后台流式');
+  });
+  const timeoutMessage = getLongFormGenerationTimeoutMessage('设定采集', apiMode, {
+    transportMode: transportPlan.actualMode,
+  });
+  const apiResult = apiMode === 'main_api'
+    ? await generateWithMainApi({
       messages,
       timeoutMs: CAPTURE_GENERATION_TIMEOUT_MS,
-      timeoutMessage: getLongFormGenerationTimeoutMessage('设定采集', apiMode),
+      timeoutMessage,
+      transportMode: transportPlan.actualMode,
     })
-    : generateWithSecondaryApi({
-      profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
+    : await generateWithSecondaryApi({
+      profile,
       messages,
       timeoutMs: CAPTURE_GENERATION_TIMEOUT_MS,
-      timeoutMessage: getLongFormGenerationTimeoutMessage('设定采集', apiMode),
+      timeoutMessage,
+      transportMode: transportPlan.actualMode,
     });
+  return {
+    ...apiResult,
+    transportPlan,
+  };
 }
 
 function createWorkflowError(name, message, details = {}) {
@@ -1333,6 +1359,7 @@ export async function runCaptureGeneration({
       responseText: apiResult.responseText,
       rawResultContent: parseResult.jsonText,
       parsedResult: parseResult.entries,
+      transport: buildGenerationTransportLog(apiResult.transportPlan, apiResult),
     });
 
     return {
@@ -1371,6 +1398,7 @@ export async function runCaptureGeneration({
       requestBody: apiResult?.requestBody || {},
       responseText: diagnostics?.responseText || apiResult?.responseText || rawResponse,
       parsedResult: parseResult || null,
+      transport: buildGenerationTransportLog(apiResult?.transportPlan || null, apiResult, diagnostics),
       errorCode,
       errorStage,
       errorStack: error.stack || error.message || error,

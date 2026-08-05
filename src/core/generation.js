@@ -1,6 +1,7 @@
 import {
   buildApiUrl,
   buildCustomApiFromProfile,
+  isSecondaryEndpointStreamMappable,
   sanitizeCustomApiForDiagnostics,
   STREAM_ENDPOINT_UNSUPPORTED,
 } from './api.js';
@@ -12,6 +13,7 @@ import {
 } from './runtime-generation.js';
 
 const RESPONSE_TEXT_LIMIT = 16384;
+const FALLBACK_TOAST_REASONS = new Set();
 const SENSITIVE_QUERY_KEYS = new Set([
   'key',
   'api_key',
@@ -225,6 +227,123 @@ function getOpenAiChatCompletionContent(data) {
   }
   if (typeof firstChoice?.text === 'string') return firstChoice.text;
   return '';
+}
+
+function normalizeGenerationApiMode(apiMode) {
+  if (apiMode === 'main' || apiMode === 'main_api') return 'main_api';
+  return 'secondary_api';
+}
+
+/**
+ * Pure preflight transport selector. Never starts model requests.
+ * Compatibility fallback (stream → legacy) happens only here, before Core is called.
+ * Core transportMode:'stream' remains strict and does not fallback.
+ */
+export function resolveConfiguredGenerationTransport({
+  backgroundStreamingEnabled = true,
+  apiMode = 'secondary_api',
+  profile = null,
+  capability = getRuntimeStreamingCapability(),
+} = {}) {
+  const normalizedApiMode = normalizeGenerationApiMode(apiMode);
+  if (backgroundStreamingEnabled !== true) {
+    return Object.freeze({
+      requestedMode: 'legacy',
+      actualMode: 'legacy',
+      fallbackReason: null,
+      apiMode: normalizedApiMode,
+    });
+  }
+
+  const requestedMode = 'stream';
+  const capabilityAvailable = capability?.status === 'available';
+  if (!capabilityAvailable) {
+    return Object.freeze({
+      requestedMode,
+      actualMode: 'legacy',
+      fallbackReason: 'runtime_unavailable',
+      apiMode: normalizedApiMode,
+    });
+  }
+
+  if (
+    normalizedApiMode === 'secondary_api'
+    && !isSecondaryEndpointStreamMappable(profile)
+  ) {
+    return Object.freeze({
+      requestedMode,
+      actualMode: 'legacy',
+      fallbackReason: 'endpoint_unsupported',
+      apiMode: normalizedApiMode,
+    });
+  }
+
+  return Object.freeze({
+    requestedMode,
+    actualMode: 'stream',
+    fallbackReason: null,
+    apiMode: normalizedApiMode,
+  });
+}
+
+/**
+ * Optional once-per-session toast for request-front compatibility fallback.
+ * Communication logs must still record every fallback.
+ */
+export function notifyBackgroundStreamingFallbackOnce(fallbackReason, notify) {
+  if (!fallbackReason) return false;
+  if (FALLBACK_TOAST_REASONS.has(fallbackReason)) return false;
+  FALLBACK_TOAST_REASONS.add(fallbackReason);
+  if (typeof notify === 'function') {
+    notify('当前环境不支持后台流式，本次已使用兼容非流模式。');
+  }
+  return true;
+}
+
+export function resetBackgroundStreamingFallbackToastsForTests() {
+  FALLBACK_TOAST_REASONS.clear();
+}
+
+/**
+ * Build optional communication-log transport diagnostics.
+ * Never includes API keys. Pre-transport failures may set actualMode null.
+ */
+export function buildGenerationTransportLog(plan = null, apiResult = null, diagnostics = null) {
+  const transport = apiResult?.transport && typeof apiResult.transport === 'object'
+    ? apiResult.transport
+    : {};
+  const actualMode = plan && Object.hasOwn(plan, 'actualMode')
+    ? plan.actualMode
+    : (transport.mode || null);
+  const log = {
+    requestedMode: plan?.requestedMode || null,
+    actualMode,
+    fallbackReason: plan?.fallbackReason ?? null,
+    source: transport.source
+      || (actualMode === 'stream' ? 'TavernHelper' : ''),
+    generationId: String(transport.generationId || diagnostics?.generationId || ''),
+    firstChunkMs: Number.isFinite(transport.firstChunkMs) ? transport.firstChunkMs : null,
+    chunkCount: Number.isFinite(transport.chunkCount) ? transport.chunkCount : 0,
+    durationMs: Number.isFinite(transport.durationMs)
+      ? transport.durationMs
+      : (Number.isFinite(diagnostics?.durationMs) ? diagnostics.durationMs : null),
+  };
+  if (typeof diagnostics?.stopRequested === 'boolean') {
+    log.stopRequested = diagnostics.stopRequested;
+  }
+  if (typeof diagnostics?.stopAccepted === 'boolean' || diagnostics?.stopAccepted === null) {
+    log.stopAccepted = diagnostics.stopAccepted;
+  }
+  if (typeof diagnostics?.stopError === 'string' && diagnostics.stopError) {
+    log.stopError = diagnostics.stopError;
+  }
+  if (typeof diagnostics?.stopSettlementTimedOut === 'boolean') {
+    log.stopSettlementTimedOut = diagnostics.stopSettlementTimedOut;
+  }
+  if (diagnostics?.abortReason === 'USER_ABORT' || diagnostics?.abortReason === 'TIMEOUT_ABORT') {
+    log.abortReason = diagnostics.abortReason;
+  }
+  return log;
 }
 
 export async function generateWithMainApi({
@@ -704,10 +823,13 @@ export async function generateWithSecondaryApi({
   let responseText;
   let currentStage = 'send_request';
   let didTimeout = false;
+  let didUserAbort = false;
   let timeoutStage = 'send_request';
   let timeoutTimer = null;
+  let removeAbortListener = null;
   const timeoutEnabled = Number.isFinite(timeoutMs) && timeoutMs > 0;
-  const controller = timeoutEnabled ? new AbortController() : null;
+  const hasExternalSignal = Boolean(signal);
+  const controller = (timeoutEnabled || hasExternalSignal) ? new AbortController() : null;
   const fetchOptions = {
     method: 'POST',
     headers,
@@ -715,6 +837,36 @@ export async function generateWithSecondaryApi({
   };
   if (controller) {
     fetchOptions.signal = controller.signal;
+  }
+
+  if (hasExternalSignal && signal.aborted) {
+    throw new GenerationTransportError('副 API 生成已取消。', {
+      code: 'USER_ABORT',
+      stage: 'send_request',
+      diagnostics: {
+        provider: 'secondary',
+        profileName,
+        model,
+        url: safeUrl,
+        messageCount,
+        stream: false,
+        abortReason: 'USER_ABORT',
+        stopRequested: true,
+        durationMs: getDurationMs(startedAt),
+      },
+      cause: signal.reason,
+    });
+  }
+
+  if (controller && hasExternalSignal && typeof signal.addEventListener === 'function') {
+    const onAbort = () => {
+      didUserAbort = true;
+      try {
+        controller.abort();
+      } catch {}
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    removeAbortListener = () => signal.removeEventListener?.('abort', onAbort);
   }
 
   const networkTask = Promise.resolve().then(async () => {
@@ -727,7 +879,7 @@ export async function generateWithSecondaryApi({
   if (timeoutEnabled) {
     timeoutPromise = new Promise((_, reject) => {
       timeoutTimer = setTimeout(() => {
-        if (didTimeout) return;
+        if (didTimeout || didUserAbort) return;
 
         didTimeout = true;
         timeoutStage = currentStage;
@@ -778,6 +930,31 @@ export async function generateWithSecondaryApi({
       throw error;
     }
 
+    if (
+      didUserAbort
+      || signal?.aborted
+      || error?.name === 'AbortError'
+      || controller?.signal?.aborted
+    ) {
+      throw new GenerationTransportError('副 API 生成已取消。', {
+        code: 'USER_ABORT',
+        stage: currentStage,
+        diagnostics: {
+          provider: 'secondary',
+          profileName,
+          model,
+          url: safeUrl,
+          httpStatus: Number.isFinite(response?.status) ? response.status : null,
+          messageCount,
+          stream: false,
+          abortReason: 'USER_ABORT',
+          stopRequested: true,
+          durationMs: getDurationMs(startedAt),
+        },
+        cause: error,
+      });
+    }
+
     const originalMessage = sanitizeSensitiveText(
       error?.message || String(error),
       [apiKey],
@@ -824,6 +1001,7 @@ export async function generateWithSecondaryApi({
     if (timeoutTimer !== null) {
       clearTimeout(timeoutTimer);
     }
+    removeAbortListener?.();
   }
 
   let responseJson = null;

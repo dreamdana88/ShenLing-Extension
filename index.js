@@ -661,6 +661,21 @@ function renderApiSettingsPanel(settings) {
         <b>${escapeHtml(api.lastTestStatus || '未记录')}</b>
       </div>
     </div>
+    <div class="slx-detail-card">
+      <div class="slx-detail-title">生成传输</div>
+      <label class="slx-setting-toggle-row" for="slx-background-streaming-enabled">
+        <span>
+          <b>后台流式传输（推荐）</b>
+          <small>主、副 API 在后台持续接收流式数据，完整生成后仍一次性显示。关闭后使用兼容非流模式。</small>
+        </span>
+        <input
+          id="slx-background-streaming-enabled"
+          type="checkbox"
+          data-slx-background-streaming
+          ${settings.generation?.backgroundStreamingEnabled !== false ? 'checked' : ''}
+        />
+      </label>
+    </div>
   `;
 }
 function renderModuleDetail(module, settings) {
@@ -930,6 +945,14 @@ function renderFloatingPanel(options = {}) {
     button.innerHTML = `<i class="fa-solid ${isHidden ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
     button.title = isHidden ? '隐藏 API Key' : '显示 API Key';
     button.setAttribute('aria-label', button.title);
+  });
+
+  panelRoot.querySelector('[data-slx-background-streaming]')?.addEventListener('change', event => {
+    const settings = getGlobalSettings();
+    settings.generation = settings.generation || {};
+    settings.generation.backgroundStreamingEnabled = event.target.checked === true;
+    saveGlobalSettings();
+    // Preference only affects the next new generation; do not restart running tasks.
   });
 
   panelRoot.querySelector('[data-slx-save-api]')?.addEventListener('click', event => {

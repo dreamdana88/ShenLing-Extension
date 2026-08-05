@@ -3,9 +3,12 @@ import {
   resolveShenlingContext,
 } from '../../core/context-resolver.js';
 import {
+  buildGenerationTransportLog,
   generateWithMainApi,
   generateWithSecondaryApi,
   getGenerationErrorContext,
+  notifyBackgroundStreamingFallbackOnce,
+  resolveConfiguredGenerationTransport,
 } from '../../core/generation.js';
 import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
@@ -13,6 +16,7 @@ import {
   resolvePromptText,
 } from '../../core/prompt-overrides.js';
 import {
+  getBackgroundStreamingEnabled,
   getChatState,
   getContextInfo,
   getGlobalSettings,
@@ -162,6 +166,7 @@ export async function runScheduleGeneration({ userDirection } = {}) {
   let messages = [];
   let apiResult = null;
   let contextDiagnostics = null;
+  let transportPlan = null;
 
   try {
     const context = await resolveShenlingContext({
@@ -184,20 +189,37 @@ export async function runScheduleGeneration({ userDirection } = {}) {
     const outlineMaterial = buildOutlineMaterial();
     messages = buildScheduleMessages({ userDirection, contextMaterial, outlineMaterial });
 
-    // 主 API timeout 仅 wait-only；副 API timeout 会真正 abort。文案必须区分语义。
-    const timeoutMessage = getLongFormGenerationTimeoutMessage('日程表', apiMode);
+    const settings = getGlobalSettings();
+    const profile = apiMode === 'secondary_api'
+      ? getWorkflowOption('getActiveApiProfile')?.(settings)
+      : null;
+    transportPlan = resolveConfiguredGenerationTransport({
+      backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
+      apiMode,
+      profile,
+    });
+    notifyBackgroundStreamingFallbackOnce(transportPlan.fallbackReason, message => {
+      const toastr = globalThis.toastr || globalThis.parent?.toastr;
+      toastr?.warning?.(message, '后台流式');
+    });
+    // 超时文案按 actualMode：stream 请求停止；main legacy wait-only；secondary legacy 取消。
+    const timeoutMessage = getLongFormGenerationTimeoutMessage('日程表', apiMode, {
+      transportMode: transportPlan.actualMode,
+    });
 
     apiResult = apiMode === 'main_api'
       ? await generateWithMainApi({
         messages,
         timeoutMs: SCHEDULE_GENERATION_TIMEOUT_MS,
         timeoutMessage,
+        transportMode: transportPlan.actualMode,
       })
       : await generateWithSecondaryApi({
-        profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
+        profile,
         messages,
         timeoutMs: SCHEDULE_GENERATION_TIMEOUT_MS,
         timeoutMessage,
+        transportMode: transportPlan.actualMode,
       });
 
     const rawContent = apiResult.content;
@@ -241,6 +263,7 @@ export async function runScheduleGeneration({ userDirection } = {}) {
       rawResultContent: jsonText,
       parsedResult: schedule,
       wordReplacement,
+      transport: buildGenerationTransportLog(transportPlan, apiResult),
     });
 
     return { schedule, replacements, contextDiagnostics };
@@ -270,6 +293,16 @@ export async function runScheduleGeneration({ userDirection } = {}) {
         ? { ...apiResult.requestBody, contextDiagnostics }
         : { contextDiagnostics },
       responseText: diagnostics?.responseText || apiResult?.responseText || '',
+      transport: buildGenerationTransportLog(
+        transportPlan || {
+          requestedMode: getBackgroundStreamingEnabled() ? 'stream' : 'legacy',
+          actualMode: null,
+          fallbackReason: null,
+          apiMode,
+        },
+        apiResult,
+        diagnostics,
+      ),
       errorCode,
       errorStage,
       errorStack: error.stack || error.message || error,

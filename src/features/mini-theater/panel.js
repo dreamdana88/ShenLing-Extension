@@ -1,5 +1,4 @@
 import {
-  GENERATION_TRANSPORT_MODE,
   getLongFormGenerationTimeoutMessage,
   LONG_FORM_GENERATION_TIMEOUT_MS,
 } from "../../constants.js";
@@ -8,9 +7,12 @@ import {
   resolveShenlingContext,
 } from "../../core/context-resolver.js";
 import {
+  buildGenerationTransportLog,
   generateWithMainApi,
   generateWithSecondaryApi,
   getGenerationErrorContext,
+  notifyBackgroundStreamingFallbackOnce,
+  resolveConfiguredGenerationTransport,
 } from "../../core/generation.js";
 import { replacePromptMessageMacros } from "../../core/macros.js";
 import {
@@ -18,6 +20,7 @@ import {
   resolvePromptText,
 } from "../../core/prompt-overrides.js";
 import {
+  getBackgroundStreamingEnabled,
   getContextInfo,
   getChatState,
   getGlobalSettings,
@@ -44,9 +47,10 @@ let pickSearchRefreshTimer = null;
 
 /** Runtime-only AbortController for the active mini-theater generation. Not persisted. */
 let activeMiniTheaterGenerationController = null;
+/** Runtime-only resolved transport plan for the active generation. Not persisted. */
+let activeMiniTheaterTransportPlan = null;
 
 export const THEATER_GENERATION_TIMEOUT_MS = LONG_FORM_GENERATION_TIMEOUT_MS;
-export const THEATER_TRANSPORT_MODE = GENERATION_TRANSPORT_MODE.STREAM;
 const THEATER_RESULT_WARN_LIMIT = 50;
 
 // 跨渲染持久化的面板本地状态
@@ -92,6 +96,7 @@ export function resetMiniTheaterPanelStateForTests() {
     } catch {}
   }
   activeMiniTheaterGenerationController = null;
+  activeMiniTheaterTransportPlan = null;
   panelState.activeTab = "prompts";
   panelState.previewOpen = false;
   panelState.promptText = "";
@@ -506,41 +511,15 @@ function buildTheaterContextDiagnostics(context = {}) {
   };
 }
 
-function buildTheaterTransportLog(apiResult = null, diagnostics = null) {
-  const transport = apiResult?.transport && typeof apiResult.transport === "object"
-    ? apiResult.transport
-    : {};
-  const log = {
-    requestedMode: THEATER_TRANSPORT_MODE,
-    actualMode: transport.mode || THEATER_TRANSPORT_MODE,
-    source: transport.source || "TavernHelper",
-    generationId: String(transport.generationId || diagnostics?.generationId || ""),
-    firstChunkMs: Number.isFinite(transport.firstChunkMs) ? transport.firstChunkMs : null,
-    chunkCount: Number.isFinite(transport.chunkCount) ? transport.chunkCount : 0,
-    durationMs: Number.isFinite(transport.durationMs)
-      ? transport.durationMs
-      : (Number.isFinite(diagnostics?.durationMs) ? diagnostics.durationMs : null),
-  };
-  if (typeof diagnostics?.stopRequested === "boolean") {
-    log.stopRequested = diagnostics.stopRequested;
-  }
-  if (typeof diagnostics?.stopAccepted === "boolean" || diagnostics?.stopAccepted === null) {
-    log.stopAccepted = diagnostics.stopAccepted;
-  }
-  if (typeof diagnostics?.stopError === "string" && diagnostics.stopError) {
-    log.stopError = diagnostics.stopError;
-  }
-  if (typeof diagnostics?.stopSettlementTimedOut === "boolean") {
-    log.stopSettlementTimedOut = diagnostics.stopSettlementTimedOut;
-  }
-  if (diagnostics?.abortReason === "USER_ABORT" || diagnostics?.abortReason === "TIMEOUT_ABORT") {
-    log.abortReason = diagnostics.abortReason;
-  }
-  return log;
+function canStopMiniTheaterWithPlan(plan) {
+  if (!plan) return false;
+  if (plan.actualMode === "stream") return true;
+  // Secondary legacy can abort fetch via AbortController. Main legacy is wait-only.
+  return plan.apiMode === "secondary_api" && plan.actualMode === "legacy";
 }
 
 /**
- * Run mini-theater generation via Generation Core background streaming.
+ * Run mini-theater generation using the global background-streaming preference.
  * @param {{ signal?: AbortSignal }} [options]
  */
 export async function runMiniTheaterGeneration({ signal } = {}) {
@@ -557,12 +536,27 @@ export async function runMiniTheaterGeneration({ signal } = {}) {
     : null;
 
   const info = getContextInfo();
+  const settings = getGlobalSettings();
   const mt = getMiniTheaterSettings();
   const apiMode = mt.apiMode;
+  const profile = apiMode === "secondary_api"
+    ? getPanelOption("getActiveApiProfile")?.(settings)
+    : null;
+  const transportPlan = resolveConfiguredGenerationTransport({
+    backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
+    apiMode,
+    profile,
+  });
+  activeMiniTheaterTransportPlan = transportPlan;
+  notifyBackgroundStreamingFallbackOnce(
+    transportPlan.fallbackReason,
+    (message) => notifyMiniTheater("warning", message, "后台流式"),
+  );
+
   const startedAt = formatTimestamp();
   const startedMs = performance.now();
   const timeoutMessage = getLongFormGenerationTimeoutMessage("小剧场", apiMode, {
-    transportMode: THEATER_TRANSPORT_MODE,
+    transportMode: transportPlan.actualMode,
   });
   let messages = [];
   let requestBody = null;
@@ -592,24 +586,24 @@ export async function runMiniTheaterGeneration({ signal } = {}) {
       styleContent: selectedStyle?.content || "",
       contextMaterial,
     });
+    // Main legacy cannot cancel underlying generateRaw; only pass signal when stop is meaningful.
+    const requestSignal = canStopMiniTheaterWithPlan(transportPlan) ? signal : undefined;
     apiResult =
       apiMode === "main_api"
         ? await generateWithMainApi({
             messages,
             timeoutMs: THEATER_GENERATION_TIMEOUT_MS,
             timeoutMessage,
-            signal,
-            transportMode: THEATER_TRANSPORT_MODE,
+            signal: requestSignal,
+            transportMode: transportPlan.actualMode,
           })
         : await generateWithSecondaryApi({
-            profile: getPanelOption("getActiveApiProfile")?.(
-              getGlobalSettings(),
-            ),
+            profile,
             messages,
             timeoutMs: THEATER_GENERATION_TIMEOUT_MS,
             timeoutMessage,
-            signal,
-            transportMode: THEATER_TRANSPORT_MODE,
+            signal: requestSignal,
+            transportMode: transportPlan.actualMode,
           });
     requestBody = apiResult.requestBody;
 
@@ -657,7 +651,7 @@ export async function runMiniTheaterGeneration({ signal } = {}) {
       rawResultContent: content,
       parsedResult: result,
       wordReplacement,
-      transport: buildTheaterTransportLog(apiResult),
+      transport: buildGenerationTransportLog(transportPlan, apiResult),
     });
 
     if (wordReplacement.replacements > 0) {
@@ -674,6 +668,7 @@ export async function runMiniTheaterGeneration({ signal } = {}) {
     const errorCode = generationErrorContext?.code || "";
     const errorStage = generationErrorContext?.stage || "";
     const diagnostics = generationErrorContext?.diagnostics || null;
+    const preTransport = !apiResult && !generationErrorContext;
     getPanelOption("addCommunicationLog")?.({
       moduleName:
         apiMode === "main_api" ? "小剧场 / 主 API" : "小剧场 / 副 API",
@@ -699,7 +694,18 @@ export async function runMiniTheaterGeneration({ signal } = {}) {
         ? { ...requestBody, contextDiagnostics, selectedStyle }
         : { contextDiagnostics, selectedStyle },
       responseText: diagnostics?.responseText || apiResult?.responseText || "",
-      transport: buildTheaterTransportLog(apiResult, diagnostics),
+      transport: buildGenerationTransportLog(
+        preTransport
+          ? {
+              requestedMode: transportPlan.requestedMode,
+              actualMode: null,
+              fallbackReason: transportPlan.fallbackReason,
+              apiMode: transportPlan.apiMode,
+            }
+          : transportPlan,
+        apiResult,
+        diagnostics,
+      ),
       errorCode,
       errorStage,
       errorStack: error.stack || error.message || error,
@@ -722,6 +728,17 @@ async function generateMiniTheater() {
   if (panelState.generationStatus === "running") return;
   const controller = new AbortController();
   activeMiniTheaterGenerationController = controller;
+  // Resolve before first paint so stop button visibility matches real cancel capability.
+  const settings = getGlobalSettings();
+  const apiMode = getMiniTheaterSettings().apiMode;
+  const profile = apiMode === "secondary_api"
+    ? getPanelOption("getActiveApiProfile")?.(settings)
+    : null;
+  activeMiniTheaterTransportPlan = resolveConfiguredGenerationTransport({
+    backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
+    apiMode,
+    profile,
+  });
   panelState.generationStatus = "running";
   panelState.generationError = "";
   panelState.previewOpen = false;
@@ -749,6 +766,7 @@ async function generateMiniTheater() {
     if (activeMiniTheaterGenerationController === controller) {
       activeMiniTheaterGenerationController = null;
     }
+    activeMiniTheaterTransportPlan = null;
   }
   refreshPanel();
 }
@@ -1131,7 +1149,9 @@ function renderGenerateTab() {
         <button class="${buttonClass}" type="button" data-theater-generate ${isRunning ? 'disabled aria-busy="true"' : ""}>
           ${escapeHtml(buttonLabel)}
         </button>
-        ${isRunning ? '<button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-stop-generation>停止生成</button>' : ""}
+        ${isRunning && canStopMiniTheaterWithPlan(activeMiniTheaterTransportPlan)
+          ? '<button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-stop-generation>停止生成</button>'
+          : ""}
         ${hasResult ? '<button class="slx-soft-btn slx-theater-open-preview-btn" type="button" data-theater-open-preview>预览</button>' : ""}
         ${isFailed ? '<button class="slx-soft-btn" type="button" data-theater-generate>重试</button>' : ""}
       </div>

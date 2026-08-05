@@ -69,6 +69,24 @@ function createStreamEndpointUnsupportedError(profile, endpointPath) {
  * Non-standard paths, query strings, and fragments throw STREAM_ENDPOINT_UNSUPPORTED
  * before any generateRaw / fetch is started on the stream path.
  */
+/**
+ * Pure check: whether Profile endpointPath can be mapped to custom_api.apiurl.
+ * Does not send network requests and does not require a complete baseUrl/model.
+ */
+export function isSecondaryEndpointStreamMappable(profile) {
+  const rawEndpoint = String(profile?.endpointPath ?? '').trim();
+  const endpointPath = normalizeApiPath(rawEndpoint || STANDARD_V1_CHAT_COMPLETIONS);
+  if (endpointPath.includes('?') || endpointPath.includes('#')) {
+    return false;
+  }
+  const pathOnly = endpointPath.replace(/\/+$/, '') || '/';
+  const pathKey = pathOnly.toLowerCase();
+  return (
+    pathKey === STANDARD_V1_CHAT_COMPLETIONS
+    || pathKey === STANDARD_CHAT_COMPLETIONS
+  );
+}
+
 export function deriveCustomApiBaseUrl(profile) {
   const rawEndpoint = String(profile?.endpointPath ?? '').trim();
   const endpointPath = normalizeApiPath(rawEndpoint || STANDARD_V1_CHAT_COMPLETIONS);

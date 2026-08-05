@@ -269,6 +269,10 @@ export const defaultGlobalSettings = Object.freeze({
     maxEntries: 10,
     entries: [],
   },
+  generation: {
+    // Unified main/secondary background streaming preference (Phase 4.6-S3-A).
+    backgroundStreamingEnabled: true,
+  },
   api: {
     mode: 'secondary_api',
     activeProfileId: 'default',
@@ -291,6 +295,39 @@ export const defaultGlobalSettings = Object.freeze({
     lastSavedAt: '',
   },
 });
+
+/**
+ * Normalize background streaming preference.
+ * true → true; false → false; missing/invalid → true (default on).
+ * Must not use `value || true` so explicit false is preserved.
+ */
+export function normalizeBackgroundStreamingEnabled(value) {
+  if (value === false) return false;
+  if (value === true) return true;
+  return true;
+}
+
+export function normalizeGenerationSettings(settings = {}) {
+  if (!isPlainObject(settings.generation)) {
+    settings.generation = {
+      backgroundStreamingEnabled: true,
+    };
+  }
+  settings.generation.backgroundStreamingEnabled = normalizeBackgroundStreamingEnabled(
+    settings.generation.backgroundStreamingEnabled,
+  );
+  return settings.generation;
+}
+
+export function getBackgroundStreamingEnabled(settings = getGlobalSettings()) {
+  return normalizeGenerationSettings(settings).backgroundStreamingEnabled === true;
+}
+
+export function setBackgroundStreamingEnabled(enabled, settings = getGlobalSettings()) {
+  const generation = normalizeGenerationSettings(settings);
+  generation.backgroundStreamingEnabled = enabled === false ? false : true;
+  return generation.backgroundStreamingEnabled;
+}
 
 export const defaultChatState = Object.freeze({
   schemaVersion: STORAGE_VERSION,
@@ -620,6 +657,7 @@ export function getGlobalSettings() {
   settings.schemaVersion = STORAGE_VERSION;
   if (isPlainObject(settings.modules)) delete settings.modules.parallel;
   if (settings.activeModule === 'parallel') settings.activeModule = 'summary';
+  normalizeGenerationSettings(settings);
   normalizePromptOverrideSettings(settings);
   const migratedPrompts = migrateLegacySummaryPromptSettings(settings, {
     memoryDefault: DEFAULT_MEMORY_PROMPT_TEMPLATE,

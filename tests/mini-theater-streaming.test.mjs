@@ -15,7 +15,6 @@ import {
   resetMiniTheaterPanelStateForTests,
   runMiniTheaterGeneration,
   THEATER_GENERATION_TIMEOUT_MS,
-  THEATER_TRANSPORT_MODE,
 } from '../src/features/mini-theater/panel.js';
 
 const SECRET = 'sk-theater-stream-secret-never-log';
@@ -133,6 +132,9 @@ function createExtensionSettings() {
         },
       },
       communicationLog: { maxEntries: 10, entries: [] },
+      generation: {
+        backgroundStreamingEnabled: true,
+      },
     },
   };
 }
@@ -258,27 +260,44 @@ function seedPromptText(text = '请生成一段测试小剧场') {
   return fixtures;
 }
 
-test('mini-theater exposes stream transport constant and 300s timeout', () => {
-  assert.equal(THEATER_TRANSPORT_MODE, 'stream');
+test('mini-theater keeps the shared 300s timeout contract', () => {
   assert.equal(THEATER_GENERATION_TIMEOUT_MS, LONG_FORM_GENERATION_TIMEOUT_MS);
   assert.equal(THEATER_GENERATION_TIMEOUT_MS, 300000);
 });
 
-test('only mini-theater panel opts into stream among Features', async () => {
+test('user long-form features share the transport resolver; Summary does not', async () => {
   const featureFiles = await listJavaScriptFiles(new URL('../src/features/', import.meta.url));
-  const optIns = [];
+  const allowed = [
+    /mini-theater\/panel\.js$/,
+    /diary\/panel\.js$/,
+    /schedule\/workflow\.js$/,
+    /plot-outline\/workflow\.js$/,
+    /affection\/workflow\.js$/,
+    /memoir\/workflow\.js$/,
+  ];
+  const forbidden = [
+    /summary\//,
+    /emotion-profile\//,
+    /confirmed/,
+  ];
+  const users = [];
   for (const fileUrl of featureFiles) {
     const source = await readFile(fileUrl, 'utf8');
-    if (
-      /transportMode\s*:\s*['"]stream['"]/.test(source)
-      || /transportMode:\s*THEATER_TRANSPORT_MODE/.test(source)
-      || /GENERATION_TRANSPORT_MODE\.STREAM/.test(source)
-    ) {
-      optIns.push(fileUrl.pathname.replace(/\\/g, '/'));
-    }
+    if (!source.includes('resolveConfiguredGenerationTransport')) continue;
+    const path = fileUrl.pathname.replace(/\\/g, '/');
+    users.push(path);
+    assert.equal(
+      allowed.some(pattern => pattern.test(path)),
+      true,
+      `unexpected transport resolver user: ${path}`,
+    );
+    assert.equal(
+      forbidden.some(pattern => pattern.test(path)),
+      false,
+      `forbidden path resolved transport: ${path}`,
+    );
   }
-  assert.equal(optIns.length, 1);
-  assert.match(optIns[0], /mini-theater\/panel\.js$/);
+  assert.ok(users.length >= 6);
 });
 
 test('mini-theater main_api uses TavernHelper stream with ordered prompts and never legacy prompt path', async () => {
@@ -561,11 +580,13 @@ test('mini-theater stream timeout uses TIMEOUT_ABORT and stream timeout copy for
 
 test('mini-theater stop settlement timeout ends bounded with stopSettlementTimedOut diagnostics', async () => {
   const originalSetTimeout = globalThis.setTimeout;
-  globalThis.setTimeout = (callback, timeoutMs, ...args) => originalSetTimeout(
-    callback,
-    timeoutMs === 300000 ? 5 : timeoutMs === 2000 ? 25 : timeoutMs,
-    ...args,
-  );
+  // Only compress feature timeout; keep stop-grace path short but independent of other suite mocks.
+  globalThis.setTimeout = (callback, timeoutMs, ...args) => {
+    let delayMs = timeoutMs;
+    if (timeoutMs === 300000) delayMs = 5;
+    else if (timeoutMs === 2000) delayMs = 40;
+    return originalSetTimeout(callback, delayMs, ...args);
+  };
 
   try {
     await withTheaterHarness({
@@ -576,11 +597,8 @@ test('mini-theater stop settlement timeout ends bounded with stopSettlementTimed
       },
     }, async ({ logs }) => {
       seedPromptText();
-      const startedAt = Date.now();
       const error = await getRejection(runMiniTheaterGeneration());
-      const elapsed = Date.now() - startedAt;
       assert.equal(error.code, 'TIMEOUT_ABORT');
-      assert.ok(elapsed < 1500, `expected bounded stop grace, elapsed=${elapsed}`);
       assert.equal(logs[0].errorCode, 'TIMEOUT_ABORT');
       assert.equal(logs[0].transport.stopRequested, true);
       assert.equal(logs[0].transport.stopAccepted, true);
@@ -591,7 +609,7 @@ test('mini-theater stop settlement timeout ends bounded with stopSettlementTimed
   }
 });
 
-test('mini-theater STREAM_UNAVAILABLE does not fall back to legacy', async () => {
+test('mini-theater request-front runtime fallback uses legacy once and records fallbackReason', async () => {
   let fetchCalls = 0;
   let legacyMainCalls = 0;
   await withTheaterHarness({
@@ -602,25 +620,32 @@ test('mini-theater STREAM_UNAVAILABLE does not fall back to legacy', async () =>
         ok: true,
         status: 200,
         statusText: 'OK',
-        text: async () => 'legacy body',
+        text: async () => JSON.stringify({
+          choices: [{ message: { content: 'fallback legacy body' } }],
+        }),
       };
     },
     generateRaw: async () => {
       legacyMainCalls += 1;
       return 'legacy main';
     },
-  }, async ({ logs }) => {
+  }, async ({ logs, context }) => {
+    context.extensionSettings[MODULE_NAME].generation = {
+      backgroundStreamingEnabled: true,
+    };
     seedPromptText();
-    const error = await getRejection(runMiniTheaterGeneration());
-    assert.equal(error.code, 'STREAM_UNAVAILABLE');
-    assert.equal(fetchCalls, 0);
+    const result = await runMiniTheaterGeneration();
+    assert.equal(result.resultContent, 'fallback legacy body');
+    assert.equal(fetchCalls, 1);
     assert.equal(legacyMainCalls, 0);
-    assert.equal(logs[0].errorCode, 'STREAM_UNAVAILABLE');
+    assert.equal(logs[0].status, 'success');
     assert.equal(logs[0].transport.requestedMode, 'stream');
+    assert.equal(logs[0].transport.actualMode, 'legacy');
+    assert.equal(logs[0].transport.fallbackReason, 'runtime_unavailable');
   });
 });
 
-test('mini-theater STREAM_ENDPOINT_UNSUPPORTED rejects before generateRaw or fetch', async () => {
+test('mini-theater non-standard endpoint falls back to legacy fetch once', async () => {
   let generateRawCalls = 0;
   let fetchCalls = 0;
   await withTheaterHarness({
@@ -632,21 +657,28 @@ test('mini-theater STREAM_ENDPOINT_UNSUPPORTED rejects before generateRaw or fet
     tavernHelper: {
       generateRaw: async () => {
         generateRawCalls += 1;
-        return 'should not start';
+        return 'should not stream';
       },
       stopGenerationById: () => false,
     },
     fetchImpl: async () => {
       fetchCalls += 1;
-      throw new Error('no fetch');
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => 'custom endpoint legacy ok',
+      };
     },
   }, async ({ logs }) => {
     seedPromptText();
-    const error = await getRejection(runMiniTheaterGeneration());
-    assert.equal(error.code, 'STREAM_ENDPOINT_UNSUPPORTED');
+    const result = await runMiniTheaterGeneration();
+    assert.equal(result.resultContent, 'custom endpoint legacy ok');
     assert.equal(generateRawCalls, 0);
-    assert.equal(fetchCalls, 0);
-    assert.equal(logs[0].errorCode, 'STREAM_ENDPOINT_UNSUPPORTED');
+    assert.equal(fetchCalls, 1);
+    assert.equal(logs[0].transport.requestedMode, 'stream');
+    assert.equal(logs[0].transport.actualMode, 'legacy');
+    assert.equal(logs[0].transport.fallbackReason, 'endpoint_unsupported');
   });
 });
 

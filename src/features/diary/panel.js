@@ -5,11 +5,15 @@ import {
 } from '../../utils/text.js';
 import { getLongFormGenerationTimeoutMessage, LONG_FORM_GENERATION_TIMEOUT_MS } from '../../constants.js';
 import {
+  buildGenerationTransportLog,
   generateWithMainApi,
   generateWithSecondaryApi,
   getGenerationErrorContext,
+  notifyBackgroundStreamingFallbackOnce,
+  resolveConfiguredGenerationTransport,
 } from '../../core/generation.js';
 import {
+  getBackgroundStreamingEnabled,
   getChatState,
   getGlobalSettings,
   getWordReplaceSettings,
@@ -995,13 +999,33 @@ export async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
   const store = getDiaryStore(getChatState());
   const addCommunicationLog = getPanelOption('addCommunicationLog');
   const startedAt = performance.now();
+  const settings = getGlobalSettings();
+  const apiMode = store.settings.apiMode === 'main' ? 'main_api' : 'secondary_api';
+  const profile = apiMode === 'secondary_api'
+    ? getPanelOption('getActiveApiProfile')?.(settings)
+    : null;
+  const transportPlan = resolveConfiguredGenerationTransport({
+    backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
+    apiMode,
+    profile,
+  });
+  notifyBackgroundStreamingFallbackOnce(
+    transportPlan.fallbackReason,
+    message => notifyDiary('warning', message, '后台流式'),
+  );
+  const timeoutMessage = getLongFormGenerationTimeoutMessage(
+    '日记',
+    apiMode === 'main_api' ? 'main' : 'secondary',
+    { transportMode: transportPlan.actualMode },
+  );
 
-  if (store.settings.apiMode === 'main') {
+  if (apiMode === 'main_api') {
     try {
       const apiResult = await generateWithMainApi({
         messages,
         timeoutMs: DIARY_GENERATION_TIMEOUT_MS,
-        timeoutMessage: getLongFormGenerationTimeoutMessage('日记', 'main'),
+        timeoutMessage,
+        transportMode: transportPlan.actualMode,
       });
       const rawParsedResult = parseDiaryGenerationResult(apiResult.content, fallbackDate);
       const { result: parsedResult, replacement: wordReplacement } =
@@ -1021,6 +1045,7 @@ export async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
         rawParsedResult,
         parsedResult,
         wordReplacement,
+        transport: buildGenerationTransportLog(transportPlan, apiResult),
       });
       if (wordReplacement.replacements > 0) {
         notifyDiary('success', `日记生成结果已替换 ${wordReplacement.replacements} 处。`, '禁词替换');
@@ -1044,6 +1069,7 @@ export async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
         messages,
         requestBody: { prompt: messages },
         responseText: diagnostics?.responseText || '',
+        transport: buildGenerationTransportLog(transportPlan, null, diagnostics),
         errorCode,
         errorStage,
         errorStack: error.stack || error.message || error,
@@ -1052,14 +1078,14 @@ export async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
     }
   }
 
-  const profile = getPanelOption('getActiveApiProfile')?.(getGlobalSettings());
   let apiResult = null;
   try {
     apiResult = await generateWithSecondaryApi({
       profile,
       messages,
       timeoutMs: DIARY_GENERATION_TIMEOUT_MS,
-      timeoutMessage: getLongFormGenerationTimeoutMessage('日记', 'secondary'),
+      timeoutMessage,
+      transportMode: transportPlan.actualMode,
     });
     const rawParsedResult = parseDiaryGenerationResult(apiResult.content, fallbackDate);
     const { result: parsedResult, replacement: wordReplacement } =
@@ -1080,6 +1106,7 @@ export async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
       rawParsedResult,
       parsedResult,
       wordReplacement,
+      transport: buildGenerationTransportLog(transportPlan, apiResult),
     });
     if (wordReplacement.replacements > 0) {
       notifyDiary('success', `日记生成结果已替换 ${wordReplacement.replacements} 处。`, '禁词替换');
@@ -1103,6 +1130,7 @@ export async function runDiaryGeneration({ messages, taskType, fallbackDate }) {
       messages,
       requestBody: apiResult?.requestBody || null,
       responseText: diagnostics?.responseText || '',
+      transport: buildGenerationTransportLog(transportPlan, apiResult, diagnostics),
       errorCode,
       errorStage,
       errorStack: error.stack || error.message || error,

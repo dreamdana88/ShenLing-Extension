@@ -8,9 +8,12 @@ import {
   resolveShenlingContext,
 } from '../../core/context-resolver.js';
 import {
+  buildGenerationTransportLog,
   generateWithMainApi,
   generateWithSecondaryApi,
   getGenerationErrorContext,
+  notifyBackgroundStreamingFallbackOnce,
+  resolveConfiguredGenerationTransport,
 } from '../../core/generation.js';
 import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
@@ -18,6 +21,7 @@ import {
   resolvePromptText,
 } from '../../core/prompt-overrides.js';
 import {
+  getBackgroundStreamingEnabled,
   getChatState,
   getContextInfo,
   getGlobalSettings,
@@ -602,6 +606,7 @@ export async function runPlotOutlineGeneration({ userDirection } = {}) {
   let messages = [];
   let apiResult = null;
   let contextDiagnostics = null;
+  let transportPlan = null;
 
   try {
     const context = await resolveShenlingContext({
@@ -625,17 +630,35 @@ export async function runPlotOutlineGeneration({ userDirection } = {}) {
       contextMaterial,
     });
 
+    const settings = getGlobalSettings();
+    const profile = apiMode === 'secondary_api'
+      ? getWorkflowOption('getActiveApiProfile')?.(settings)
+      : null;
+    transportPlan = resolveConfiguredGenerationTransport({
+      backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
+      apiMode,
+      profile,
+    });
+    notifyBackgroundStreamingFallbackOnce(transportPlan.fallbackReason, message => {
+      const toastr = globalThis.toastr || globalThis.parent?.toastr;
+      toastr?.warning?.(message, '后台流式');
+    });
+    const timeoutMessage = getLongFormGenerationTimeoutMessage('剧情大纲', apiMode, {
+      transportMode: transportPlan.actualMode,
+    });
     apiResult = apiMode === 'main_api'
       ? await generateWithMainApi({
         messages,
         timeoutMs: OUTLINE_GENERATION_TIMEOUT_MS,
-        timeoutMessage: getLongFormGenerationTimeoutMessage('剧情大纲', apiMode),
+        timeoutMessage,
+        transportMode: transportPlan.actualMode,
       })
       : await generateWithSecondaryApi({
-        profile: getWorkflowOption('getActiveApiProfile')?.(getGlobalSettings()),
+        profile,
         messages,
         timeoutMs: OUTLINE_GENERATION_TIMEOUT_MS,
-        timeoutMessage: getLongFormGenerationTimeoutMessage('剧情大纲', apiMode),
+        timeoutMessage,
+        transportMode: transportPlan.actualMode,
       });
 
     const rawContent = apiResult.content;
@@ -680,6 +703,7 @@ export async function runPlotOutlineGeneration({ userDirection } = {}) {
       rawResultContent: jsonText,
       parsedResult: draft,
       wordReplacement,
+      transport: buildGenerationTransportLog(transportPlan, apiResult),
     });
 
     return { draft, replacements, contextDiagnostics };
@@ -704,6 +728,7 @@ export async function runPlotOutlineGeneration({ userDirection } = {}) {
         || apiResult?.url
         || (apiMode === 'main_api' ? '酒馆当前连接' : ''),
       httpStatus: diagnostics?.httpStatus ?? apiResult?.httpStatus ?? '',
+      transport: buildGenerationTransportLog(transportPlan, apiResult, diagnostics),
       messages,
       requestBody: apiResult?.requestBody
         ? { ...apiResult.requestBody, contextDiagnostics }
