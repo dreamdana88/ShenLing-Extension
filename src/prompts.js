@@ -695,19 +695,19 @@ export function buildAffectionProfilePrompt({
   const requirementBlock = templateMode
     ? '${requirementBlock}'
     : cleanUserRequirement
-    ? `\n## 用户专属需求（本次定制最高优先级）\n${cleanUserRequirement}\n\n在不改变固定五阶段范围、正式初值与角色核心身份的前提下，阶段关系走向、表达偏好和边界必须优先满足以上用户需求。\n`
-    : '';
+      ? `\n【用户阶段设计构思｜优先参考】\n${cleanUserRequirement}\n`
+      : '';
   const requirementReminder = templateMode
     ? '${requirementReminder}'
     : cleanUserRequirement
-      ? '生成结果必须再次优先核对用户专属需求。'
-      : '请依据角色与既有关系生成专属内容。';
+      ? '请优先参考用户的阶段设计构思，并结合上述资料保持角色一致性。'
+      : '请结合上述资料保持角色一致性。';
   const cleanContextMaterial = templateMode
     ? '${contextMaterial}'
     : String(contextMaterial || '暂无额外材料。').trim() || '暂无额外材料。';
   if (template !== null) {
     const actualRequirementBlock = cleanUserRequirement
-      ? `\n## 用户专属需求（本次定制最高优先级）\n${cleanUserRequirement}\n\n在不改变固定五阶段范围、正式初值与角色核心身份的前提下，阶段关系走向、表达偏好和边界必须优先满足以上用户需求。\n`
+      ? `\n【用户阶段设计构思｜优先参考】\n${cleanUserRequirement}\n`
       : '';
     return fillRuntimePromptTemplate(template, {
       roleName: String(roleName || '').trim(),
@@ -715,14 +715,26 @@ export function buildAffectionProfilePrompt({
       requirementBlock: actualRequirementBlock,
       contextMaterial: String(contextMaterial || '暂无额外材料。').trim() || '暂无额外材料。',
       requirementReminder: cleanUserRequirement
-        ? '生成结果必须再次优先核对用户专属需求。'
-        : '请依据角色与既有关系生成专属内容。',
+        ? '请优先参考用户的阶段设计构思，并结合上述资料保持角色一致性。'
+        : '请结合上述资料保持角色一致性。',
     });
   }
-  return `## 攻略角色专属阶段表建档
+  return `你正在执行一项独立的好感度档案设计任务。
 
-请只为角色「${cleanRoleName}」生成一套从 0 到 100 的五阶段攻略关系表。
-当前正式初始好感已经由同一次小总结确定为 ${cleanInitialAffection}；不得重新估算、修改或覆盖这个初值。
+请只为目标角色「${cleanRoleName}」创建一套专属好感度五阶段。
+
+本次建档指定的正式初始好感为 ${cleanInitialAffection}。
+不得重新估算、修改或覆盖该初始值。
+
+固定结构合同：
+- stages 必须恰好五项，并依次对应固定区间 0-20、21-40、41-60、61-80、81-100。
+- 每一阶段必须包含非空的 name、meaning、trend、boundary，以及恰好三条非空 behaviors。
+- 阶段必须逐步递进；行为必须具体、可演，贴合「${cleanRoleName}」的人设、既有关系与表达方式。
+- 不得违背角色核心人设；高好感不得导致角色失去原则、主体性或合理边界。
+- 只输出合法 JSON；模型返回的 range 仅供参考，最终区间由代码固定。
+${requirementBlock}
+以下是可参考资料：
+${cleanContextMaterial}
 
 只输出一个合法 JSON 对象，不要输出 Markdown、代码围栏或解释：
 {
@@ -739,18 +751,13 @@ export function buildAffectionProfilePrompt({
   ]
 }
 
-要求：
-- stages 必须恰好五项，并依次对应 0-20、21-40、41-60、61-80、81-100。
-- 每一阶段必须包含非空的 name、meaning、trend、boundary，以及恰好三条非空 behaviors。
-- 阶段名和行为必须贴合「${cleanRoleName}」的人设、既有关系与表达方式，不使用通用模板名。
-- 行为必须具体、可演、逐阶段递进，不违背角色核心人设，也不提前越过本阶段关系边界。
-${requirementBlock}
+再次确认：
 
-以下材料只用于理解角色和既有关系：
-${cleanContextMaterial}
-
+本次任务只为目标角色「${cleanRoleName}」创建专属好感度五阶段。
 ${requirementReminder}
-不得在 JSON 外输出任何内容。`;
+本次指定的正式初始好感不得修改。
+只输出符合固定结构的合法 JSON。
+不要输出剧情正文、分析、说明、Markdown 或额外文本。`;
 }
 
 export const AFFECTION_PROFILE_PROMPT_TEMPLATE = buildAffectionProfilePrompt({
@@ -1146,16 +1153,16 @@ export const PROMPT_CATALOG = Object.freeze([
     moduleId: 'affection',
     moduleLabel: '好感度',
     label: '专属阶段建档',
-    description: '首次建档与按需求重新生成五阶段时使用。',
+    description: '手动/自动专属五阶段建档与按需求重新生成时使用。',
     kind: 'text',
     defaultValue: AFFECTION_PROFILE_PROMPT_TEMPLATE,
     variables: [
       USER_MACRO_VARIABLE,
       promptVariable('${roleName}', '角色名'),
       promptVariable('${initialAffection}', '正式初始好感'),
-      promptVariable('${requirementBlock}', '用户专属需求段'),
+      promptVariable('${requirementBlock}', '用户阶段设计构思段'),
       promptVariable('${contextMaterial}', '角色与剧情材料'),
-      promptVariable('${requirementReminder}', '需求优先级提醒'),
+      promptVariable('${requirementReminder}', '末尾一致性提醒'),
     ],
     requiredTokens: ['${roleName}', '${initialAffection}', '${contextMaterial}', '"stages"', '"range"'],
   },

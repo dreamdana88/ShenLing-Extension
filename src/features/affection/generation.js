@@ -202,9 +202,11 @@ export function logAffectionProfileBuild({
     || null;
   getWorkflowOption('addCommunicationLog')?.({
     moduleName: task.apiMode === 'main_api' ? '好感度建档 / 主 API' : '好感度建档 / 副 API',
-    taskType: task.operation === 'regenerate'
-      ? '专属阶段表主动重新生成'
-      : task.buildMode === 'generic' ? '通用阶段表预建档' : '专属阶段表预建档',
+    taskType: task.operation === 'manual_create'
+      ? '手动创建专属阶段'
+      : task.operation === 'regenerate'
+        ? '专属阶段表主动重新生成'
+        : task.buildMode === 'generic' ? '通用阶段表预建档' : '专属阶段表预建档',
     status,
     startedAt,
     durationMs: diagnostics?.durationMs ?? Math.round(performance.now() - startedMs),
@@ -228,6 +230,9 @@ export function logAffectionProfileBuild({
       roleName: task.roleName,
       initialValueTenths: task.initialValueTenths,
       buildMode: task.buildMode,
+      apiMode: task.apiMode,
+      operation: task.operation || '',
+      userRequirement: task.userRequirement || '',
     },
     responseText: diagnostics?.responseText || apiResult?.responseText || '',
     rawResultContent: apiResult?.rawContent || '',
