@@ -365,3 +365,39 @@ test('rewriteAffectionMemoryFields removes retired first lines', () => {
 test('plugin version is 0.17.31 after Phase C', () => {
   assert.equal(PLUGIN_VERSION, '0.17.31');
 });
+
+test('formal affection panel keeps responsive styles after diagnostics retirement', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const css = await readFile(new URL('../style.css', import.meta.url), 'utf8');
+
+  // 正式响应式与可访问性断点
+  assert.match(css, /@media\s*\(\s*hover:\s*hover\s*\)/);
+  assert.match(css, /@media\s*\(\s*max-width:\s*760px\s*\)/);
+  assert.match(css, /@media\s*\(\s*max-width:\s*480px\s*\)/);
+  assert.match(css, /@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)/);
+
+  // 区块标题不得再写 Development Test Area
+  assert.match(css, /Affection Panel/);
+  assert.doesNotMatch(css, /Affection Development Test Area/);
+
+  // 关键正式 selector / 值（允许空白换行）
+  assert.match(css, /\.slx-affection-editor[\s\S]{0,400}width:\s*100%/);
+  assert.match(css, /\.slx-affection-delta-stepper[\s\S]{0,200}44px/);
+  assert.match(css, /\.slx-affection-editor-head\s*>\s*button[\s\S]{0,120}44px/);
+  assert.match(css, /\.slx-affection-editor-footer[\s\S]{0,200}flex-direction:\s*column/);
+  assert.match(css, /\.slx-affection-settings-controls\b/);
+  assert.match(css, /\.slx-affection-detail-hero\b/);
+  assert.match(css, /\.slx-affection-record-list\s+li\b/);
+  assert.match(css, /\.slx-affection-stage-toggle\b/);
+  assert.match(
+    css,
+    /\.slx-affection-root\s+input[\s\S]{0,200}font-size:\s*16px/,
+  );
+
+  // 开发诊断与旧自动建档 selector 不得回潮
+  assert.doesNotMatch(css, /\.slx-affection-test-/);
+  assert.doesNotMatch(css, /\.slx-affection-diagnostics/);
+  assert.doesNotMatch(css, /\.slx-affection-pending-row\.is-first/);
+  assert.doesNotMatch(css, /\.slx-affection-initial-form/);
+  assert.doesNotMatch(css, /\.slx-affection-build-state/);
+});

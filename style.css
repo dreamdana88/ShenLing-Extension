@@ -4031,8 +4031,8 @@ body.slx-panel-open-lock {
   }
 }
 
-/* ========================================================================== 
-   Affection Development Test Area
+/* ==========================================================================
+   Affection Panel
    ========================================================================== */
 
 /* 好感度：关系档案主面板、待确认项与专属阶段编辑器 */
@@ -4302,20 +4302,13 @@ body.slx-panel-open-lock {
   background: var(--slx-bg-soft);
 }
 
-.slx-affection-pending-row.is-first {
-  grid-template-columns: minmax(120px, 1fr) minmax(120px, auto);
-}
-
-.slx-affection-pending-person,
-.slx-affection-build-state {
+.slx-affection-pending-person {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
 
-.slx-affection-pending-person small,
-.slx-affection-build-state small,
-.slx-affection-build-state span {
+.slx-affection-pending-person small {
   color: var(--slx-muted);
   font-size: 11px;
   overflow-wrap: anywhere;
@@ -5056,7 +5049,164 @@ body.slx-panel-open-lock {
   color: var(--slx-muted);
 }
 
+/* 正式好感 Panel：悬停反馈 */
+@media (hover: hover) {
+  .slx-affection-segment button:hover,
+  .slx-affection-api-toggle button:hover,
+  .slx-affection-editor-head > button:hover,
+  .slx-affection-stage-toggle:hover,
+  .slx-affection-delta-stepper button:hover:not(:disabled) {
+    background: var(--slx-bg-card-hover);
+    color: var(--slx-text);
+  }
+}
+
+/* 正式好感 Panel：平板 / 中等窄屏 */
+@media (max-width: 760px) {
+  .slx-affection-pending-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .slx-affection-pending-row > .slx-affection-text-action,
+  .slx-affection-pending-actions {
+    grid-column: 1 / -1;
+  }
+
+  .slx-affection-pending-row > .slx-affection-text-action {
+    justify-self: end;
+  }
+
+  .slx-affection-editor {
+    width: 100%;
+    border: 0;
+  }
+}
+
+/* 正式好感 Panel：手机布局与触控尺寸 */
+@media (max-width: 480px) {
+  .slx-affection-settings-fold,
+  .slx-affection-pending-card,
+  .slx-affection-profile-card,
+  .slx-affection-empty-state {
+    padding: 12px;
+  }
+
+  .slx-affection-editor-head {
+    min-height: 58px;
+    padding: 8px 10px;
+  }
+
+  .slx-affection-editor-body {
+    padding: 10px;
+  }
+
+  .slx-affection-pending-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .slx-affection-delta-stepper {
+    width: 100%;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+  }
+
+  .slx-affection-delta-stepper button,
+  .slx-affection-editor-head > button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .slx-affection-profile-card > footer,
+  .slx-affection-adjust-row,
+  .slx-affection-regenerate-actions,
+  .slx-affection-editor-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .slx-affection-profile-card > footer .slx-soft-btn,
+  .slx-affection-adjust-row .slx-soft-btn,
+  .slx-affection-regenerate-actions > .slx-soft-btn,
+  .slx-affection-editor-footer .slx-soft-btn,
+  .slx-affection-pending-actions .slx-soft-btn {
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .slx-affection-pending-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .slx-affection-segment {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .slx-schedule-api-toggle.slx-affection-api-toggle {
+    display: inline-grid;
+    width: fit-content;
+    grid-template-columns: repeat(2, minmax(0, auto));
+  }
+
+  /* 480px 下设置区改单列，避免默认方式与 API 段挤压 */
+  .slx-affection-settings-controls {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .slx-affection-settings-controls .slx-affection-api-toggle {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .slx-affection-segment button,
+  .slx-affection-api-toggle button {
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .slx-affection-detail-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .slx-affection-record-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .slx-affection-record-list li small {
+    grid-column: 1 / -1;
+  }
+
+  .slx-affection-stage-toggle > span:first-child {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .slx-affection-stage-toggle em {
+    grid-column: 2;
+  }
+
+  .slx-affection-stage-tags small:not(.is-current):not(.is-error) {
+    display: none;
+  }
+
+  #shenling-assistant-panel-root .slx-affection-root input,
+  #shenling-assistant-panel-root .slx-affection-root textarea,
+  #shenling-assistant-panel-root .slx-affection-root select {
+    font-size: 16px !important;
+  }
+}
+
+/* 正式好感 Panel：减弱动画 */
 @media (prefers-reduced-motion: reduce) {
+  .slx-affection-settings-fold > summary > svg,
+  .slx-affection-regenerate-fold > summary > svg,
+  .slx-affection-stage-details > summary svg,
+  .slx-affection-stage-toggle .slx-affection-stage-tags > svg {
+    transition: none;
+  }
+
   .slx-affection-create-entry,
   .slx-affection-create-form,
   .slx-affection-create-draft-card {
