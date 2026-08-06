@@ -397,7 +397,6 @@ export const defaultChatState = Object.freeze({
   affectionSystem: {
     profiles: {},
     pendingByMessage: {},
-    buildTasks: {},
   },
   schedule: {
     current: null,
@@ -848,15 +847,47 @@ function normalizeAffectionProfiles(value) {
   return profiles;
 }
 
+function normalizeAffectionPendingByMessage(value) {
+  if (!isPlainObject(value)) return {};
+  const pendingByMessage = {};
+  Object.entries(value).forEach(([messageKey, bucket]) => {
+    if (!isPlainObject(bucket) || !isPlainObject(bucket.items)) return;
+    const items = {};
+    Object.entries(bucket.items).forEach(([fingerprint, pending]) => {
+      if (!isPlainObject(pending)) return;
+      const changes = Array.isArray(pending.changes)
+        ? pending.changes.filter(item => isPlainObject(item))
+        : [];
+      // 丢弃 firsts 与空候选；保留合法 changes
+      if (!changes.length) return;
+      items[fingerprint] = {
+        ...pending,
+        changes,
+        firsts: undefined,
+      };
+      delete items[fingerprint].firsts;
+    });
+    if (!Object.keys(items).length) return;
+    pendingByMessage[messageKey] = {
+      messageId: bucket.messageId ?? Number(messageKey),
+      items,
+      updatedAt: bucket.updatedAt || '',
+    };
+  });
+  return pendingByMessage;
+}
+
 export function getAffectionSystemState(chatState = getChatState()) {
   const source = isPlainObject(chatState.affectionSystem)
     ? chatState.affectionSystem
     : {};
+  // 丢弃旧 buildTasks，不迁移、不警告
   chatState.affectionSystem = {
     profiles: normalizeAffectionProfiles(source.profiles),
-    pendingByMessage: isPlainObject(source.pendingByMessage) ? source.pendingByMessage : {},
-    buildTasks: isPlainObject(source.buildTasks) ? source.buildTasks : {},
+    pendingByMessage: normalizeAffectionPendingByMessage(source.pendingByMessage),
   };
+  if (source.lastUpdatedAt) chatState.affectionSystem.lastUpdatedAt = source.lastUpdatedAt;
+  if (source.lastInjectedAt) chatState.affectionSystem.lastInjectedAt = source.lastInjectedAt;
   return chatState.affectionSystem;
 }
 

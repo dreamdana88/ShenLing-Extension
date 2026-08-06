@@ -4,10 +4,6 @@ import {
 } from '../../constants.js';
 import { formatTimestamp, isPlainObject } from '../../utils/text.js';
 import {
-  formatShenlingContextForPrompt,
-  resolveShenlingContext,
-} from '../../core/context-resolver.js';
-import {
   buildGenerationTransportLog,
   generateWithMainApi,
   generateWithSecondaryApi,
@@ -71,74 +67,41 @@ function buildAffectionProfileMessages({
   ]);
 }
 
-export async function resolveAffectionProfileContext(roleName) {
-  const context = await resolveShenlingContext({
-    purpose: 'affectionProfile',
-    targetRoleName: roleName,
-    recentMessageLimit: 8,
-    includeRecentChat: true,
-    includeMemories: true,
-    includeGrandMemories: true,
-    includeEmotionProfile: true,
-    includeAllEmotionProfiles: false,
-    includeWorldInfo: false,
-  });
-  return formatShenlingContextForPrompt(context, {
-    includeWorldInfo: false,
-    includeTimelineArchives: true,
-    includeRecentChat: true,
-    includeEmotionProfiles: true,
-  });
-}
-
 /**
  * Transport policy for affection profile builds.
  * - configured: user-triggered; read global backgroundStreamingEnabled
- * - legacy: automatic/pending/confirmed builds; never read streaming setting
- * Default is legacy so new call sites cannot accidentally opt into stream.
+ * Phase C 后仅手动建档 / 主动重新生成使用 CONFIGURED。
  */
 export const AFFECTION_TRANSPORT_POLICY = Object.freeze({
   CONFIGURED: 'configured',
-  LEGACY: 'legacy',
 });
 
 function normalizeAffectionApiMode(apiMode) {
   return apiMode === 'main_api' || apiMode === 'main' ? 'main_api' : 'secondary_api';
 }
 
-function createLegacyAffectionTransportPlan(apiMode) {
-  return Object.freeze({
-    requestedMode: 'legacy',
-    actualMode: 'legacy',
-    fallbackReason: null,
-    apiMode: normalizeAffectionApiMode(apiMode),
+function resolveAffectionTransportPlan(apiMode, transportPolicy = AFFECTION_TRANSPORT_POLICY.CONFIGURED) {
+  void transportPolicy;
+  const settings = getGlobalSettings();
+  const profile = normalizeAffectionApiMode(apiMode) === 'secondary_api'
+    ? getWorkflowOption('getActiveApiProfile')?.(settings)
+    : null;
+  const plan = resolveConfiguredGenerationTransport({
+    backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
+    apiMode,
+    profile,
   });
-}
-
-function resolveAffectionTransportPlan(apiMode, transportPolicy = AFFECTION_TRANSPORT_POLICY.LEGACY) {
-  if (transportPolicy === AFFECTION_TRANSPORT_POLICY.CONFIGURED) {
-    const settings = getGlobalSettings();
-    const profile = normalizeAffectionApiMode(apiMode) === 'secondary_api'
-      ? getWorkflowOption('getActiveApiProfile')?.(settings)
-      : null;
-    const plan = resolveConfiguredGenerationTransport({
-      backgroundStreamingEnabled: getBackgroundStreamingEnabled(settings),
-      apiMode,
-      profile,
-    });
-    notifyBackgroundStreamingFallbackOnce(plan.fallbackReason, message => {
-      const toastr = globalThis.toastr || globalThis.parent?.toastr;
-      toastr?.warning?.(message, '后台流式');
-    });
-    return plan;
-  }
-  return createLegacyAffectionTransportPlan(apiMode);
+  notifyBackgroundStreamingFallbackOnce(plan.fallbackReason, message => {
+    const toastr = globalThis.toastr || globalThis.parent?.toastr;
+    toastr?.warning?.(message, '后台流式');
+  });
+  return plan;
 }
 
 async function requestAffectionProfileStages({
   messages,
   apiMode,
-  transportPolicy = AFFECTION_TRANSPORT_POLICY.LEGACY,
+  transportPolicy = AFFECTION_TRANSPORT_POLICY.CONFIGURED,
 }) {
   // Resolve before the request so failure logs keep the same plan.
   const transportPlan = resolveAffectionTransportPlan(apiMode, transportPolicy);
@@ -206,7 +169,7 @@ export function logAffectionProfileBuild({
       ? '手动创建专属阶段'
       : task.operation === 'regenerate'
         ? '专属阶段表主动重新生成'
-        : task.buildMode === 'generic' ? '通用阶段表预建档' : '专属阶段表预建档',
+        : '专属阶段表生成',
     status,
     startedAt,
     durationMs: diagnostics?.durationMs ?? Math.round(performance.now() - startedMs),
@@ -246,7 +209,7 @@ export async function executeCustomAffectionProfileBuild(task, {
   requestCustomProfile,
   resolveContextMaterial,
   onMessagesReady = null,
-  transportPolicy = AFFECTION_TRANSPORT_POLICY.LEGACY,
+  transportPolicy = AFFECTION_TRANSPORT_POLICY.CONFIGURED,
 }) {
   const contextMaterial = await resolveContextMaterial(task.roleName);
   const messages = buildAffectionProfileMessages({
@@ -309,7 +272,10 @@ export async function runAffectionProfileBuildApiPreview({ roleName, initialValu
   try {
     result = await executeCustomAffectionProfileBuild(task, {
       requestCustomProfile: null,
-      resolveContextMaterial: resolveAffectionProfileContext,
+      // 预览入口要求调用方注入完整上下文；默认提供占位材料避免生成链路环依赖。
+      resolveContextMaterial: async roleName => (
+        `【预览占位上下文】目标角色：${roleName}`
+      ),
       transportPolicy: AFFECTION_TRANSPORT_POLICY.CONFIGURED,
       onMessagesReady: messages => {
         requestMessages = messages;

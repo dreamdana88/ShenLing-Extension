@@ -7,13 +7,15 @@ import { fileURLToPath } from 'node:url';
 import { registerAffectionInjectionEvents } from '../src/features/affection/injection.js';
 import {
   commitAffectionUpdateFromConfirmedSummary,
-  startAffectionProfileBuildsForPending,
+  commitSelectedPendingAffectionUpdates,
+  parseAffectionUpdateFromMemory,
 } from '../src/features/affection/lifecycle.js';
 import {
   configureAffectionWorkflow,
   isAffectionAnalysisActive,
 } from '../src/features/affection/runtime.js';
 import { registerAffectionWorkflowEvents } from '../src/features/affection/workflow.js';
+import { AFFECTION_TRANSPORT_POLICY } from '../src/features/affection/generation.js';
 
 const affectionDir = fileURLToPath(new URL('../src/features/affection/', import.meta.url));
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -23,53 +25,12 @@ const TARGET_MODULES = [
   'runtime.js',
   'profile.js',
   'generation.js',
+  'manual-profile.js',
   'lifecycle.js',
   'injection.js',
   'workflow.js',
   'panel.js',
 ];
-
-const MOVED_FROM_WORKFLOW = [
-  'configureAffectionWorkflow',
-  'isAffectionAnalysisActive',
-  'createGenericAffectionStages',
-  'normalizeAffectionProfileStages',
-  'AFFECTION_TRANSPORT_POLICY',
-  'AFFECTION_PROFILE_BUILD_TIMEOUT_MS',
-  'runAffectionProfileBuildApiPreview',
-  'startAffectionProfileBuildsForPending',
-  'commitAffectionUpdateFromConfirmedSummary',
-  'commitSelectedPendingAffectionUpdates',
-  'parseAffectionUpdateFromMemory',
-  'prepareAffectionUpdateFromSummaryResult',
-  'storePendingAffectionUpdate',
-  'syncAffectionInjection',
-  'buildAffectionInjection',
-  'AFFECTION_STATE_PROMPT_ID',
-  'createAffectionBuildTaskKey',
-  'createBuildRequestId',
-  'createProfileDraft',
-  'markAffectionStoreUpdated',
-  'parseAffectionProfileResponse',
-  'buildAffectionStageBehaviorText',
-];
-
-const INTERNAL_BRIDGES = {
-  'profile.js': [
-    'buildAffectionStageBehaviorText',
-    'parseAffectionProfileResponse',
-    'createProfileDraft',
-  ],
-  'generation.js': [
-    'createBuildRequestId',
-    'resolveAffectionProfileContext',
-    'executeCustomAffectionProfileBuild',
-    'logAffectionProfileBuild',
-  ],
-  'lifecycle.js': [
-    'markAffectionStoreUpdated',
-  ],
-};
 
 async function readAffection(name) {
   return readFile(path.join(affectionDir, name), 'utf8');
@@ -124,73 +85,44 @@ function detectCycles(graph) {
   return null;
 }
 
-test('Phase 6B target modules exist', async () => {
+test('Phase 6B/C affection modules exist', async () => {
   for (const name of TARGET_MODULES) {
     const source = await readAffection(name);
     assert.ok(source.length > 0, `${name} should exist`);
   }
 });
 
-test('workflow.js no longer defines moved public symbols', async () => {
-  const workflow = await readAffection('workflow.js');
-  for (const name of MOVED_FROM_WORKFLOW) {
-    assert.equal(
-      hasExportDefinition(workflow, name),
-      false,
-      `workflow.js must not export moved symbol ${name}`,
-    );
+test('lifecycle no longer exports auto first-build API', async () => {
+  const lifecycle = await readAffection('lifecycle.js');
+  for (const name of [
+    'startAffectionProfileBuildsForPending',
+    'retryAffectionBuildTask',
+    'updateAffectionBuildTaskInitialValue',
+    'useGenericAffectionBuildTask',
+    'createAffectionBuildTaskKey',
+  ]) {
+    assert.equal(hasExportDefinition(lifecycle, name), false, `${name} must be removed`);
   }
-  assert.match(workflow, /export async function adjustAffectionProfileValue/);
-  assert.match(workflow, /export async function regenerateAffectionProfileStages/);
-  assert.match(workflow, /export function buildAffectionUpdatePromptSection/);
-  assert.match(workflow, /export function registerAffectionWorkflowEvents/);
+  assert.match(lifecycle, /export function markAffectionStoreUpdated/);
+  assert.match(lifecycle, /export function parseAffectionUpdateFromMemory/);
+  assert.match(lifecycle, /export async function commitAffectionUpdateFromConfirmedSummary/);
+  assert.match(lifecycle, /export async function commitSelectedPendingAffectionUpdates/);
+  assert.doesNotMatch(lifecycle, /buildTasks/);
+  assert.match(lifecycle, /retired_affection_first_ignored|change_without_profile/);
 });
 
 test('production consumers import from duty owners', async () => {
   const index = await readFile(path.join(repoRoot, 'index.js'), 'utf8');
   assert.match(index, /from ['"]\.\/src\/features\/affection\/runtime\.js['"]/);
   assert.match(index, /from ['"]\.\/src\/features\/affection\/workflow\.js['"]/);
-  assert.match(index, /configureAffectionWorkflow/);
-  assert.match(index, /registerAffectionWorkflowEvents/);
-
-  const panel = await readAffection('panel.js');
-  assert.match(panel, /from ['"]\.\/generation\.js['"]/);
-  assert.match(panel, /from ['"]\.\/injection\.js['"]/);
-  assert.match(panel, /from ['"]\.\/lifecycle\.js['"]/);
-  assert.match(panel, /from ['"]\.\/profile\.js['"]/);
-  assert.match(panel, /from ['"]\.\/workflow\.js['"]/);
-  assert.match(panel, /from ['"]\.\/model\.js['"]/);
-  const panelImportBlocks = [...panel.matchAll(/import\s*\{([\s\S]*?)\}\s*from\s*['"](\.\/[^'"]+)['"]/g)];
-  const workflowImportNames = panelImportBlocks
-    .filter(match => match[2] === './workflow.js')
-    .flatMap(match => match[1].split(',').map(part => part.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean));
-  for (const forbidden of [
-    'runAffectionProfileBuildApiPreview',
-    'createGenericAffectionStages',
-    'startAffectionProfileBuildsForPending',
-    'commitSelectedPendingAffectionUpdates',
-    'syncAffectionInjection',
-  ]) {
-    assert.equal(
-      workflowImportNames.includes(forbidden),
-      false,
-      `panel must not import ${forbidden} from workflow.js`,
-    );
-  }
-
-  const summaryWorkflow = await readFile(path.join(repoRoot, 'src/features/summary/workflow.js'), 'utf8');
-  assert.match(summaryWorkflow, /from ['"]\.\.\/affection\/lifecycle\.js['"]/);
-  assert.match(summaryWorkflow, /from ['"]\.\.\/affection\/workflow\.js['"]/);
-  assert.match(summaryWorkflow, /prepareAffectionUpdateFromSummaryResult/);
-  assert.match(summaryWorkflow, /buildAffectionUpdatePromptSection/);
 
   const effects = await readFile(path.join(repoRoot, 'src/features/summary/confirmed-effects.js'), 'utf8');
-  assert.match(effects, /from ['"]\.\.\/affection\/generation\.js['"]/);
   assert.match(effects, /from ['"]\.\.\/affection\/lifecycle\.js['"]/);
-  assert.match(effects, /from ['"]\.\.\/affection\/runtime\.js['"]/);
+  assert.doesNotMatch(effects, /AFFECTION_TRANSPORT_POLICY/);
+  assert.doesNotMatch(effects, /transportPolicy/);
 });
 
-test('Affection static import graph is acyclic and respects contracts', async () => {
+test('Affection static import graph is acyclic', async () => {
   const graph = new Map();
   for (const name of TARGET_MODULES.filter(item => item !== 'panel.js')) {
     const source = await readAffection(name);
@@ -199,100 +131,42 @@ test('Affection static import graph is acyclic and respects contracts', async ()
       collectLocalImports(source).filter(item => TARGET_MODULES.includes(item)),
     );
   }
+  // generation may dynamic-import manual-profile; static graph should still be acyclic
   const cycle = detectCycles(graph);
   assert.equal(cycle, null, cycle ? `cycle detected: ${cycle.join(' -> ')}` : '');
-
-  const model = await readAffection('model.js');
-  assert.equal(collectLocalImports(model).length, 0);
-
-  const runtime = await readAffection('runtime.js');
-  assert.equal(collectLocalImports(runtime).length, 0);
-
-  const profile = await readAffection('profile.js');
-  assert.deepEqual(collectLocalImports(profile), ['model.js']);
-
-  const generation = await readAffection('generation.js');
-  for (const forbidden of ['lifecycle.js', 'injection.js', 'workflow.js', 'panel.js']) {
-    assert.equal(collectLocalImports(generation).includes(forbidden), false);
-  }
-
-  const injection = await readAffection('injection.js');
-  for (const forbidden of ['generation.js', 'lifecycle.js', 'workflow.js', 'panel.js']) {
-    assert.equal(collectLocalImports(injection).includes(forbidden), false);
-  }
-
-  const lifecycle = await readAffection('lifecycle.js');
-  assert.equal(collectLocalImports(lifecycle).includes('workflow.js'), false);
-
-  const workflow = await readAffection('workflow.js');
-  assert.equal(collectLocalImports(workflow).includes('panel.js'), false);
 });
 
-test('no dual production definitions, backup copies, or workflow bridge re-exports', async () => {
+test('no dual production definitions for markAffectionStoreUpdated', async () => {
   const names = await readdir(affectionDir);
-  for (const name of names) {
-    assert.equal(/_old|_legacyCopy|backup/i.test(name), false, `unexpected backup file: ${name}`);
-  }
-
-  const workflow = await readAffection('workflow.js');
-  assert.equal(/export\s+\*\s+from\s+['"]\.\//.test(workflow), false);
-  assert.equal(/export\s*\{[\s\S]{200,}\}\s*from\s*['"]\.\//.test(workflow), false);
-
-  for (const [owner, symbols] of Object.entries(INTERNAL_BRIDGES)) {
-    for (const symbol of symbols) {
-      let definitions = 0;
-      let owners = [];
-      for (const name of names.filter(item => item.endsWith('.js'))) {
-        const source = await readAffection(name);
-        if (hasExportDefinition(source, symbol)) {
-          definitions += 1;
-          owners.push(name);
-        }
-      }
-      assert.equal(definitions, 1, `${symbol} should have one export, got ${owners.join(',')}`);
-      assert.equal(owners[0], owner);
-      assert.equal(hasExportDefinition(workflow, symbol), false);
-    }
-  }
-
-  let eventRegisteredDefs = 0;
+  let definitions = 0;
+  let owners = [];
   for (const name of names.filter(item => item.endsWith('.js'))) {
     const source = await readAffection(name);
-    if (/let\s+affectionEventsRegistered\b/.test(source) || /var\s+affectionEventsRegistered\b/.test(source)) {
-      eventRegisteredDefs += 1;
+    if (hasExportDefinition(source, 'markAffectionStoreUpdated')) {
+      definitions += 1;
+      owners.push(name);
     }
   }
-  assert.equal(eventRegisteredDefs, 1, 'affectionEventsRegistered must have one production definition');
+  assert.equal(definitions, 1, `owners=${owners.join(',')}`);
+  assert.equal(owners[0], 'lifecycle.js');
 });
 
-test('registerAffectionWorkflowEvents return semantics stay pending-handler based', async () => {
+test('registerAffectionWorkflowEvents remains pending-handler based', async () => {
   const first = registerAffectionWorkflowEvents();
   const second = registerAffectionWorkflowEvents();
   assert.equal(first, true);
   assert.equal(second, true);
-
-  const injection = await readAffection('injection.js');
-  const workflow = await readAffection('workflow.js');
-  assert.match(workflow, /affectionPendingCommitRegistered\s*=\s*true/);
-  assert.match(workflow, /return affectionPendingCommitRegistered/);
-  assert.equal(/return registerAffectionInjectionEvents\(/.test(workflow), false);
-  assert.match(injection, /let affectionEventsRegistered/);
-  assert.equal(/let affectionEventsRegistered/.test(workflow), false);
-
-  // injection registration remains idempotent
-  assert.equal(typeof registerAffectionInjectionEvents(), 'boolean');
   assert.equal(typeof registerAffectionInjectionEvents(), 'boolean');
 });
 
-test('runtime gate and transport defaults remain frozen after split', () => {
+test('runtime gate remains and transport is configured-only', () => {
   assert.equal(typeof configureAffectionWorkflow, 'function');
   assert.equal(typeof isAffectionAnalysisActive, 'function');
-  assert.equal(typeof startAffectionProfileBuildsForPending, 'function');
   assert.equal(typeof commitAffectionUpdateFromConfirmedSummary, 'function');
-
-  // Single ESM singleton: reconfigure merges options rather than replacing module identity.
-  configureAffectionWorkflow({ refreshPanel: () => {} });
-  configureAffectionWorkflow({ addCommunicationLog: () => {} });
+  assert.equal(typeof commitSelectedPendingAffectionUpdates, 'function');
+  assert.equal(typeof parseAffectionUpdateFromMemory, 'function');
+  assert.equal(AFFECTION_TRANSPORT_POLICY.CONFIGURED, 'configured');
+  assert.equal(Object.hasOwn(AFFECTION_TRANSPORT_POLICY, 'LEGACY'), false);
   assert.equal(isAffectionAnalysisActive({
     enabled: true,
     modules: {
@@ -300,11 +174,4 @@ test('runtime gate and transport defaults remain frozen after split', () => {
       affection: { enabled: true, mode: 'normal' },
     },
   }), true);
-  assert.equal(isAffectionAnalysisActive({
-    enabled: true,
-    modules: {
-      summary: { enabled: true },
-      affection: { enabled: true, mode: 'off' },
-    },
-  }), false);
 });

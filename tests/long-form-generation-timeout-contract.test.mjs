@@ -7,7 +7,6 @@ import {
 } from '../src/constants.js';
 import { DIARY_GENERATION_TIMEOUT_MS } from '../src/features/diary/panel.js';
 import { AFFECTION_PROFILE_BUILD_TIMEOUT_MS } from '../src/features/affection/generation.js';
-import { AFFECTION_PROFILE_BUILDING_MAX_AGE_MS } from '../src/features/affection/lifecycle.js';
 import { CAPTURE_GENERATION_TIMEOUT_MS } from '../src/features/memoir/capture-generation.js';
 import { OUTLINE_GENERATION_TIMEOUT_MS } from '../src/features/plot-outline/workflow.js';
 import { SCHEDULE_GENERATION_TIMEOUT_MS } from '../src/features/schedule/workflow.js';
@@ -65,7 +64,6 @@ test('stream transport timeout copy requests stop and does not claim wait-only m
   );
 });
 
-test('affection building max age leaves a two-minute buffer beyond generation timeout', () => {
-  assert.equal(AFFECTION_PROFILE_BUILDING_MAX_AGE_MS, 420000);
-  assert.ok(AFFECTION_PROFILE_BUILDING_MAX_AGE_MS > AFFECTION_PROFILE_BUILD_TIMEOUT_MS);
+test('affection profile build uses the shared 300-second timeout after auto-build retirement', () => {
+  assert.equal(AFFECTION_PROFILE_BUILD_TIMEOUT_MS, LONG_FORM_GENERATION_TIMEOUT_MS);
 });

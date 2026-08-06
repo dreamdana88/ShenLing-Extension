@@ -648,32 +648,35 @@ export function buildAffectionUpdatePromptSection({
       knownAffectionText: String(knownAffectionText || "暂无已建档角色。").trim() || "暂无已建档角色。",
     });
   }
-  return `## 攻略好感判断（仅攻略模式）
+  const knownText = templateMode
+    ? '${knownAffectionText}'
+    : String(knownAffectionText || '暂无已建档角色。').trim() || '暂无已建档角色。';
+  return `## 好感变化判断（仅已有档案）
 
-请额外评估本轮 {{user}} 与可攻略角色互动带来的细微好感变化。好感变化比情感档案更细水长流：即使 [emotion_changed:false]，只要本轮互动会让角色对 {{user}} 的倾向产生可计量的微小变化，也可以输出好感变化。
+请只针对【已有正式好感档案】中的角色，评估本轮 {{user}} 与其互动带来的细微好感变化。
 
-## 可攻略角色入选规则
-仅针对具备明确人设、预计会长期出场并与{{user}}存在持续互动关系的角色开启。
-如暂无法判断该角色是否为长期主要角色，默认不开启。
+好感变化比情感档案更细水长流：即使 [emotion_changed:false]，只要本轮互动会让已建档角色对 {{user}} 的倾向产生可计量的微小变化，也可以输出好感变化。
 
-请在 [emotion:...] 之后、[progress:...] 之前追加：
+若本轮互动对象不在已知档案列表中，不输出 affection。
+不得创建、提议或推测新角色档案。
+不得输出 affection_first 或任何首次建档字段。
+
+若当前没有已建档角色（已知攻略状态为“暂无已建档角色”或等价空名单），本轮不输出任何 affection 行。
+
+请在 [emotion:...] 之后、[progress:...] 之前追加（仅当存在已建档角色且本轮有可判断变化时）：
 [affection:\${角色名}|\${好感变化值}]
-[affection_first:\${未建档角色名}|\${截至当前楼层结束后的初始好感}]
 
 要求：
-- 好感变化值只能是 -0.3 -0.2 -0.1 0.1 0.2 0.3 之一；无实质性交流或互动时输出 0。
-- 若本轮也有 [emotion:...]，角色名优先与 [emotion:...] 一致；若 [emotion_changed:false] 但好感有变化，角色名必须是本轮明确互动对象。
-- [affection_first:...] 只针对尚未建档且符合可攻略角色入选规则的角色输出一次；已建档角色禁止输出。
-- affection_first 的初始好感必须判断截至当前楼层结束后的既有关系程度，范围为 0-100，允许一位小数，不能固定从陌生阶段开始。
-- affection_first 不代表本轮变化。
-- 同一角色输出 affection_first 时，禁止再输出该角色的 affection 行；首次初值不是本轮变化。
+- 角色名必须来自下方已知攻略状态中的已建档角色。
+- 好感变化值只能是 -0.3 -0.2 -0.1 0 0.1 0.2 0.3 之一；无实质性交流或互动时输出 0。
+- 若本轮也有 [emotion:...]，角色名优先与已建档角色中的 [emotion:...] 一致。
 - 避免因普通礼貌、简单问候、重复赞美、重复照顾、场景气氛浪漫或为了推进剧情而机械增加好感。
 - 只有本轮出现角色此前没有据此调整过态度的新信息、新行为或新体验，且角色确实知晓时，才允许变化；同一事件被回忆、总结或换一种说法再次出现时不重复计分。
 - 同一角色本轮最多输出一条 affection 行。
 - 不要输出 JSON、Markdown、解释文字或额外 XML 标签，也不要在正文中播报好感数值。
 
 已知攻略状态：
-${templateMode ? '${knownAffectionText}' : String(knownAffectionText || "暂无已建档角色。").trim() || "暂无已建档角色。"}`;
+${knownText}`;
 }
 
 export const AFFECTION_UPDATE_PROMPT_TEMPLATE = buildAffectionUpdatePromptSection({
@@ -1142,11 +1145,11 @@ export const PROMPT_CATALOG = Object.freeze([
     moduleId: 'affection',
     moduleLabel: '好感度',
     label: '好感变化判断',
-    description: '自动小总结中的好感变化与首次建档字段协议。',
+    description: '自动小总结中的已有档案角色好感变化字段协议。',
     kind: 'text',
     defaultValue: AFFECTION_UPDATE_PROMPT_TEMPLATE,
     variables: [USER_MACRO_VARIABLE, promptVariable('${knownAffectionText}', '已知攻略状态')],
-    requiredTokens: ['${knownAffectionText}', '[affection:', '[affection_first:'],
+    requiredTokens: ['${knownAffectionText}', '[affection:'],
   },
   {
     id: PROMPT_IDS.AFFECTION_PROFILE,

@@ -15,7 +15,6 @@ import {
   commitEmotionUpdateFromConfirmedSummary,
   shouldAnalyzeEmotionProfile,
 } from '../emotion-profile/workflow.js';
-import { AFFECTION_TRANSPORT_POLICY } from '../affection/generation.js';
 import { commitAffectionUpdateFromConfirmedSummary } from '../affection/lifecycle.js';
 import { isAffectionAnalysisActive } from '../affection/runtime.js';
 import { applyPlotOutlineProgressUpdate } from '../plot-outline/workflow.js';
@@ -80,10 +79,7 @@ export function createConfirmedEffectsCoordinator(options = {}) {
       await commitAffectionUpdateFromConfirmedSummary(memory, {
         messageId: task.originalMessageId,
         chatState: state,
-        chatId: task.chatIdentity,
         isCurrentChat: () => getIdentity() === task.chatIdentity,
-        // Confirmed formal path only: each first-build request resolves transport independently.
-        transportPolicy: AFFECTION_TRANSPORT_POLICY.CONFIGURED,
       });
       return;
     }

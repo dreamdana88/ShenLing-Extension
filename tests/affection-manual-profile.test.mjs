@@ -55,7 +55,6 @@ function createChatState(profiles = {}) {
     affectionSystem: {
       profiles: { ...profiles },
       pendingByMessage: {},
-      buildTasks: {},
     },
   };
 }
@@ -276,7 +275,7 @@ test('manual generic profile creates formal archive with zero API and zero world
   assert.ok(chatState.affectionSystem.lastUpdatedAt);
   assert.equal(injected, 1);
   assert.equal(refreshed, 1);
-  assert.equal(Object.keys(chatState.affectionSystem.buildTasks || {}).length, 0);
+  assert.equal(Object.hasOwn(chatState.affectionSystem, 'buildTasks'), false);
   assert.equal(Object.keys(chatState.affectionSystem.pendingByMessage || {}).length, 0);
   void saved;
 });
@@ -362,7 +361,6 @@ test('manual custom draft uses configured transport, keeps store untouched, and 
     const chatState = createChatState();
     const profilesSnapshot = JSON.stringify(chatState.affectionSystem.profiles);
     const pendingSnapshot = JSON.stringify(chatState.affectionSystem.pendingByMessage);
-    const tasksSnapshot = JSON.stringify(chatState.affectionSystem.buildTasks);
     let persistCalls = 0;
     let injectCalls = 0;
     const captured = {
@@ -446,7 +444,7 @@ test('manual custom draft uses configured transport, keeps store untouched, and 
 
     assert.equal(JSON.stringify(chatState.affectionSystem.profiles), profilesSnapshot);
     assert.equal(JSON.stringify(chatState.affectionSystem.pendingByMessage), pendingSnapshot);
-    assert.equal(JSON.stringify(chatState.affectionSystem.buildTasks), tasksSnapshot);
+    assert.equal(Object.hasOwn(chatState.affectionSystem, 'buildTasks'), false);
     assert.equal(persistCalls, 0);
     assert.equal(injectCalls, 0);
 
@@ -503,7 +501,6 @@ test('manual custom draft context failure logs fallback and keeps store untouche
     const chatState = createChatState();
     const profilesSnapshot = JSON.stringify(chatState.affectionSystem.profiles);
     const pendingSnapshot = JSON.stringify(chatState.affectionSystem.pendingByMessage);
-    const tasksSnapshot = JSON.stringify(chatState.affectionSystem.buildTasks);
     let apiCalls = 0;
 
     await assert.rejects(
@@ -530,7 +527,7 @@ test('manual custom draft context failure logs fallback and keeps store untouche
 
     assert.equal(JSON.stringify(chatState.affectionSystem.profiles), profilesSnapshot);
     assert.equal(JSON.stringify(chatState.affectionSystem.pendingByMessage), pendingSnapshot);
-    assert.equal(JSON.stringify(chatState.affectionSystem.buildTasks), tasksSnapshot);
+    assert.equal(Object.hasOwn(chatState.affectionSystem, 'buildTasks'), false);
     assert.equal(apiCalls, 0);
 
     assert.equal(logs.length, 1);

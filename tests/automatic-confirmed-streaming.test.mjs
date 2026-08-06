@@ -1,10 +1,10 @@
+import { commitAffectionUpdateFromConfirmedSummary } from '../src/features/affection/lifecycle.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { CHAT_STATE_KEY, MODULE_NAME } from '../src/constants.js';
 import { AFFECTION_TRANSPORT_POLICY } from '../src/features/affection/generation.js';
-import { startAffectionProfileBuildsForPending } from '../src/features/affection/lifecycle.js';
 import { createConfirmedSummaryConsumer } from '../src/features/summary/confirmed-consumer.js';
 import {
   processAutoGrandMemory,
@@ -188,12 +188,10 @@ test('S3-C wiring: formal auto paths use CONFIGURED; shared defaults stay LEGACY
 
   const generationSource = await readFile(new URL('../src/features/summary/generation.js', import.meta.url), 'utf8');
   assert.match(generationSource, /transportPolicy\s*=\s*SUMMARY_TRANSPORT_POLICY\.LEGACY/);
-  assert.match(affectionLifecycle, /transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/);
-  assert.match(
-    affectionLifecycle,
-    /export async function commitAffectionUpdateFromConfirmedSummary[\s\S]*?transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/,
-  );
-  assert.match(effectsSource, /transportPolicy:\s*AFFECTION_TRANSPORT_POLICY\.CONFIGURED/);
+  // Phase C: affection confirmed path no longer carries profile-build Transport Policy.
+  assert.doesNotMatch(affectionLifecycle, /transportPolicy/);
+  assert.doesNotMatch(effectsSource, /AFFECTION_TRANSPORT_POLICY/);
+  assert.doesNotMatch(effectsSource, /transportPolicy/);
   assert.match(consumerSource, /TIMEOUT_ABORT/);
 });
 
@@ -656,21 +654,10 @@ test('next-generation semantics: later auto Grand reads the switch at its own st
   });
 });
 
-test('shared affection build default remains legacy; explicit CONFIGURED can stream', async () => {
-  assert.equal(AFFECTION_TRANSPORT_POLICY.LEGACY, 'legacy');
+test('shared affection transport is configured-only after Phase C; Summary keeps LEGACY default', async () => {
   assert.equal(AFFECTION_TRANSPORT_POLICY.CONFIGURED, 'configured');
-
-  // Default parameter contract: startAffectionProfileBuildsForPending defaults to LEGACY.
-  const source = await readFile(new URL('../src/features/affection/lifecycle.js', import.meta.url), 'utf8');
-  assert.match(
-    source,
-    /export async function startAffectionProfileBuildsForPending[\s\S]{0,500}transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/,
-  );
-  assert.match(
-    source,
-    /export async function commitAffectionUpdateFromConfirmedSummary[\s\S]{0,500}transportPolicy\s*=\s*AFFECTION_TRANSPORT_POLICY\.LEGACY/,
-  );
-  assert.equal(typeof startAffectionProfileBuildsForPending, 'function');
+  assert.equal(Object.hasOwn(AFFECTION_TRANSPORT_POLICY, 'LEGACY'), false);
+  assert.equal(typeof commitAffectionUpdateFromConfirmedSummary, 'function');
   assert.equal(typeof processAutoTotalGrandMemory, 'function');
   assert.equal(typeof writeConfirmedSummaryForTask, 'function');
   assert.equal(SUMMARY_TRANSPORT_POLICY.LEGACY, 'legacy');

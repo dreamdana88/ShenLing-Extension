@@ -65,22 +65,6 @@ function normalizeChangeEntry(entry) {
   return { roleName, delta };
 }
 
-function normalizeFirstEntry(entry) {
-  if (Array.isArray(entry)) {
-    return { roleName: entry[0], initialValue: entry[1] };
-  }
-  if (entry && typeof entry === 'object') {
-    return {
-      roleName: entry.roleName ?? entry.name ?? entry.character,
-      initialValue: entry.initialValueTenths !== undefined
-        ? Number(entry.initialValueTenths) / 10
-        : entry.initialAffection ?? entry.initialValue ?? entry.value,
-    };
-  }
-  const [roleName = '', initialValue = ''] = String(entry ?? '').split('|');
-  return { roleName, initialValue };
-}
-
 export function normalizeAffectionRoleName(value) {
   return String(value ?? '')
     .trim()
@@ -181,65 +165,6 @@ export function normalizeAffectionChanges({ entries = [] } = {}) {
     items,
     diagnostics,
   };
-}
-
-export function normalizeAffectionFirstEntries({ entries = [], existingRoleNames = [] } = {}) {
-  const sourceEntries = Array.isArray(entries) ? entries : [];
-  const existing = new Set(
-    (Array.isArray(existingRoleNames) ? existingRoleNames : [])
-      .map(normalizeAffectionRoleName)
-      .filter(Boolean),
-  );
-  const seenRoleNames = new Set();
-  const items = [];
-  const diagnostics = [];
-
-  sourceEntries.forEach((rawEntry, index) => {
-    const entry = normalizeFirstEntry(rawEntry);
-    const roleName = normalizeAffectionRoleName(entry.roleName);
-    if (!roleName) {
-      diagnostics.push({
-        code: 'first_missing_role_name',
-        index,
-        message: 'affection_first 行缺少角色名，已拒绝。',
-      });
-      return;
-    }
-    if (existing.has(roleName)) {
-      diagnostics.push({
-        code: 'first_already_profiled',
-        index,
-        roleName,
-        message: `「${roleName}」已有正式好感档案，已忽略 affection_first。`,
-      });
-      return;
-    }
-    const initialValueTenths = parseAffectionValueTenths(entry.initialValue);
-    if (initialValueTenths === null) {
-      diagnostics.push({
-        code: 'first_invalid_initial_value',
-        index,
-        roleName,
-        value: entry.initialValue,
-        message: `「${roleName}」的首次好感必须是 0—100、最多一位小数，已拒绝。`,
-      });
-      return;
-    }
-    if (seenRoleNames.has(roleName)) {
-      diagnostics.push({
-        code: 'first_duplicate_role',
-        index,
-        roleName,
-        message: `「${roleName}」在同一轮重复出现 affection_first，已保留第一条合法值。`,
-      });
-      return;
-    }
-
-    seenRoleNames.add(roleName);
-    items.push({ roleName, initialValueTenths });
-  });
-
-  return { items, diagnostics };
 }
 
 export function getStageForValueTenths(valueTenths, stages = []) {
