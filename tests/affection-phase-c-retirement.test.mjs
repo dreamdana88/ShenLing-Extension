@@ -400,4 +400,11 @@ test('formal affection panel keeps responsive styles after diagnostics retiremen
   assert.doesNotMatch(css, /\.slx-affection-pending-row\.is-first/);
   assert.doesNotMatch(css, /\.slx-affection-initial-form/);
   assert.doesNotMatch(css, /\.slx-affection-build-state/);
+  assert.doesNotMatch(css, /\.slx-affection-pending-actions/);
+
+  // 正式 pending「放弃此项」按钮：移动端 44px 触控高度
+  assert.match(
+    css,
+    /\.slx-affection-pending-row\s*>\s*\.slx-affection-text-action[\s\S]{0,160}min-height:\s*44px/,
+  );
 });

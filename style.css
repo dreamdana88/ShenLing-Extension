@@ -4365,24 +4365,6 @@ body.slx-panel-open-lock {
   color: var(--slx-danger);
 }
 
-.slx-affection-pending-actions {
-  display: flex;
-  grid-column: 1 / -1;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 7px;
-}
-
-.slx-affection-initial-fix {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-#shenling-assistant-panel-root .slx-affection-initial-fix input {
-  width: 92px;
-}
-
 .slx-affection-profile-section {
   display: grid;
   gap: 10px;
@@ -5067,12 +5049,8 @@ body.slx-panel-open-lock {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .slx-affection-pending-row > .slx-affection-text-action,
-  .slx-affection-pending-actions {
-    grid-column: 1 / -1;
-  }
-
   .slx-affection-pending-row > .slx-affection-text-action {
+    grid-column: 1 / -1;
     justify-self: end;
   }
 
@@ -5126,15 +5104,14 @@ body.slx-panel-open-lock {
   .slx-affection-profile-card > footer .slx-soft-btn,
   .slx-affection-adjust-row .slx-soft-btn,
   .slx-affection-regenerate-actions > .slx-soft-btn,
-  .slx-affection-editor-footer .slx-soft-btn,
-  .slx-affection-pending-actions .slx-soft-btn {
+  .slx-affection-editor-footer .slx-soft-btn {
     min-height: 44px;
     justify-content: center;
   }
 
-  .slx-affection-pending-actions {
-    display: grid;
-    grid-template-columns: 1fr;
+  .slx-affection-pending-row > .slx-affection-text-action {
+    min-height: 44px;
+    padding: 8px 12px;
   }
 
   .slx-affection-segment {
