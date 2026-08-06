@@ -197,7 +197,6 @@ export async function generateManualAffectionProfileDraft(input = {}, {
   assertProfileDoesNotExist(store, roleName);
 
   const currentChatId = chatId === null || chatId === undefined ? '' : String(chatId);
-  const contextResult = await resolveContext(roleName);
   const task = {
     operation: 'manual_create',
     buildRequestId: createBuildRequestId(),
@@ -213,10 +212,14 @@ export async function generateManualAffectionProfileDraft(input = {}, {
 
   const startedAt = formatTimestamp();
   const startedMs = performance.now();
+  let contextResult = null;
   let result = null;
   let requestMessages = [];
 
   try {
+    // 上下文解析失败也必须进入同一 failure 通讯日志生命周期。
+    contextResult = await resolveContext(roleName);
+
     result = await executeCustomAffectionProfileBuild(task, {
       requestCustomProfile,
       resolveContextMaterial: async () => contextResult.material,

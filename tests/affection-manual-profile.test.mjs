@@ -498,6 +498,59 @@ test('manual custom draft failure logs fully and leaves no half-written profile'
   });
 });
 
+test('manual custom draft context failure logs fallback and keeps store untouched', async () => {
+  await withAffectionLogHarness(async ({ logs }) => {
+    const chatState = createChatState();
+    const profilesSnapshot = JSON.stringify(chatState.affectionSystem.profiles);
+    const pendingSnapshot = JSON.stringify(chatState.affectionSystem.pendingByMessage);
+    const tasksSnapshot = JSON.stringify(chatState.affectionSystem.buildTasks);
+    let apiCalls = 0;
+
+    await assert.rejects(
+      () => generateManualAffectionProfileDraft({
+        roleName: '沈青',
+        initialValueTenths: 350,
+        userRequirement: '慢热且克制',
+        apiMode: 'main_api',
+      }, {
+        settings: createSettings({ affection: { profileBuildApiMode: 'secondary_api' } }),
+        chatState,
+        chatId: 'chat-manual-a',
+        resolveContext: async () => {
+          throw new Error('manual context probe failed');
+        },
+        requestCustomProfile: async () => {
+          apiCalls += 1;
+          return createValidStagesJson();
+        },
+        log: true,
+      }),
+      /manual context probe failed/,
+    );
+
+    assert.equal(JSON.stringify(chatState.affectionSystem.profiles), profilesSnapshot);
+    assert.equal(JSON.stringify(chatState.affectionSystem.pendingByMessage), pendingSnapshot);
+    assert.equal(JSON.stringify(chatState.affectionSystem.buildTasks), tasksSnapshot);
+    assert.equal(apiCalls, 0);
+
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].status, 'failure');
+    assert.equal(logs[0].taskType, '手动创建专属阶段');
+    assert.ok(logs[0].requestBody?.buildRequestId);
+    assert.equal(logs[0].requestBody.chatId, 'chat-manual-a');
+    assert.equal(logs[0].requestBody.roleName, '沈青');
+    assert.equal(logs[0].requestBody.initialValueTenths, 350);
+    assert.equal(logs[0].requestBody.buildMode, 'custom');
+    assert.equal(logs[0].requestBody.apiMode, 'main_api');
+    assert.equal(logs[0].requestBody.operation, 'manual_create');
+    assert.equal(logs[0].requestBody.userRequirement, '慢热且克制');
+    assert.ok(logs[0].errorStack);
+    assert.match(String(logs[0].errorStack), /manual context probe failed/);
+    assert.ok(!logs[0].messages || logs[0].messages.length === 0);
+    assert.equal(logs.some(entry => entry.status === 'success'), false);
+  });
+});
+
 test('manual custom draft rejects incomplete five stages without writing profile', async () => {
   const chatState = createChatState();
   await assert.rejects(
