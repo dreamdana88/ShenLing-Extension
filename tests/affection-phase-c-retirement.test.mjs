@@ -273,8 +273,8 @@ test('getAffectionSystemState drops buildTasks and pending firsts', () => {
   assert.equal(store.lastUpdatedAt, 'keep-me');
 });
 
-// 24.9 Panel
-test('panel no longer renders auto first-build controls and keeps manual create entry', async () => {
+// 24.9 Panel + Review Fix 开发诊断退役
+test('panel no longer renders auto first-build controls, diagnostics, or preview APIs', async () => {
   const previous = { SillyTavern: globalThis.SillyTavern };
   globalThis.SillyTavern = {
     getContext: () => ({
@@ -311,8 +311,43 @@ test('panel no longer renders auto first-build controls and keeps manual create 
     assert.doesNotMatch(html, /data-slx-affection-retry-task/);
     assert.doesNotMatch(html, /data-slx-affection-resolve-task/);
     assert.doesNotMatch(html, /首次建档需要合法初值/);
-    assert.doesNotMatch(html, /使用通用/);
+    assert.doesNotMatch(html, /开发诊断/);
+    assert.doesNotMatch(html, /第 1–8 步测试与模拟|第 1-8 步测试与模拟/);
+    assert.doesNotMatch(html, /开发期测试区/);
+    assert.doesNotMatch(html, /首次角色预建档/);
+    assert.doesNotMatch(html, /affection_first 初值/);
+    assert.doesNotMatch(html, /模拟预建档/);
+    assert.doesNotMatch(html, /显式调用真实 API/);
+    assert.doesNotMatch(html, /data-slx-affection-run-build-suite/);
+    assert.doesNotMatch(html, /data-slx-affection-run-build-simulator/);
+    assert.doesNotMatch(html, /data-slx-affection-run-build-real/);
+    assert.doesNotMatch(html, /data-slx-affection-run-commit-simulator/);
+    assert.doesNotMatch(html, /data-slx-affection-run-injection-simulator/);
+    assert.doesNotMatch(html, /data-slx-affection-test-section/);
     assert.equal(isAffectionEditorOpen(), false);
+
+    const panelSource = await import('node:fs/promises').then(fs =>
+      fs.readFile(new URL('../src/features/affection/panel.js', import.meta.url), 'utf8'),
+    );
+    const generationSource = await import('node:fs/promises').then(fs =>
+      fs.readFile(new URL('../src/features/affection/generation.js', import.meta.url), 'utf8'),
+    );
+    for (const forbidden of [
+      'affectionTestState',
+      'createDefaultTestState',
+      'runAffectionBuildSuite',
+      'runAffectionBuildSimulator',
+      'runAffectionBuildRealApiPreview',
+      'createReadyCommitTask',
+      'createAffectionBuildTaskKey',
+      'runAffectionProfileBuildApiPreview',
+      '预览占位上下文',
+    ]) {
+      assert.equal(panelSource.includes(forbidden), false, `panel still has ${forbidden}`);
+    }
+    assert.equal(generationSource.includes('runAffectionProfileBuildApiPreview'), false);
+    assert.equal(generationSource.includes('预览占位上下文'), false);
+    assert.equal(panelSource.includes('affectionSystem.buildTasks'), false);
   } finally {
     globalThis.SillyTavern = previous.SillyTavern;
   }

@@ -17,9 +17,7 @@ import {
   resolvePromptText,
 } from '../../core/prompt-overrides.js';
 import {
-  getAffectionSettings,
   getBackgroundStreamingEnabled,
-  getContextInfo,
   getGlobalSettings,
 } from '../../core/settings.js';
 import {
@@ -31,7 +29,6 @@ import {
   normalizeAffectionRoleName,
 } from './model.js';
 import {
-  createProfileDraft,
   normalizeAffectionProfileStages,
   parseAffectionProfileResponse,
 } from './profile.js';
@@ -244,66 +241,4 @@ export async function executeCustomAffectionProfileBuild(task, {
     parsed,
     stages,
   };
-}
-
-export async function runAffectionProfileBuildApiPreview({ roleName, initialValueTenths } = {}) {
-  const normalizedRoleName = normalizeAffectionRoleName(roleName);
-  const value = Number(initialValueTenths);
-  if (!normalizedRoleName) throw new Error('请输入要测试的角色名。');
-  if (!Number.isInteger(value) || value < 0 || value > 1000) {
-    throw new Error('初始好感必须是 0—100、最多一位小数。');
-  }
-  const settings = getGlobalSettings();
-  const affection = getAffectionSettings(settings);
-  const task = {
-    buildRequestId: createBuildRequestId(),
-    chatId: getContextInfo().chatId,
-    messageId: -1,
-    fingerprint: 'explicit-preview',
-    roleName: normalizedRoleName,
-    initialValueTenths: value,
-    buildMode: 'custom',
-    apiMode: affection.profileBuildApiMode,
-  };
-  const startedAt = formatTimestamp();
-  const startedMs = performance.now();
-  let result = null;
-  let requestMessages = [];
-  try {
-    result = await executeCustomAffectionProfileBuild(task, {
-      requestCustomProfile: null,
-      // 预览入口要求调用方注入完整上下文；默认提供占位材料避免生成链路环依赖。
-      resolveContextMaterial: async roleName => (
-        `【预览占位上下文】目标角色：${roleName}`
-      ),
-      transportPolicy: AFFECTION_TRANSPORT_POLICY.CONFIGURED,
-      onMessagesReady: messages => {
-        requestMessages = messages;
-      },
-    });
-    const profileDraft = createProfileDraft(task, result.stages);
-    logAffectionProfileBuild({
-      task,
-      status: 'success',
-      startedAt,
-      startedMs,
-      messages: result.messages,
-      apiResult: result.apiResult,
-      transportPlan: result.apiResult?.transportPlan || null,
-      parsedResult: profileDraft,
-    });
-    return profileDraft;
-  } catch (error) {
-    logAffectionProfileBuild({
-      task,
-      status: 'failure',
-      startedAt,
-      startedMs,
-      messages: result?.messages || requestMessages,
-      apiResult: result?.apiResult || null,
-      transportPlan: result?.apiResult?.transportPlan || error?.transportPlan || null,
-      error,
-    });
-    throw error;
-  }
 }

@@ -21,9 +21,9 @@ import {
   bindDiaryPanelEvents,
   runDiaryGeneration,
 } from '../src/features/diary/panel.js';
-import { runAffectionProfileBuildApiPreview } from '../src/features/affection/generation.js';
-import { createGenericAffectionStages } from '../src/features/affection/profile.js';
+import { generateManualAffectionProfileDraft } from '../src/features/affection/manual-profile.js';
 import { configureAffectionWorkflow } from '../src/features/affection/runtime.js';
+import { createGenericAffectionStages } from '../src/features/affection/profile.js';
 import {
   parseCaptureGenerationResponse,
   runCaptureGeneration,
@@ -571,13 +571,22 @@ test('Diary secondary body-read failure enriches failure log without running par
 
 // ── Affection ─────────────────────────────────────────────────────────
 
-test('Affection preview rethrows transport error with non-empty messages', async () => {
+test('Affection manual draft rethrows transport error with non-empty messages', async () => {
   await withHarness({
     fetchImpl: async () => { throw new Error('preview fail'); },
     configure: options => configureAffectionWorkflow(options),
-  }, async ({ logs }) => {
+  }, async ({ logs, context }) => {
     await assert.rejects(
-      runAffectionProfileBuildApiPreview({ roleName: '预览角色', initialValueTenths: 15 }),
+      generateManualAffectionProfileDraft({
+        roleName: '预览角色',
+        initialValueTenths: 15,
+      }, {
+        settings: context.extensionSettings[MODULE_NAME],
+        chatState: context.chatMetadata[CHAT_STATE_KEY],
+        chatId: 'chat-1',
+        resolveContext: async () => ({ roleName: '预览角色', material: 'ctx', diagnostics: {} }),
+        log: true,
+      }),
       error => {
         assert.equal(error.code, 'SECONDARY_FETCH_FAILED');
         return true;
@@ -976,7 +985,13 @@ test('Affection profile build main and secondary calls pass the shared 300-secon
       }, async ({ context }) => {
         context.extensionSettings[MODULE_NAME].modules.affection.profileBuildApiMode = mode;
         await assert.rejects(
-          runAffectionProfileBuildApiPreview({ roleName: '超时角色', initialValueTenths: 100 }),
+          generateManualAffectionProfileDraft({ roleName: '超时角色', initialValueTenths: 100 }, {
+            settings: context.extensionSettings[MODULE_NAME],
+            chatState: context.chatMetadata[CHAT_STATE_KEY],
+            chatId: 'chat-1',
+            resolveContext: async () => ({ roleName: '超时角色', material: 'ctx', diagnostics: {} }),
+            log: true,
+          }),
           error => {
             assert.equal(error.code, mode === 'main_api' ? 'MAIN_TIMEOUT' : 'SECONDARY_TIMEOUT');
             return true;

@@ -5,7 +5,6 @@ import test from 'node:test';
 import { CHAT_STATE_KEY, MODULE_NAME } from '../src/constants.js';
 import {
   AFFECTION_TRANSPORT_POLICY,
-  runAffectionProfileBuildApiPreview,
 } from '../src/features/affection/generation.js';
 import { configureAffectionWorkflow } from '../src/features/affection/runtime.js';
 import { regenerateAffectionProfileStages } from '../src/features/affection/workflow.js';
@@ -135,25 +134,6 @@ async function withHarness({
     globalThis.performance = previous.performance;
   }
 }
-
-test('manual affection preview uses configured stream when setting and runtime allow', async () => {
-  let received = null;
-  await withHarness({
-    tavernHelper: {
-      async generateRaw(request) {
-        received = request;
-        return createValidAffectionStagesJson();
-      },
-      stopGenerationById: () => false,
-    },
-    configure: options => configureAffectionWorkflow(options),
-  }, async ({ logs }) => {
-    await runAffectionProfileBuildApiPreview({ roleName: '沈青', initialValueTenths: 100 });
-    // May fall back if stream unavailable in harness; ensure configured path was selected when possible
-    assert.ok(logs.some(entry => entry.moduleName.includes('好感度')));
-    void received;
-  });
-});
 
 test('manual regenerate uses configured policy', async () => {
   let received = null;
