@@ -68,6 +68,12 @@ import {
   updatePendingAffectionDelta,
   useGenericAffectionBuildTask,
 } from './lifecycle.js';
+import {
+  commitManualAffectionProfileDraft,
+  createManualGenericAffectionProfile,
+  generateManualAffectionProfileDraft,
+  resolveManualAffectionProfileContext,
+} from './manual-profile.js';
 import { createGenericAffectionStages } from './profile.js';
 import {
   adjustAffectionProfileValue,
@@ -164,7 +170,7 @@ let affectionPanelOptions = {
 };
 
 let affectionPanelState = {
-  view: 'main', // main | detail | stages
+  view: 'main', // main | create | detail | stages
   roleName: '',
   settingsOpen: false,
   fullStagesOpen: false,
@@ -174,6 +180,7 @@ let affectionPanelState = {
   focusSelector: '',
   focusRoleName: '',
   editor: null,
+  manualCreate: null,
 };
 
 let affectionTestState = createDefaultTestState();
@@ -283,6 +290,54 @@ function getCurrentAffectionChatId() {
   return String(getContextInfo()?.chatId || '');
 }
 
+function createManualCreateState(settings = getGlobalSettings(), chatId = getCurrentAffectionChatId()) {
+  const affection = getAffectionSettings(settings);
+  return {
+    chatId: String(chatId || ''),
+    roleName: '',
+    initialValue: '',
+    buildMode: affection.defaultBuildMode === 'generic' ? 'generic' : 'custom',
+    apiMode: affection.profileBuildApiMode === 'main_api' ? 'main_api' : 'secondary_api',
+    userRequirement: '',
+    contextStatus: 'idle',
+    contextResult: null,
+    contextError: '',
+    generationStatus: 'idle',
+    draft: null,
+    generationError: '',
+    notice: '',
+    error: '',
+  };
+}
+
+function clearManualCreateSession() {
+  affectionPanelState.manualCreate = null;
+  if (affectionPanelState.view === 'create') {
+    affectionPanelState.view = 'main';
+  }
+}
+
+function invalidateManualCreateDraft(session, { clearContext = false } = {}) {
+  if (!session) return;
+  session.draft = null;
+  session.generationStatus = 'idle';
+  session.generationError = '';
+  session.notice = '';
+  if (clearContext) {
+    session.contextStatus = 'idle';
+    session.contextResult = null;
+    session.contextError = '';
+  }
+}
+
+function isActiveManualCreateSession(session) {
+  return Boolean(
+    session
+    && affectionPanelState.manualCreate === session
+    && session.chatId === getCurrentAffectionChatId(),
+  );
+}
+
 function normalizeAffectionPanelView(store) {
   const currentChatId = getCurrentAffectionChatId();
   if (affectionPanelState.editor?.chatId && affectionPanelState.editor.chatId !== currentChatId) {
@@ -291,17 +346,36 @@ function normalizeAffectionPanelView(store) {
     affectionPanelState.roleName = '';
   }
   if (
-    affectionPanelState.view !== 'main'
+    affectionPanelState.manualCreate
+    && affectionPanelState.manualCreate.chatId !== currentChatId
+  ) {
+    affectionPanelState.manualCreate = null;
+    if (affectionPanelState.view === 'create') {
+      affectionPanelState.view = 'main';
+    }
+  }
+  if (
+    (affectionPanelState.view === 'detail' || affectionPanelState.view === 'stages')
     && !isPlainObject(store.profiles?.[affectionPanelState.roleName])
   ) {
     affectionPanelState.view = 'main';
     affectionPanelState.roleName = '';
     affectionPanelState.editor = null;
   }
+  if (affectionPanelState.view === 'create' && !affectionPanelState.manualCreate) {
+    affectionPanelState.view = 'main';
+  }
 }
 
 export function isAffectionEditorOpen() {
-  return affectionPanelState.view === 'detail' || affectionPanelState.view === 'stages';
+  return affectionPanelState.view === 'create'
+    || affectionPanelState.view === 'detail'
+    || affectionPanelState.view === 'stages';
+}
+
+/** 供测试与内部复用：构造新建档案会话初始状态。 */
+export function createManualAffectionCreateState(settings, chatId) {
+  return createManualCreateState(settings, chatId);
 }
 
 function getSelectedPendingEntries(settings, store) {
@@ -365,16 +439,16 @@ function renderAffectionSettings(settings) {
       <div class="slx-affection-settings-body">
         <div class="slx-affection-settings-controls">
           <div class="slx-affection-control-group">
-            <span class="slx-affection-control-label">新角色默认建档方式</span>
-            <div class="slx-affection-segment" role="group" aria-label="新角色默认建档方式">
+            <span class="slx-affection-control-label">新建档案默认方式</span>
+            <div class="slx-affection-segment" role="group" aria-label="新建档案默认方式">
               <button type="button" data-slx-affection-build-mode="custom" class="${affection.defaultBuildMode === 'custom' ? 'is-active' : ''}" aria-pressed="${affection.defaultBuildMode === 'custom'}">专属阶段</button>
               <button type="button" data-slx-affection-build-mode="generic" class="${affection.defaultBuildMode === 'generic' ? 'is-active' : ''}" aria-pressed="${affection.defaultBuildMode === 'generic'}">通用阶段</button>
             </div>
           </div>
           ${affection.defaultBuildMode === 'custom' ? `
             <div class="slx-affection-control-group slx-affection-api-setting">
-              <span class="slx-affection-control-label">首次建档 API</span>
-              <div class="slx-schedule-api-toggle slx-affection-api-toggle" role="group" aria-label="首次专属阶段生成 API">
+              <span class="slx-affection-control-label">专属阶段默认 API</span>
+              <div class="slx-schedule-api-toggle slx-affection-api-toggle" role="group" aria-label="专属阶段默认 API">
                 <button type="button" data-slx-affection-build-api="main_api" class="${affection.profileBuildApiMode === 'main_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'main_api'}">主 API</button>
                 <button type="button" data-slx-affection-build-api="secondary_api" class="${affection.profileBuildApiMode === 'secondary_api' ? 'is-active' : ''}" aria-pressed="${affection.profileBuildApiMode === 'secondary_api'}">副 API</button>
               </div>
@@ -532,6 +606,21 @@ function renderAffectionProfileCard(storedRoleName, profile) {
   `;
 }
 
+function renderManualCreateEntryCard() {
+  return `
+    <section class="slx-detail-card slx-affection-create-entry">
+      <div class="slx-affection-section-head">
+        <b>新建角色档案</b>
+        <small>手动指定追踪角色</small>
+      </div>
+      <p class="slx-affection-create-entry-desc">手动指定需要追踪的角色，并选择通用或专属五阶段。</p>
+      <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-affection-open-create>
+        ${slxIcon('sparkles')}<span>新建角色档案</span>
+      </button>
+    </section>
+  `;
+}
+
 function renderAffectionProfiles(store) {
   const profiles = Object.entries(store.profiles || {}).filter(([, profile]) => isPlainObject(profile));
   return `
@@ -541,10 +630,187 @@ function renderAffectionProfiles(store) {
         <div class="slx-detail-card slx-affection-empty-state">
           ${slxIcon('pursuit')}
           <b>还没有正式好感档案</b>
-          <p>出现可攻略角色后自动建档。</p>
+          <p>点击“新建角色档案”，手动指定需要追踪的角色。</p>
         </div>
       `}
     </section>
+  `;
+}
+
+function formatManualContextSummary(contextResult) {
+  const diagnostics = isPlainObject(contextResult?.diagnostics) ? contextResult.diagnostics : {};
+  const worldInfo = isPlainObject(diagnostics.worldInfo) ? diagnostics.worldInfo : {};
+  const materialLength = String(contextResult?.material || '').length;
+  const recentMessageCount = Number.isFinite(Number(diagnostics.recentMessageCount))
+    ? Number(diagnostics.recentMessageCount)
+    : 0;
+  const memoryCount = Number.isFinite(Number(diagnostics.memoryCount))
+    ? Number(diagnostics.memoryCount)
+    : 0;
+  const grandMemoryCount = Number.isFinite(Number(diagnostics.grandMemoryCount))
+    ? Number(diagnostics.grandMemoryCount)
+    : 0;
+  const emotionProfileCount = Number.isFinite(Number(diagnostics.emotionProfileCount))
+    ? Number(diagnostics.emotionProfileCount)
+    : 0;
+  const usedCount = Number.isFinite(Number(worldInfo.usedCount))
+    ? Number(worldInfo.usedCount)
+    : 0;
+  const materialSource = String(worldInfo.materialSource || '').trim() || '未知';
+  const targetInjected = worldInfo.targetRoleInjected === true ? '是' : '否';
+  return {
+    materialLength,
+    recentMessageCount,
+    memoryCount,
+    grandMemoryCount,
+    emotionProfileCount,
+    usedCount,
+    materialSource,
+    targetInjected,
+  };
+}
+
+function renderManualCreateDraftPreview(session) {
+  const stages = Array.isArray(session?.draft?.stages) ? session.draft.stages : [];
+  if (!stages.length) return '';
+  const initialTenths = parseAffectionValueTenths(session.initialValue);
+  const currentStage = Number.isInteger(initialTenths)
+    ? getStageForValueTenths(initialTenths, stages)
+    : null;
+  return `
+    <section class="slx-detail-card slx-affection-create-draft-preview" aria-label="专属五阶段草稿">
+      <div class="slx-affection-section-head"><b>专属五阶段草稿</b><small>确认后才正式建档</small></div>
+      <div class="slx-affection-create-draft-list">
+        ${stages.map((stage, index) => `
+          <details class="slx-affection-create-draft-card ${stage.stageId === currentStage?.stageId ? 'is-current' : ''}" ${index === 0 || stage.stageId === currentStage?.stageId ? 'open' : ''}>
+            <summary>
+              <span>
+                <small>${index + 1}</small>
+                <b>${escapeHtml(formatAffectionValueTenths(stage.minTenths))}—${escapeHtml(formatAffectionValueTenths(stage.maxTenths))}</b>
+                <em>「${escapeHtml(stage.name || '未命名')}」</em>
+              </span>
+              ${stage.stageId === currentStage?.stageId ? '<small class="is-current">初始好感所在阶段</small>' : ''}
+            </summary>
+            <div>
+              <p><b>关系含义：</b>${escapeHtml(stage.meaning || '')}</p>
+              <ul>${(stage.behaviors || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+              <p><b>变化倾向：</b>${escapeHtml(stage.trend || '')}</p>
+              <p><b>阶段边界：</b>${escapeHtml(stage.boundary || '')}</p>
+            </div>
+          </details>
+        `).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function renderManualCreateContextResult(session) {
+  if (session.contextStatus === 'running') {
+    return '<div class="slx-affection-editor-status" role="status">正在读取角色资料…</div>';
+  }
+  if (session.contextStatus === 'error') {
+    return `<div class="slx-affection-feedback is-error" role="alert">${slxIcon('alert')}<span>${escapeHtml(session.contextError || '角色资料读取失败。')}</span></div>`;
+  }
+  if (session.contextStatus !== 'success' || !session.contextResult) return '';
+  const summary = formatManualContextSummary(session.contextResult);
+  return `
+    <div class="slx-affection-create-context-result">
+      <ul class="slx-affection-create-context-summary">
+        <li>参考资料总字符数：${summary.materialLength}</li>
+        <li>最近剧情数量：${summary.recentMessageCount}</li>
+        <li>memory 数量：${summary.memoryCount}</li>
+        <li>grand_memory 数量：${summary.grandMemoryCount}</li>
+        <li>Emotion Profile 数量：${summary.emotionProfileCount}</li>
+        <li>世界书条目：${summary.usedCount}</li>
+        <li>世界书材料来源：${escapeHtml(summary.materialSource)}</li>
+        <li>角色名是否加入扫描：${summary.targetInjected}</li>
+      </ul>
+      <details class="slx-affection-create-material-fold">
+        <summary>查看将发送的参考资料</summary>
+        <pre class="slx-affection-create-material-pre">${escapeHtml(session.contextResult.material || '')}</pre>
+      </details>
+    </div>
+  `;
+}
+
+export function renderManualAffectionCreateOverlay(store) {
+  if (affectionPanelState.view !== 'create' || !affectionPanelState.manualCreate) return '';
+  const session = affectionPanelState.manualCreate;
+  const isCustom = session.buildMode === 'custom';
+  const isBusy = session.generationStatus === 'running' || session.generationStatus === 'committing';
+  const isContextRunning = session.contextStatus === 'running';
+  const fieldsDisabled = isBusy ? 'disabled' : '';
+  const modeSubtitle = isCustom ? '专属阶段 · 生成后确认创建' : '通用阶段 · 不调用 API';
+  const hasDraft = isCustom && isPlainObject(session.draft) && Array.isArray(session.draft.stages);
+  return `
+    <div class="slx-affection-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="slx-affection-create-title">
+      <section class="slx-affection-editor slx-affection-create-editor">
+        <header class="slx-affection-editor-head">
+          <div>
+            <b id="slx-affection-create-title">新建角色好感档案</b>
+            <small>${escapeHtml(modeSubtitle)}</small>
+          </div>
+          <button type="button" data-slx-affection-close-create aria-label="关闭新建角色档案">${slxIcon('close')}</button>
+        </header>
+        <div class="slx-affection-editor-body">
+          ${session.notice ? `<div class="slx-affection-feedback is-success" role="status">${slxIcon('check')}<span>${escapeHtml(session.notice)}</span></div>` : ''}
+          ${session.error ? `<div class="slx-affection-feedback is-error" role="alert">${slxIcon('alert')}<span>${escapeHtml(session.error)}</span></div>` : ''}
+          ${session.generationError ? `<div class="slx-affection-feedback is-error" role="alert">${slxIcon('alert')}<span>${escapeHtml(session.generationError)}</span></div>` : ''}
+
+          <section class="slx-detail-card slx-affection-create-form">
+            <label class="slx-affection-create-field">
+              <span>建档角色名称</span>
+              <input type="text" data-slx-affection-create-role value="${escapeHtml(session.roleName)}" autocomplete="off" ${fieldsDisabled} />
+              <small>该名称会作为目标角色，并参与世界书资料扫描。</small>
+            </label>
+            <label class="slx-affection-create-field">
+              <span>初始好感</span>
+              <input type="number" min="0" max="100" step="0.1" inputmode="decimal" data-slx-affection-create-initial value="${escapeHtml(session.initialValue)}" ${fieldsDisabled} />
+              <small>范围 0—100，最多一位小数。</small>
+            </label>
+            <div class="slx-affection-control-group">
+              <span class="slx-affection-control-label" id="slx-affection-create-mode-label">建档方式</span>
+              <div class="slx-affection-segment" role="group" aria-labelledby="slx-affection-create-mode-label">
+                <button type="button" data-slx-affection-create-mode="generic" class="${session.buildMode === 'generic' ? 'is-active' : ''}" aria-pressed="${session.buildMode === 'generic'}" ${fieldsDisabled}>通用阶段</button>
+                <button type="button" data-slx-affection-create-mode="custom" class="${session.buildMode === 'custom' ? 'is-active' : ''}" aria-pressed="${session.buildMode === 'custom'}" ${fieldsDisabled}>专属阶段</button>
+              </div>
+            </div>
+            ${isCustom ? `
+              <label class="slx-affection-create-field slx-affection-requirement">
+                <span>阶段设计构思（可选）</span>
+                <textarea rows="4" maxlength="2000" data-slx-affection-create-requirement placeholder="可填写你希望的关系节奏、阶段风格、角色边界或特殊发展方向。留空时由模型根据参考资料设计。" ${fieldsDisabled}>${escapeHtml(session.userRequirement)}</textarea>
+              </label>
+              <div class="slx-affection-control-group">
+                <span class="slx-affection-control-label" id="slx-affection-create-api-label">本次 API</span>
+                <div class="slx-schedule-api-toggle slx-affection-api-toggle" role="group" aria-labelledby="slx-affection-create-api-label">
+                  <button type="button" data-slx-affection-create-api="main_api" class="${session.apiMode === 'main_api' ? 'is-active' : ''}" aria-pressed="${session.apiMode === 'main_api'}" ${fieldsDisabled}>主 API</button>
+                  <button type="button" data-slx-affection-create-api="secondary_api" class="${session.apiMode === 'secondary_api' ? 'is-active' : ''}" aria-pressed="${session.apiMode === 'secondary_api'}" ${fieldsDisabled}>副 API</button>
+                </div>
+              </div>
+              <div class="slx-affection-create-context-actions">
+                <button class="slx-soft-btn" type="button" data-slx-affection-test-create-context ${isBusy || isContextRunning ? 'disabled' : ''}>
+                  ${slxIcon('memoir')}<span>${isContextRunning ? '正在读取…' : '测试角色资料'}</span>
+                </button>
+                <button class="slx-soft-btn" type="button" data-slx-affection-generate-create-draft ${isBusy ? 'disabled' : ''}>
+                  ${slxIcon('sparkles')}<span>${session.generationStatus === 'running' ? '正在生成专属阶段…' : '生成专属阶段'}</span>
+                </button>
+              </div>
+              ${renderManualCreateContextResult(session)}
+              ${session.generationStatus === 'running' ? '<div class="slx-affection-editor-status" role="status">正在生成专属阶段…</div>' : ''}
+            ` : ''}
+          </section>
+
+          ${hasDraft ? renderManualCreateDraftPreview(session) : ''}
+
+          <footer class="slx-affection-editor-footer">
+            <button class="slx-soft-btn" type="button" data-slx-affection-close-create ${session.generationStatus === 'committing' ? 'disabled' : ''}>取消</button>
+            ${isCustom
+    ? `<button class="slx-soft-btn slx-primary-btn" type="button" data-slx-affection-commit-create-draft ${!hasDraft || isBusy ? 'disabled' : ''}>${slxIcon('check')}<span>${session.generationStatus === 'committing' ? '创建中…' : '确认创建档案'}</span></button>`
+    : `<button class="slx-soft-btn slx-primary-btn" type="button" data-slx-affection-create-generic ${isBusy ? 'disabled' : ''}>${slxIcon('check')}<span>${session.generationStatus === 'committing' ? '创建中…' : '使用通用阶段创建'}</span></button>`}
+          </footer>
+        </div>
+      </section>
+    </div>
   `;
 }
 
@@ -648,7 +914,7 @@ function createAffectionStageEditor(profile, roleName) {
     stages,
     originalStages: cloneData(stages),
     sourceBuildMode: profile.buildMode === 'generic' ? 'generic' : 'custom',
-    userRequirement: '',
+    userRequirement: String(profile.stageDesignRequirement || ''),
     regenerateApiMode: getAffectionSettings(getGlobalSettings()).profileBuildApiMode,
     expandedStageId: currentStage.stageId || stages[0]?.stageId || 'S1',
     dirty: false,
@@ -2883,10 +3149,12 @@ export function renderAffectionPanel() {
         </div>
         ${renderAffectionFeedback()}
         ${renderAffectionSettings(settings)}
+        ${renderManualCreateEntryCard()}
         ${renderAffectionPending(settings, store)}
         ${renderAffectionProfiles(store)}
         ${renderAffectionDiagnostics()}
       </div>
+      ${renderManualAffectionCreateOverlay(store)}
       ${renderAffectionDetailOverlay(store)}
       ${renderAffectionStageEditorOverlay(store)}
     </div>
@@ -3019,7 +3287,7 @@ function bindAffectionFormalEvents(panelRoot) {
       const settings = getGlobalSettings();
       getAffectionSettings(settings).defaultBuildMode = button.dataset.slxAffectionBuildMode;
       saveGlobalSettings();
-      setAffectionPanelFeedback({ notice: `新角色将默认使用${button.dataset.slxAffectionBuildMode === 'generic' ? '通用阶段' : '专属阶段'}建档。` });
+      setAffectionPanelFeedback({ notice: `新建档案将默认使用${button.dataset.slxAffectionBuildMode === 'generic' ? '通用阶段' : '专属阶段'}。` });
       refreshPanel();
     });
   });
@@ -3028,7 +3296,7 @@ function bindAffectionFormalEvents(panelRoot) {
       const settings = getGlobalSettings();
       getAffectionSettings(settings).profileBuildApiMode = button.dataset.slxAffectionBuildApi;
       saveGlobalSettings();
-      setAffectionPanelFeedback({ notice: `首次专属建档改用${button.dataset.slxAffectionBuildApi === 'main_api' ? '主 API' : '副 API'}。` });
+      setAffectionPanelFeedback({ notice: `专属阶段默认改用${button.dataset.slxAffectionBuildApi === 'main_api' ? '主 API' : '副 API'}。` });
       refreshPanel();
     });
   });
@@ -3285,13 +3553,238 @@ function bindAffectionFormalEvents(panelRoot) {
     }
     event.currentTarget.disabled = true;
     try {
-      await applyAffectionProfileStages({ roleName: editor.roleName, stages: editor.stages, buildMode: 'custom' });
+      await applyAffectionProfileStages({
+        roleName: editor.roleName,
+        stages: editor.stages,
+        buildMode: 'custom',
+        stageDesignRequirement: editor.userRequirement,
+      });
       affectionPanelState.editor = null;
       affectionPanelState.view = 'detail';
       affectionPanelState.regenerateOpen = false;
       setAffectionPanelFeedback({ notice: '新的专属五阶段已正式启用。' });
     } catch (error) {
       setAffectionPanelFeedback({ error: error?.message || String(error) });
+    }
+    refreshPanel();
+  });
+
+  // ---- 手动新建档案 ----
+  panelRoot.querySelector('[data-slx-affection-open-create]')?.addEventListener('click', () => {
+    const diagnostics = getStorageDiagnostics();
+    if (!diagnostics?.hasChatMetadata) {
+      setAffectionPanelFeedback({ error: '请先进入一个可保存的聊天，再新建角色档案。' });
+      refreshPanel();
+      return;
+    }
+    affectionPanelState.manualCreate = createManualCreateState();
+    affectionPanelState.view = 'create';
+    affectionPanelState.focusSelector = '[data-slx-affection-create-role]';
+    setAffectionPanelFeedback();
+    refreshPanel();
+  });
+
+  const closeManualCreate = () => {
+    clearManualCreateSession();
+    affectionPanelState.focusSelector = '[data-slx-affection-open-create]';
+    refreshPanel();
+  };
+
+  panelRoot.querySelectorAll('[data-slx-affection-close-create]').forEach(button => {
+    button.addEventListener('click', () => closeManualCreate());
+  });
+
+  panelRoot.querySelectorAll('[data-slx-affection-create-mode]').forEach(button => {
+    button.addEventListener('click', () => {
+      const session = affectionPanelState.manualCreate;
+      if (!session || session.generationStatus === 'running' || session.generationStatus === 'committing') return;
+      const mode = button.dataset.slxAffectionCreateMode === 'generic' ? 'generic' : 'custom';
+      if (session.buildMode === mode) return;
+      session.buildMode = mode;
+      invalidateManualCreateDraft(session);
+      session.error = '';
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-affection-create-api]').forEach(button => {
+    button.addEventListener('click', () => {
+      const session = affectionPanelState.manualCreate;
+      if (!session || session.generationStatus === 'running' || session.generationStatus === 'committing') return;
+      const apiMode = button.dataset.slxAffectionCreateApi === 'main_api' ? 'main_api' : 'secondary_api';
+      if (session.apiMode === apiMode) return;
+      session.apiMode = apiMode;
+      invalidateManualCreateDraft(session);
+      session.error = '';
+      refreshPanel();
+    });
+  });
+
+  panelRoot.querySelector('[data-slx-affection-create-role]')?.addEventListener('input', event => {
+    const session = affectionPanelState.manualCreate;
+    if (!session) return;
+    session.roleName = event.currentTarget.value;
+    invalidateManualCreateDraft(session, { clearContext: true });
+    session.error = '';
+  });
+
+  panelRoot.querySelector('[data-slx-affection-create-initial]')?.addEventListener('input', event => {
+    const session = affectionPanelState.manualCreate;
+    if (!session) return;
+    session.initialValue = event.currentTarget.value;
+    invalidateManualCreateDraft(session);
+    session.error = '';
+  });
+
+  panelRoot.querySelector('[data-slx-affection-create-requirement]')?.addEventListener('input', event => {
+    const session = affectionPanelState.manualCreate;
+    if (!session) return;
+    session.userRequirement = event.currentTarget.value;
+    invalidateManualCreateDraft(session);
+    session.error = '';
+  });
+
+  panelRoot.querySelector('[data-slx-affection-test-create-context]')?.addEventListener('click', async event => {
+    const session = affectionPanelState.manualCreate;
+    if (!session) return;
+    const roleName = normalizeAffectionRoleName(session.roleName);
+    if (!roleName) {
+      session.error = '角色名不能为空。';
+      session.contextStatus = 'idle';
+      refreshPanel();
+      return;
+    }
+    session.contextStatus = 'running';
+    session.contextError = '';
+    session.error = '';
+    event.currentTarget.disabled = true;
+    refreshPanel();
+    try {
+      const result = await resolveManualAffectionProfileContext(roleName);
+      if (!isActiveManualCreateSession(session)) return;
+      session.contextStatus = 'success';
+      session.contextResult = result;
+      session.contextError = '';
+    } catch (error) {
+      if (!isActiveManualCreateSession(session)) return;
+      session.contextStatus = 'error';
+      session.contextResult = null;
+      session.contextError = error?.message || String(error);
+    }
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-generate-create-draft]')?.addEventListener('click', async event => {
+    const session = affectionPanelState.manualCreate;
+    if (!session) return;
+    const roleName = normalizeAffectionRoleName(session.roleName);
+    const initialValueTenths = parseAffectionValueTenths(session.initialValue);
+    if (!roleName) {
+      session.error = '角色名不能为空。';
+      refreshPanel();
+      return;
+    }
+    if (!Number.isInteger(initialValueTenths)) {
+      session.error = '初始好感必须是 0—100、最多一位小数。';
+      refreshPanel();
+      return;
+    }
+    session.generationStatus = 'running';
+    session.generationError = '';
+    session.error = '';
+    session.notice = '';
+    session.draft = null;
+    event.currentTarget.disabled = true;
+    refreshPanel();
+    try {
+      const draft = await generateManualAffectionProfileDraft({
+        roleName,
+        initialValueTenths,
+        userRequirement: session.userRequirement,
+        apiMode: session.apiMode,
+      });
+      if (!isActiveManualCreateSession(session)) return;
+      session.draft = draft;
+      session.generationStatus = 'success';
+      session.notice = '专属阶段草稿已生成，请确认后创建档案。';
+    } catch (error) {
+      if (!isActiveManualCreateSession(session)) return;
+      session.generationStatus = 'error';
+      session.draft = null;
+      session.generationError = error?.message || String(error);
+    }
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-create-generic]')?.addEventListener('click', async event => {
+    const session = affectionPanelState.manualCreate;
+    if (!session) return;
+    const roleName = normalizeAffectionRoleName(session.roleName);
+    const initialValueTenths = parseAffectionValueTenths(session.initialValue);
+    if (!roleName) {
+      session.error = '角色名不能为空。';
+      refreshPanel();
+      return;
+    }
+    if (!Number.isInteger(initialValueTenths)) {
+      session.error = '初始好感必须是 0—100、最多一位小数。';
+      refreshPanel();
+      return;
+    }
+    session.generationStatus = 'committing';
+    session.error = '';
+    event.currentTarget.disabled = true;
+    refreshPanel();
+    try {
+      await createManualGenericAffectionProfile({ roleName, initialValueTenths });
+      if (!isActiveManualCreateSession(session)) return;
+      affectionPanelState.manualCreate = null;
+      affectionPanelState.view = 'main';
+      affectionPanelState.focusRoleName = roleName;
+      setAffectionPanelFeedback({ notice: `「${roleName}」好感档案已创建。` });
+    } catch (error) {
+      if (!isActiveManualCreateSession(session)) return;
+      session.generationStatus = 'idle';
+      session.error = error?.message || String(error);
+    }
+    refreshPanel();
+  });
+
+  panelRoot.querySelector('[data-slx-affection-commit-create-draft]')?.addEventListener('click', async event => {
+    const session = affectionPanelState.manualCreate;
+    if (!session?.draft) return;
+    const roleName = normalizeAffectionRoleName(session.roleName);
+    const initialValueTenths = parseAffectionValueTenths(session.initialValue);
+    if (!roleName) {
+      session.error = '角色名不能为空。';
+      refreshPanel();
+      return;
+    }
+    if (!Number.isInteger(initialValueTenths)) {
+      session.error = '初始好感必须是 0—100、最多一位小数。';
+      refreshPanel();
+      return;
+    }
+    session.generationStatus = 'committing';
+    session.error = '';
+    event.currentTarget.disabled = true;
+    refreshPanel();
+    try {
+      await commitManualAffectionProfileDraft({
+        draft: session.draft,
+        roleName,
+        initialValueTenths,
+        userRequirement: session.userRequirement,
+      });
+      if (!isActiveManualCreateSession(session)) return;
+      affectionPanelState.manualCreate = null;
+      affectionPanelState.view = 'main';
+      affectionPanelState.focusRoleName = roleName;
+      setAffectionPanelFeedback({ notice: `「${roleName}」专属好感档案已创建。` });
+    } catch (error) {
+      if (!isActiveManualCreateSession(session)) return;
+      session.generationStatus = session.draft ? 'success' : 'idle';
+      session.error = error?.message || String(error);
     }
     refreshPanel();
   });
@@ -3303,6 +3796,9 @@ function bindAffectionFormalEvents(panelRoot) {
         if (affectionPanelState.view === 'stages') {
           affectionPanelState.view = 'detail';
           affectionPanelState.focusSelector = '[data-slx-affection-open-stage-editor]';
+        } else if (affectionPanelState.view === 'create') {
+          clearManualCreateSession();
+          affectionPanelState.focusSelector = '[data-slx-affection-open-create]';
         } else {
           affectionPanelState.view = 'main';
           affectionPanelState.focusRoleName = affectionPanelState.roleName;

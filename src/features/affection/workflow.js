@@ -22,7 +22,6 @@ import {
   createBuildRequestId,
   executeCustomAffectionProfileBuild,
   logAffectionProfileBuild,
-  resolveAffectionProfileContext,
   AFFECTION_TRANSPORT_POLICY,
 } from './generation.js';
 import { registerAffectionInjectionEvents, syncAffectionInjection } from './injection.js';
@@ -31,6 +30,10 @@ import {
   markAffectionStoreUpdated,
 } from './lifecycle.js';
 import {
+  MANUAL_USER_REQUIREMENT_MAX_LENGTH,
+  resolveManualAffectionProfileContext,
+} from './manual-profile.js';
+import {
   buildKnownAffectionText,
   normalizeAffectionProfileStages,
 } from './profile.js';
@@ -38,6 +41,12 @@ import {
   isAffectionAnalysisActive,
   refreshAffectionPanel,
 } from './runtime.js';
+
+/** 主动重新生成：与手动新建共用完整 dry_run + all 上下文。 */
+async function resolveRegenerateContextMaterial(roleName) {
+  const context = await resolveManualAffectionProfileContext(roleName);
+  return context.material;
+}
 
 const AFFECTION_PENDING_COMMIT_HANDLER_ID = 'affection';
 let affectionPendingCommitRegistered = false;
@@ -102,6 +111,7 @@ export async function applyAffectionProfileStages({
   roleName,
   stages,
   buildMode = 'custom',
+  stageDesignRequirement,
 } = {}, {
   settings = getGlobalSettings(),
   chatState = getChatState(),
@@ -113,7 +123,7 @@ export async function applyAffectionProfileStages({
   if (!profile) throw new Error(`未找到「${cleanRoleName}」的好感档案。`);
   const normalizedStages = normalizeAffectionProfileStages(stages);
   const ledger = recalculateAffectionLedger(profile.initialValueTenths, profile.records);
-  store.profiles[cleanRoleName] = {
+  const nextProfile = {
     ...profile,
     valueTenths: ledger.valueTenths,
     records: ledger.records,
@@ -122,6 +132,15 @@ export async function applyAffectionProfileStages({
     buildStatus: 'ready',
     updatedAt: formatTimestamp(),
   };
+  // 未提供 stageDesignRequirement 时保留原值（含切换通用阶段）。
+  if (stageDesignRequirement !== undefined) {
+    const cleanRequirement = String(stageDesignRequirement ?? '').trim();
+    if (cleanRequirement.length > MANUAL_USER_REQUIREMENT_MAX_LENGTH) {
+      throw new Error(`阶段设计构思不能超过 ${MANUAL_USER_REQUIREMENT_MAX_LENGTH} 字符，请缩短后再试。`);
+    }
+    nextProfile.stageDesignRequirement = cleanRequirement;
+  }
+  store.profiles[cleanRoleName] = nextProfile;
   markAffectionStoreUpdated(store, persist);
   if (persist) await syncAffectionInjection({ settings, chatState });
   refreshAffectionPanel();
@@ -136,7 +155,7 @@ export async function regenerateAffectionProfileStages({
   settings = getGlobalSettings(),
   chatState = getChatState(),
   requestCustomProfile = null,
-  resolveContextMaterial = resolveAffectionProfileContext,
+  resolveContextMaterial = resolveRegenerateContextMaterial,
   log = true,
 } = {}) {
   const cleanRoleName = normalizeAffectionRoleName(roleName);
@@ -147,6 +166,10 @@ export async function regenerateAffectionProfileStages({
   const cleanApiMode = ['main_api', 'secondary_api'].includes(apiMode)
     ? apiMode
     : affection.profileBuildApiMode;
+  const cleanUserRequirement = String(userRequirement || '').trim();
+  if (cleanUserRequirement.length > MANUAL_USER_REQUIREMENT_MAX_LENGTH) {
+    throw new Error(`阶段设计构思不能超过 ${MANUAL_USER_REQUIREMENT_MAX_LENGTH} 字符，请缩短后再试。`);
+  }
   const task = {
     operation: 'regenerate',
     buildRequestId: createBuildRequestId(),
@@ -157,7 +180,7 @@ export async function regenerateAffectionProfileStages({
     initialValueTenths: profile.initialValueTenths,
     buildMode: 'custom',
     apiMode: cleanApiMode,
-    userRequirement: String(userRequirement || '').trim().slice(0, 2000),
+    userRequirement: cleanUserRequirement,
   };
   const startedAt = formatTimestamp();
   const startedMs = performance.now();
