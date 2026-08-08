@@ -476,13 +476,14 @@ function formatManualContextSummary(contextResult) {
   };
 }
 
-function renderManualCreateDraftStage(stage, index, expanded, stageErrors, currentStageId = '') {
+function renderManualCreateDraftStage(stage, index, expanded, stageErrors, currentStageId = '', disabled = false) {
   const stageId = stage.stageId || `S${index + 1}`;
   const errorText = stageErrors?.length ? `请补全：${stageErrors.join('、')}` : '';
   const isCurrent = stageId === currentStageId;
+  const disabledAttr = disabled ? 'disabled' : '';
   return `
     <article class="slx-affection-create-draft-card slx-affection-stage-draft-card ${expanded ? 'is-open' : ''} ${isCurrent ? 'is-current' : ''} ${errorText ? 'has-error' : ''}">
-      <button class="slx-affection-stage-toggle" type="button" data-slx-affection-toggle-create-stage="${escapeHtml(stageId)}" aria-expanded="${expanded}" aria-controls="slx-affection-create-stage-fields-${index}">
+      <button class="slx-affection-stage-toggle" type="button" data-slx-affection-toggle-create-stage="${escapeHtml(stageId)}" aria-expanded="${expanded}" aria-controls="slx-affection-create-stage-fields-${index}" ${disabledAttr}>
         <span>
           <small>${index + 1}</small>
           <b>${escapeHtml(formatAffectionValueTenths(stage.minTenths))}—${escapeHtml(formatAffectionValueTenths(stage.maxTenths))}</b>
@@ -496,17 +497,17 @@ function renderManualCreateDraftStage(stage, index, expanded, stageErrors, curre
       </button>
       <div class="slx-affection-stage-fields" id="slx-affection-create-stage-fields-${index}" ${expanded ? '' : 'hidden'}>
         ${errorText ? `<div class="slx-affection-field-error" role="alert">${escapeHtml(errorText)}</div>` : ''}
-        <label><span>阶段名</span><input type="text" maxlength="24" data-slx-affection-create-stage-field="name" data-stage-index="${index}" value="${escapeHtml(stage.name || '')}" /></label>
-        <label><span>关系含义</span><textarea rows="2" maxlength="120" data-slx-affection-create-stage-field="meaning" data-stage-index="${index}">${escapeHtml(stage.meaning || '')}</textarea></label>
-        ${(stage.behaviors || ['', '', '']).map((item, behaviorIndex) => `<label><span>行为 ${behaviorIndex + 1}</span><textarea rows="2" maxlength="100" data-slx-affection-create-stage-behavior="${behaviorIndex}" data-stage-index="${index}">${escapeHtml(item || '')}</textarea></label>`).join('')}
-        <label><span>变化倾向</span><textarea rows="2" maxlength="120" data-slx-affection-create-stage-field="trend" data-stage-index="${index}">${escapeHtml(stage.trend || '')}</textarea></label>
-        <label><span>阶段边界</span><textarea rows="2" maxlength="120" data-slx-affection-create-stage-field="boundary" data-stage-index="${index}">${escapeHtml(stage.boundary || '')}</textarea></label>
+        <label><span>阶段名</span><input type="text" maxlength="24" data-slx-affection-create-stage-field="name" data-stage-index="${index}" value="${escapeHtml(stage.name || '')}" ${disabledAttr} /></label>
+        <label><span>关系含义</span><textarea rows="2" maxlength="120" data-slx-affection-create-stage-field="meaning" data-stage-index="${index}" ${disabledAttr}>${escapeHtml(stage.meaning || '')}</textarea></label>
+        ${(stage.behaviors || ['', '', '']).map((item, behaviorIndex) => `<label><span>行为 ${behaviorIndex + 1}</span><textarea rows="2" maxlength="100" data-slx-affection-create-stage-behavior="${behaviorIndex}" data-stage-index="${index}" ${disabledAttr}>${escapeHtml(item || '')}</textarea></label>`).join('')}
+        <label><span>变化倾向</span><textarea rows="2" maxlength="120" data-slx-affection-create-stage-field="trend" data-stage-index="${index}" ${disabledAttr}>${escapeHtml(stage.trend || '')}</textarea></label>
+        <label><span>阶段边界</span><textarea rows="2" maxlength="120" data-slx-affection-create-stage-field="boundary" data-stage-index="${index}" ${disabledAttr}>${escapeHtml(stage.boundary || '')}</textarea></label>
       </div>
     </article>
   `;
 }
 
-function renderManualCreateDraftPreview(session) {
+function renderManualCreateDraftPreview(session, { disabled = false } = {}) {
   const stages = Array.isArray(session?.draft?.stages) ? session.draft.stages : [];
   if (!stages.length) return '';
   const initialTenths = parseAffectionValueTenths(session.initialValue);
@@ -527,6 +528,7 @@ function renderManualCreateDraftPreview(session) {
           expandedStageId === (stage.stageId || `S${index + 1}`),
           fieldErrors[stage.stageId || `S${index + 1}`],
           currentStage?.stageId || '',
+          disabled,
         )).join('')}
       </div>
     </section>
@@ -653,7 +655,7 @@ export function renderManualAffectionCreateOverlay(store) {
             ` : ''}
           </section>
 
-          ${hasDraft ? renderManualCreateDraftPreview(session) : ''}
+          ${hasDraft ? renderManualCreateDraftPreview(session, { disabled: isCommitting }) : ''}
 
           <footer class="slx-affection-editor-footer">
             <button class="slx-soft-btn" type="button" data-slx-affection-close-create ${isCommitting ? 'disabled' : ''}>取消</button>

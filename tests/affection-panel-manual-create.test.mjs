@@ -102,6 +102,8 @@ function createClickable(dataset = {}) {
       }
     },
     input(value) {
+      // 模拟浏览器：disabled 控件不接受输入
+      if (this.disabled) return;
       this.value = value;
       for (const fn of this._listeners?.input || []) {
         fn({ currentTarget: this });
@@ -265,6 +267,7 @@ function createPanelRoot() {
         const fieldNodes = [];
         const toggleNodes = [];
         const cards = [];
+        const draftLocked = session.generationStatus === 'committing';
         (session.draft.stages || []).forEach((stage, stageIndex) => {
           const fieldsParent = {
             hidden: session.draftExpandedStageId !== (stage.stageId || `S${stageIndex + 1}`),
@@ -284,6 +287,7 @@ function createPanelRoot() {
           const toggle = createClickable({
             slxAffectionToggleCreateStage: stage.stageId || `S${stageIndex + 1}`,
           });
+          toggle.disabled = draftLocked;
           toggle.closest = (sel) => {
             if (sel.includes('create-draft-card') || sel.includes('stage-draft-card')) return card;
             return null;
@@ -296,6 +300,7 @@ function createPanelRoot() {
               stageIndex: String(stageIndex),
             });
             node.value = stage[field] || '';
+            node.disabled = draftLocked;
             node._fieldsParent = fieldsParent;
             fieldNodes.push(node);
           }
@@ -305,6 +310,7 @@ function createPanelRoot() {
               stageIndex: String(stageIndex),
             });
             node.value = item || '';
+            node.disabled = draftLocked;
             node._fieldsParent = fieldsParent;
             fieldNodes.push(node);
           });
@@ -1221,6 +1227,97 @@ test('edited draft stages are what gets committed to the formal profile', async 
           sourceType: 'manual',
         };
         return liveChatState.affectionSystem.profiles[input.roleName];
+      },
+    },
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase D Review Fix：committing 期间冻结草稿编辑器
+// ---------------------------------------------------------------------------
+
+test('manual custom draft fields are disabled while formal commit is pending', async () => {
+  let resolveCommit;
+  const commitPromise = new Promise((resolve, reject) => {
+    resolveCommit = { resolve, reject };
+  });
+  let commitCalls = 0;
+
+  await withHarness(async ({ mount, remount }) => {
+    const root = mount();
+    openCreateView(root);
+    root.querySelector('[data-slx-affection-create-role]').input('沈青');
+    root.querySelector('[data-slx-affection-create-initial]').input('35.0');
+    root.querySelector('[data-slx-affection-generate-create-draft]').click();
+    await flushMicrotasks();
+
+    let live = remount();
+    const meaningField = findCreateStageField(live, 1, 'meaning');
+    assert.equal(meaningField.disabled, false);
+    meaningField.input('确认前可改的含义B');
+    const session = getManualAffectionCreateSession();
+    assert.equal(session.draft.stages[1].meaning, '确认前可改的含义B');
+    assert.equal(session.draftDirty, true);
+
+    live.querySelector('[data-slx-affection-commit-create-draft]').click();
+    await flushMicrotasks();
+
+    assert.equal(session.generationStatus, 'committing');
+    assert.equal(commitCalls, 1);
+
+    live = remount();
+    const fields = live.querySelectorAll('[data-slx-affection-create-stage-field], [data-slx-affection-create-stage-behavior]');
+    const toggles = live.querySelectorAll('[data-slx-affection-toggle-create-stage]');
+    assert.ok(fields.length >= 5 * 7); // 5 stages × (name+meaning+trend+boundary+3 behaviors)
+    assert.equal(fields.length, 35);
+    assert.equal(toggles.length, 5);
+    for (const node of fields) {
+      assert.equal(node.disabled, true, 'draft field should be disabled while committing');
+    }
+    for (const node of toggles) {
+      assert.equal(node.disabled, true, 'stage toggle should be disabled while committing');
+    }
+
+    // HTML 渲染也带 disabled
+    const html = renderManualAffectionCreateOverlay({});
+    assert.match(html, /data-slx-affection-create-stage-field="meaning"[^>]*\sdisabled/);
+    assert.match(html, /data-slx-affection-toggle-create-stage="S1"[^>]*\sdisabled/);
+
+    // 提交期间假输入不得写入 session.draft（harness 模拟 disabled + handler guard）
+    const lockedMeaning = findCreateStageField(live, 1, 'meaning');
+    lockedMeaning.input('提交中假修改C');
+    assert.equal(session.draft.stages[1].meaning, '确认前可改的含义B');
+
+    // 提交失败 → 恢复可编辑，保留用户草稿
+    resolveCommit.reject(new Error('mock commit failed'));
+    await flushMicrotasks();
+
+    assert.equal(session.generationStatus, 'success');
+    assert.ok(session.draft);
+    assert.equal(session.draftDirty, true);
+    assert.equal(session.draft.stages[1].meaning, '确认前可改的含义B');
+    assert.match(session.error || '', /mock commit failed/);
+
+    live = remount();
+    const unlockedFields = live.querySelectorAll('[data-slx-affection-create-stage-field], [data-slx-affection-create-stage-behavior]');
+    const unlockedToggles = live.querySelectorAll('[data-slx-affection-toggle-create-stage]');
+    for (const node of unlockedFields) {
+      assert.equal(node.disabled, false, 'draft field should unlock after commit failure');
+    }
+    for (const node of unlockedToggles) {
+      assert.equal(node.disabled, false, 'stage toggle should unlock after commit failure');
+    }
+
+    const recoveredMeaning = findCreateStageField(live, 1, 'meaning');
+    recoveredMeaning.input('失败后继续改D');
+    assert.equal(session.draft.stages[1].meaning, '失败后继续改D');
+    assert.equal(session.draftDirty, true);
+  }, {
+    panelOptions: {
+      generateManualDraft: async (input) => mockManualDraft(input),
+      commitManualDraft: async () => {
+        commitCalls += 1;
+        return commitPromise;
       },
     },
   });
