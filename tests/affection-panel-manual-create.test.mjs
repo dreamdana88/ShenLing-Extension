@@ -212,6 +212,20 @@ function createPanelRoot() {
       if (sel === '[data-slx-affection-regenerate-api]') return [];
       if (sel === '[data-slx-affection-toggle-stage]') return [];
       if (sel === '[data-slx-affection-stage-field], [data-slx-affection-stage-behavior]') return [];
+      if (sel === '[data-slx-affection-toggle-create-stage]') {
+        return store.get(sel) || [];
+      }
+      if (sel === '[data-slx-affection-create-stage-field], [data-slx-affection-create-stage-behavior]') {
+        return store.get(sel) || [];
+      }
+      if (sel === '.slx-affection-create-draft-card') {
+        return store.get(sel) || [];
+      }
+      if (sel === '.slx-affection-create-draft-card .slx-affection-stage-fields') {
+        return (store.get('[data-slx-affection-create-stage-field], [data-slx-affection-create-stage-behavior]') || [])
+          .map(node => node._fieldsParent)
+          .filter(Boolean);
+      }
       if (sel === '.slx-affection-editor-overlay') {
         if (!overlay) overlay = createClickable();
         return [overlay];
@@ -228,18 +242,81 @@ function createPanelRoot() {
       closeButtons.forEach(btn => {
         btn.disabled = isCommitting;
       });
+      const isBusy = session?.generationStatus === 'running' || isCommitting;
       const commit = this.querySelector('[data-slx-affection-commit-create-draft]');
       if (commit) {
-        commit.disabled = !hasDraft || session.generationStatus === 'running' || isCommitting;
+        commit.disabled = !hasDraft || isBusy;
       }
       const generic = this.querySelector('[data-slx-affection-create-generic]');
       if (generic) {
-        generic.disabled = session?.generationStatus === 'running' || isCommitting;
+        generic.disabled = isBusy;
+      }
+      const generate = this.querySelector('[data-slx-affection-generate-create-draft]');
+      if (generate) {
+        generate.disabled = isBusy;
+      }
+      const testContext = this.querySelector('[data-slx-affection-test-create-context]');
+      if (testContext) {
+        testContext.disabled = isBusy || session?.contextStatus === 'running';
       }
       if (hasDraft) {
         store.set('[data-slx-affection-create-draft-preview]', createClickable());
+        // 为可编辑草稿重建字段节点，供 remount 后重新绑定
+        const fieldNodes = [];
+        const toggleNodes = [];
+        const cards = [];
+        (session.draft.stages || []).forEach((stage, stageIndex) => {
+          const fieldsParent = {
+            hidden: session.draftExpandedStageId !== (stage.stageId || `S${stageIndex + 1}`),
+          };
+          const card = createClickable();
+          card.classList._set = new Set(
+            session.draftExpandedStageId === (stage.stageId || `S${stageIndex + 1}`)
+              ? ['is-open']
+              : [],
+          );
+          card.querySelector = (innerSel) => {
+            if (innerSel === '.slx-affection-stage-fields') return fieldsParent;
+            return null;
+          };
+          cards.push(card);
+
+          const toggle = createClickable({
+            slxAffectionToggleCreateStage: stage.stageId || `S${stageIndex + 1}`,
+          });
+          toggle.closest = (sel) => {
+            if (sel.includes('create-draft-card') || sel.includes('stage-draft-card')) return card;
+            return null;
+          };
+          toggleNodes.push(toggle);
+
+          for (const field of ['name', 'meaning', 'trend', 'boundary']) {
+            const node = createClickable({
+              slxAffectionCreateStageField: field,
+              stageIndex: String(stageIndex),
+            });
+            node.value = stage[field] || '';
+            node._fieldsParent = fieldsParent;
+            fieldNodes.push(node);
+          }
+          (stage.behaviors || ['', '', '']).forEach((item, behaviorIndex) => {
+            const node = createClickable({
+              slxAffectionCreateStageBehavior: String(behaviorIndex),
+              stageIndex: String(stageIndex),
+            });
+            node.value = item || '';
+            node._fieldsParent = fieldsParent;
+            fieldNodes.push(node);
+          });
+        });
+        store.set('[data-slx-affection-create-stage-field], [data-slx-affection-create-stage-behavior]', fieldNodes);
+        store.set('[data-slx-affection-toggle-create-stage]', toggleNodes);
+        store.set('.slx-affection-create-draft-card', cards);
       } else {
         store.delete('[data-slx-affection-create-draft-preview]');
+        store.delete('[data-slx-affection-create-stage-field], [data-slx-affection-create-stage-behavior]');
+        store.delete('[data-slx-affection-toggle-create-stage]');
+        store.delete('.slx-affection-create-draft-card');
       }
       if (session?.notice) {
         store.set('[data-slx-affection-create-notice]', createClickable());
@@ -322,8 +399,9 @@ async function withHarness(run, {
       },
       remount() {
         liveRoot = createPanelRoot();
-        bindAffectionPanelEvents(liveRoot);
+        // 先按 session 重建草稿字段节点，再绑定事件（否则 querySelectorAll 为空）
         liveRoot.syncFromSession();
+        bindAffectionPanelEvents(liveRoot);
         return liveRoot;
       },
     });
@@ -605,7 +683,42 @@ test('createManualAffectionCreateState reads global defaults without mutating th
   assert.equal(session.buildMode, 'generic');
   assert.equal(session.apiMode, 'main_api');
   assert.equal(session.contextRequestId, '');
+  assert.equal(session.draftExpandedStageId, '');
+  assert.deepEqual(session.draftFieldErrors, {});
+  assert.equal(session.draftDirty, false);
 });
+
+function mockManualDraft(input, stages = createValidStages()) {
+  return {
+    draftType: 'manual_affection_profile',
+    buildRequestId: 'draft-1',
+    chatId: 'chat-phase-b',
+    roleName: input.roleName,
+    initialValueTenths: input.initialValueTenths,
+    buildMode: 'custom',
+    apiMode: input.apiMode,
+    userRequirement: input.userRequirement || '',
+    stages,
+    contextDiagnostics: {},
+    createdAt: 'now',
+  };
+}
+
+function findCreateStageField(root, stageIndex, field) {
+  return root.querySelectorAll('[data-slx-affection-create-stage-field], [data-slx-affection-create-stage-behavior]')
+    .find(node => (
+      Number(node.dataset.stageIndex) === stageIndex
+      && node.dataset.slxAffectionCreateStageField === field
+    ));
+}
+
+function findCreateStageBehavior(root, stageIndex, behaviorIndex) {
+  return root.querySelectorAll('[data-slx-affection-create-stage-field], [data-slx-affection-create-stage-behavior]')
+    .find(node => (
+      Number(node.dataset.stageIndex) === stageIndex
+      && Number(node.dataset.slxAffectionCreateStageBehavior) === behaviorIndex
+    ));
+}
 
 // ---------------------------------------------------------------------------
 // Review Fix：三项真实竞态回归
@@ -628,6 +741,8 @@ test('panel input change invalidates the active draft and disables commit immedi
     assert.ok(session.draft);
     assert.equal(generateCalls, 1);
     assert.equal(session.notice.includes('草稿已生成'), true);
+    assert.equal(session.draftDirty, false);
+    assert.ok(session.draftExpandedStageId);
 
     root.syncFromSession();
     assert.ok(root.querySelector('[data-slx-affection-create-draft-preview]'));
@@ -824,6 +939,288 @@ test('manual create overlay cannot close while a formal commit is pending', asyn
       createManualGeneric: async () => {
         commitCalls += 1;
         return commitPromise;
+      },
+    },
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase D：可编辑专属草稿
+// ---------------------------------------------------------------------------
+
+test('generated exclusive draft renders editable stage fields without range inputs', async () => {
+  let generateCalls = 0;
+  await withHarness(async ({ mount }) => {
+    const root = mount();
+    openCreateView(root);
+    root.querySelector('[data-slx-affection-create-role]').input('沈青');
+    root.querySelector('[data-slx-affection-create-initial]').input('35.0');
+    root.querySelector('[data-slx-affection-generate-create-draft]').click();
+    await flushMicrotasks();
+
+    const session = getManualAffectionCreateSession();
+    assert.equal(session.generationStatus, 'success');
+    assert.equal(session.draftDirty, false);
+    // 35.0 → 350 tenths → S2 (21-40)
+    assert.equal(session.draftExpandedStageId, 'S2');
+
+    const html = renderManualAffectionCreateOverlay({});
+    assert.match(html, /专属五阶段草稿/);
+    assert.match(html, /可直接修改，确认后才正式建档/);
+    assert.match(html, /data-slx-affection-create-stage-field="name"/);
+    assert.match(html, /data-slx-affection-create-stage-field="meaning"/);
+    assert.match(html, /data-slx-affection-create-stage-field="trend"/);
+    assert.match(html, /data-slx-affection-create-stage-field="boundary"/);
+    assert.match(html, /data-slx-affection-create-stage-behavior="0"/);
+    assert.match(html, /data-slx-affection-create-stage-behavior="1"/);
+    assert.match(html, /data-slx-affection-create-stage-behavior="2"/);
+    assert.match(html, /data-slx-affection-toggle-create-stage/);
+    assert.doesNotMatch(html, /data-slx-affection-create-stage-field="minTenths"|data-slx-affection-create-stage-field="maxTenths"|data-slx-affection-create-stage-field="stageId"/);
+    assert.doesNotMatch(html, /data-slx-affection-create-range|data-stage-range/);
+    // 固定区间以只读文本展示
+    assert.match(html, /0\.0—20\.0|21\.0—40\.0/);
+  }, {
+    panelOptions: {
+      generateManualDraft: async (input) => {
+        generateCalls += 1;
+        return mockManualDraft(input);
+      },
+    },
+  });
+  assert.equal(generateCalls, 1);
+});
+
+test('editing draft stage fields writes session.draft and does not invalidate or re-call API', async () => {
+  let generateCalls = 0;
+  await withHarness(async ({ mount, remount }) => {
+    const root = mount();
+    openCreateView(root);
+    root.querySelector('[data-slx-affection-create-role]').input('沈青');
+    root.querySelector('[data-slx-affection-create-initial]').input('42.0');
+    root.querySelector('[data-slx-affection-generate-create-draft]').click();
+    await flushMicrotasks();
+
+    const session = getManualAffectionCreateSession();
+    assert.ok(session.draft);
+    const originalMeaning0 = session.draft.stages[0].meaning;
+    assert.equal(generateCalls, 1);
+
+    // remount 后绑定可编辑字段
+    const live = remount();
+    const meaning2 = findCreateStageField(live, 1, 'meaning');
+    const behavior3 = findCreateStageBehavior(live, 2, 1);
+    assert.ok(meaning2, 'stage 2 meaning field should exist');
+    assert.ok(behavior3, 'stage 3 behavior 2 field should exist');
+
+    meaning2.input('用户改写的第二阶段含义');
+    behavior3.input('用户改写的第三阶段行为二');
+
+    assert.equal(session.draft.stages[1].meaning, '用户改写的第二阶段含义');
+    assert.equal(session.draft.stages[2].behaviors[1], '用户改写的第三阶段行为二');
+    assert.equal(session.draft.stages[0].meaning, originalMeaning0);
+    assert.ok(session.draft);
+    assert.equal(session.generationStatus, 'success');
+    assert.equal(session.draftDirty, true);
+    assert.equal(generateCalls, 1);
+    assert.equal(live.querySelector('[data-slx-affection-commit-create-draft]').disabled, false);
+  }, {
+    panelOptions: {
+      generateManualDraft: async (input) => {
+        generateCalls += 1;
+        return mockManualDraft(input);
+      },
+    },
+  });
+});
+
+test('build-condition changes still invalidate draft; draft text edits do not', async () => {
+  let generateCalls = 0;
+  await withHarness(async ({ mount, remount }) => {
+    const root = mount();
+    openCreateView(root);
+    root.querySelector('[data-slx-affection-create-role]').input('沈青');
+    root.querySelector('[data-slx-affection-create-initial]').input('30.0');
+    root.querySelector('[data-slx-affection-generate-create-draft]').click();
+    await flushMicrotasks();
+
+    let session = getManualAffectionCreateSession();
+    assert.ok(session.draft);
+
+    const live = remount();
+    findCreateStageField(live, 0, 'name').input('改名不失效');
+    assert.ok(session.draft);
+    assert.equal(session.draftDirty, true);
+    assert.equal(session.generationStatus, 'success');
+    assert.equal(generateCalls, 1);
+
+    // 角色名变化仍使草稿失效
+    live.querySelector('[data-slx-affection-create-role]').input('萧景琰');
+    assert.equal(session.draft, null);
+    assert.equal(session.generationStatus, 'idle');
+    assert.equal(session.draftDirty, false);
+    assert.equal(session.draftExpandedStageId, '');
+    assert.equal(generateCalls, 1);
+
+    // 重新生成后，构思变化也失效
+    live.querySelector('[data-slx-affection-create-role]').input('沈青');
+    live.querySelector('[data-slx-affection-create-initial]').input('30.0');
+    live.querySelector('[data-slx-affection-generate-create-draft]').click();
+    await flushMicrotasks();
+    session = getManualAffectionCreateSession();
+    assert.ok(session.draft);
+    assert.equal(generateCalls, 2);
+
+    live.querySelector('[data-slx-affection-create-requirement]').input('新构思');
+    assert.equal(session.draft, null);
+    assert.equal(session.generationStatus, 'idle');
+
+    // API 切换失效
+    live.querySelector('[data-slx-affection-create-role]').input('沈青');
+    live.querySelector('[data-slx-affection-generate-create-draft]').click();
+    await flushMicrotasks();
+    session = getManualAffectionCreateSession();
+    assert.ok(session.draft);
+    live.querySelectorAll('[data-slx-affection-create-api]')[0].click(); // main_api
+    // 默认可能已是 secondary，切换到 main 应失效；若已是 main 则点 secondary
+    if (session.draft) {
+      live.querySelectorAll('[data-slx-affection-create-api]')[1].click();
+    }
+    assert.equal(session.draft, null);
+
+    // 建档方式变化失效
+    live.querySelector('[data-slx-affection-create-role]').input('沈青');
+    live.querySelector('[data-slx-affection-generate-create-draft]').click();
+    await flushMicrotasks();
+    session = getManualAffectionCreateSession();
+    assert.ok(session.draft);
+    live.querySelectorAll('[data-slx-affection-create-mode]')[0].click(); // generic
+    assert.equal(session.draft, null);
+  }, {
+    panelOptions: {
+      generateManualDraft: async (input) => {
+        generateCalls += 1;
+        return mockManualDraft(input);
+      },
+    },
+  });
+});
+
+test('commit validates draft fields locally and blocks profile write on errors', async () => {
+  let generateCalls = 0;
+  let commitCalls = 0;
+  let liveChatState = null;
+  await withHarness(async ({ mount, remount, chatState }) => {
+    liveChatState = chatState;
+    const root = mount();
+    openCreateView(root);
+    root.querySelector('[data-slx-affection-create-role]').input('沈青');
+    root.querySelector('[data-slx-affection-create-initial]').input('35.0');
+    root.querySelector('[data-slx-affection-generate-create-draft]').click();
+    await flushMicrotasks();
+
+    const session = getManualAffectionCreateSession();
+    session.draft.stages[0].name = '';
+    session.draft.stages[0].behaviors[1] = '';
+
+    const live = remount();
+    live.querySelector('[data-slx-affection-commit-create-draft]').click();
+    await flushMicrotasks();
+
+    assert.equal(commitCalls, 0);
+    assert.equal(Object.keys(chatState.affectionSystem.profiles).length, 0);
+    assert.equal(session.generationStatus, 'success');
+    assert.ok(session.draft);
+    assert.equal(session.error, '请补全专属阶段草稿后再确认。');
+    assert.ok(session.draftFieldErrors.S1);
+    assert.ok(session.draftFieldErrors.S1.includes('阶段名'));
+    assert.ok(session.draftFieldErrors.S1.includes('行为 2'));
+    assert.equal(session.draftExpandedStageId, 'S1');
+
+    const html = renderManualAffectionCreateOverlay({});
+    assert.match(html, /请补全专属阶段草稿后再确认/);
+    assert.match(html, /请补全：.*阶段名/);
+    assert.match(html, /行为 2/);
+
+    // 补全后可继续确认
+    session.draft.stages[0].name = '戒备';
+    session.draft.stages[0].behaviors[1] = '保持距离但回应必要沟通';
+    const live2 = remount();
+    live2.querySelector('[data-slx-affection-commit-create-draft]').click();
+    await flushMicrotasks();
+    assert.equal(commitCalls, 1);
+    assert.ok(chatState.affectionSystem.profiles.沈青);
+  }, {
+    panelOptions: {
+      generateManualDraft: async (input) => {
+        generateCalls += 1;
+        return mockManualDraft(input);
+      },
+      commitManualDraft: async (input) => {
+        commitCalls += 1;
+        liveChatState.affectionSystem.profiles[input.roleName] = {
+          roleName: input.roleName,
+          initialValueTenths: input.initialValueTenths,
+          valueTenths: input.initialValueTenths,
+          buildMode: 'custom',
+          stages: input.draft.stages,
+          records: [],
+          stageDesignRequirement: input.userRequirement || '',
+          sourceType: 'manual',
+        };
+        return liveChatState.affectionSystem.profiles[input.roleName];
+      },
+    },
+  });
+  assert.equal(generateCalls, 1);
+});
+
+test('edited draft stages are what gets committed to the formal profile', async () => {
+  let commitPayload = null;
+  let liveChatState = null;
+  await withHarness(async ({ mount, remount, chatState }) => {
+    liveChatState = chatState;
+    const root = mount();
+    openCreateView(root);
+    root.querySelector('[data-slx-affection-create-role]').input('沈青');
+    root.querySelector('[data-slx-affection-create-initial]').input('35.0');
+    root.querySelector('[data-slx-affection-generate-create-draft]').click();
+    await flushMicrotasks();
+
+    const session = getManualAffectionCreateSession();
+    assert.equal(session.draft.stages[1].meaning, 'AI原始含义A');
+
+    const live = remount();
+    findCreateStageField(live, 1, 'meaning').input('用户最终含义B');
+    assert.equal(session.draft.stages[1].meaning, '用户最终含义B');
+    assert.equal(session.draftDirty, true);
+
+    live.querySelector('[data-slx-affection-commit-create-draft]').click();
+    await flushMicrotasks();
+
+    assert.ok(commitPayload);
+    assert.equal(commitPayload.draft.stages[1].meaning, '用户最终含义B');
+    assert.equal(liveChatState.affectionSystem.profiles.沈青.stages[1].meaning, '用户最终含义B');
+    assert.notEqual(liveChatState.affectionSystem.profiles.沈青.stages[1].meaning, 'AI原始含义A');
+  }, {
+    panelOptions: {
+      generateManualDraft: async (input) => {
+        const stages = createValidStages();
+        stages[1].meaning = 'AI原始含义A';
+        return mockManualDraft(input, stages);
+      },
+      commitManualDraft: async (input) => {
+        commitPayload = input;
+        liveChatState.affectionSystem.profiles[input.roleName] = {
+          roleName: input.roleName,
+          initialValueTenths: input.initialValueTenths,
+          valueTenths: input.initialValueTenths,
+          buildMode: 'custom',
+          stages: input.draft.stages.map(stage => ({ ...stage, behaviors: [...stage.behaviors] })),
+          records: [],
+          stageDesignRequirement: input.userRequirement || '',
+          sourceType: 'manual',
+        };
+        return liveChatState.affectionSystem.profiles[input.roleName];
       },
     },
   });

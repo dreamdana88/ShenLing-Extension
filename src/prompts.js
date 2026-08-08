@@ -735,6 +735,30 @@ export function buildAffectionProfilePrompt({
 - 阶段必须逐步递进；行为必须具体、可演，贴合「${cleanRoleName}」的人设、既有关系与表达方式。
 - 不得违背角色核心人设；高好感不得导致角色失去原则、主体性或合理边界。
 - 只输出合法 JSON；模型返回的 range 仅供参考，最终区间由代码固定。
+
+【写作方式｜客观精准】
+
+这是一份供程序长期引用的结构化关系档案，不是剧情正文。
+
+以下规则只约束 meaning、behaviors、trend、boundary，不约束阶段 name。
+
+阶段 name 可以使用符合角色气质的文学化、意象化或诗性命名。
+
+meaning、behaviors、trend、boundary 必须：
+- 使用白描和事实式表达。
+- 只记录可以观察、判断或执行的行为、态度、逻辑、关系状态和边界。
+- 不使用比喻、夸张、抒情、意象、氛围渲染或文学化心理描写。
+- 不使用“仿佛、好像、似乎、宛如、犹如、如同、像是”等模糊或比喻表达。
+- 不用“心墙、冰层、暗流、涟漪、心门”等意象代替关系事实。
+- 描述关系变化时直接写角色会做什么、不会做什么、允许什么、拒绝什么。
+- 以客观信息为主，不追求文采。
+
+【写法示例｜仅说明风格，勿照抄】
+错误：“他似乎开始卸下心防，{{user}}像一道微光进入他的生活。”
+正确：“他开始主动告知个人计划，并在发生分歧时向{{user}}解释自己的决定。”
+
+错误：“彼此的距离悄然拉近。”
+正确：“角色开始主动邀请{{user}}参与私人活动，并允许她进入自己的私人空间。”
 ${requirementBlock}
 以下是可参考资料：
 ${cleanContextMaterial}
@@ -759,6 +783,10 @@ ${cleanContextMaterial}
 本次任务只为目标角色「${cleanRoleName}」创建专属好感度五阶段。
 ${requirementReminder}
 本次指定的正式初始好感不得修改。
+meaning、behaviors、trend、boundary 采用客观白描。
+禁止为了表现感情深度加入比喻、诗化措辞或氛围修饰。
+关系越深，只改变事实、行为和边界，不改为文学化表达。
+阶段 name 可保留角色气质的文学化或意象化命名。
 只输出符合固定结构的合法 JSON。
 不要输出剧情正文、分析、说明、Markdown 或额外文本。`;
 }
@@ -1156,7 +1184,7 @@ export const PROMPT_CATALOG = Object.freeze([
     moduleId: 'affection',
     moduleLabel: '好感度',
     label: '专属阶段建档',
-    description: '手动/自动专属五阶段建档与按需求重新生成时使用。',
+    description: '手动专属五阶段建档与主动重新生成使用的客观关系档案模板。',
     kind: 'text',
     defaultValue: AFFECTION_PROFILE_PROMPT_TEMPLATE,
     variables: [

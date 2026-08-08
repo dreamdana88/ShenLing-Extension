@@ -362,8 +362,8 @@ test('rewriteAffectionMemoryFields removes retired first lines', () => {
   assert.doesNotMatch(rewritten, /affection_first/);
 });
 
-test('plugin version is 0.17.31 after Phase C', () => {
-  assert.equal(PLUGIN_VERSION, '0.17.31');
+test('plugin version is 0.17.32 after Phase D', () => {
+  assert.equal(PLUGIN_VERSION, '0.17.32');
 });
 
 test('formal affection panel keeps responsive styles after diagnostics retirement', async () => {

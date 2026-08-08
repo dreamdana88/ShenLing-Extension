@@ -772,3 +772,41 @@ test('affection profile prompt uses sandwich structure with recall and source-ne
   assert.match(withoutRequirement, /以下是可参考资料：/);
   assert.match(withoutRequirement, /再次确认：/);
 });
+
+test('affection profile prompt uses absolute zero-degree writing for content fields', () => {
+  const prompt = buildAffectionProfilePrompt({
+    roleName: '沈青',
+    initialAffection: '35.0',
+    userRequirement: '',
+    contextMaterial: '角色卡与世界书材料',
+  });
+
+  assert.match(prompt, /【写作方式｜客观精准】/);
+  assert.match(prompt, /结构化关系档案/);
+  assert.match(prompt, /白描/);
+  assert.match(prompt, /只记录可以观察、判断或执行的行为/);
+  assert.match(prompt, /不使用比喻/);
+  assert.match(prompt, /夸张/);
+  assert.match(prompt, /抒情/);
+  assert.match(prompt, /仿佛/);
+  assert.match(prompt, /好像/);
+  assert.match(prompt, /似乎/);
+  assert.match(prompt, /不约束阶段 name/);
+  assert.match(prompt, /文学化、意象化或诗性命名/);
+  assert.match(prompt, /写法示例｜仅说明风格，勿照抄/);
+  assert.match(prompt, /他似乎开始卸下心防/);
+  assert.match(prompt, /他开始主动告知个人计划/);
+  assert.match(prompt, /彼此的距离悄然拉近/);
+  assert.match(prompt, /主动邀请\{\{user\}\}参与私人活动/);
+  assert.match(prompt, /采用客观白描/);
+  assert.match(prompt, /禁止为了表现感情深度加入比喻/);
+});
+
+test('affection profile prompt registry description is manual-only objective template', async () => {
+  const { PROMPT_CATALOG, PROMPT_IDS } = await import('../src/prompts.js');
+  const entry = PROMPT_CATALOG.find(item => item.id === PROMPT_IDS.AFFECTION_PROFILE);
+  assert.ok(entry);
+  assert.match(entry.description, /客观关系档案模板|客观/);
+  assert.doesNotMatch(entry.description, /自动专属建档|手动\/自动|自动/);
+  assert.match(entry.description, /重新生成|主动重新生成/);
+});

@@ -5031,6 +5031,43 @@ body.slx-panel-open-lock {
   color: var(--slx-muted);
 }
 
+/* 新建专属草稿：可编辑阶段字段（复用正式阶段编辑结构） */
+.slx-affection-create-draft-card.slx-affection-stage-draft-card {
+  display: block;
+}
+
+.slx-affection-create-draft-card .slx-affection-stage-toggle {
+  width: 100%;
+  min-height: 46px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.slx-affection-create-draft-card .slx-affection-stage-fields {
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#shenling-assistant-panel-root .slx-affection-create-draft-card .slx-affection-stage-fields input,
+#shenling-assistant-panel-root .slx-affection-create-draft-card .slx-affection-stage-fields textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-size: 16px;
+}
+
+.slx-affection-create-draft-card.has-error {
+  border-color: color-mix(in srgb, var(--slx-danger) 45%, var(--slx-border-dim));
+}
+
 /* 正式好感 Panel：悬停反馈 */
 @media (hover: hover) {
   .slx-affection-segment button:hover,

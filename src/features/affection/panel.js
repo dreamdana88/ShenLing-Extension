@@ -107,6 +107,9 @@ function createManualCreateState(settings = getGlobalSettings(), chatId = getCur
     contextRequestId: '',
     generationStatus: 'idle',
     draft: null,
+    draftExpandedStageId: '',
+    draftFieldErrors: {},
+    draftDirty: false,
     generationError: '',
     notice: '',
     error: '',
@@ -127,6 +130,9 @@ function createManualContextRequestId() {
 function invalidateManualCreateDraft(session, { clearContext = false } = {}) {
   if (!session) return;
   session.draft = null;
+  session.draftExpandedStageId = '';
+  session.draftFieldErrors = {};
+  session.draftDirty = false;
   session.generationStatus = 'idle';
   session.generationError = '';
   session.notice = '';
@@ -470,6 +476,36 @@ function formatManualContextSummary(contextResult) {
   };
 }
 
+function renderManualCreateDraftStage(stage, index, expanded, stageErrors, currentStageId = '') {
+  const stageId = stage.stageId || `S${index + 1}`;
+  const errorText = stageErrors?.length ? `请补全：${stageErrors.join('、')}` : '';
+  const isCurrent = stageId === currentStageId;
+  return `
+    <article class="slx-affection-create-draft-card slx-affection-stage-draft-card ${expanded ? 'is-open' : ''} ${isCurrent ? 'is-current' : ''} ${errorText ? 'has-error' : ''}">
+      <button class="slx-affection-stage-toggle" type="button" data-slx-affection-toggle-create-stage="${escapeHtml(stageId)}" aria-expanded="${expanded}" aria-controls="slx-affection-create-stage-fields-${index}">
+        <span>
+          <small>${index + 1}</small>
+          <b>${escapeHtml(formatAffectionValueTenths(stage.minTenths))}—${escapeHtml(formatAffectionValueTenths(stage.maxTenths))}</b>
+          <em>「${escapeHtml(stage.name || '未命名')}」</em>
+        </span>
+        <span class="slx-affection-stage-tags">
+          ${isCurrent ? '<small class="is-current">初始好感所在阶段</small>' : ''}
+          ${errorText ? '<small class="is-error">有错误</small>' : ''}
+          ${slxIcon('chevronDown')}
+        </span>
+      </button>
+      <div class="slx-affection-stage-fields" id="slx-affection-create-stage-fields-${index}" ${expanded ? '' : 'hidden'}>
+        ${errorText ? `<div class="slx-affection-field-error" role="alert">${escapeHtml(errorText)}</div>` : ''}
+        <label><span>阶段名</span><input type="text" maxlength="24" data-slx-affection-create-stage-field="name" data-stage-index="${index}" value="${escapeHtml(stage.name || '')}" /></label>
+        <label><span>关系含义</span><textarea rows="2" maxlength="120" data-slx-affection-create-stage-field="meaning" data-stage-index="${index}">${escapeHtml(stage.meaning || '')}</textarea></label>
+        ${(stage.behaviors || ['', '', '']).map((item, behaviorIndex) => `<label><span>行为 ${behaviorIndex + 1}</span><textarea rows="2" maxlength="100" data-slx-affection-create-stage-behavior="${behaviorIndex}" data-stage-index="${index}">${escapeHtml(item || '')}</textarea></label>`).join('')}
+        <label><span>变化倾向</span><textarea rows="2" maxlength="120" data-slx-affection-create-stage-field="trend" data-stage-index="${index}">${escapeHtml(stage.trend || '')}</textarea></label>
+        <label><span>阶段边界</span><textarea rows="2" maxlength="120" data-slx-affection-create-stage-field="boundary" data-stage-index="${index}">${escapeHtml(stage.boundary || '')}</textarea></label>
+      </div>
+    </article>
+  `;
+}
+
 function renderManualCreateDraftPreview(session) {
   const stages = Array.isArray(session?.draft?.stages) ? session.draft.stages : [];
   if (!stages.length) return '';
@@ -477,31 +513,47 @@ function renderManualCreateDraftPreview(session) {
   const currentStage = Number.isInteger(initialTenths)
     ? getStageForValueTenths(initialTenths, stages)
     : null;
+  const fieldErrors = session.draftFieldErrors || {};
+  const errorCount = Object.keys(fieldErrors).length;
+  const expandedStageId = session.draftExpandedStageId || '';
   return `
     <section class="slx-detail-card slx-affection-create-draft-preview" data-slx-affection-create-draft-preview aria-label="专属五阶段草稿">
-      <div class="slx-affection-section-head"><b>专属五阶段草稿</b><small>确认后才正式建档</small></div>
-      <div class="slx-affection-create-draft-list">
-        ${stages.map((stage, index) => `
-          <details class="slx-affection-create-draft-card ${stage.stageId === currentStage?.stageId ? 'is-current' : ''}" ${index === 0 || stage.stageId === currentStage?.stageId ? 'open' : ''}>
-            <summary>
-              <span>
-                <small>${index + 1}</small>
-                <b>${escapeHtml(formatAffectionValueTenths(stage.minTenths))}—${escapeHtml(formatAffectionValueTenths(stage.maxTenths))}</b>
-                <em>「${escapeHtml(stage.name || '未命名')}」</em>
-              </span>
-              ${stage.stageId === currentStage?.stageId ? '<small class="is-current">初始好感所在阶段</small>' : ''}
-            </summary>
-            <div>
-              <p><b>关系含义：</b>${escapeHtml(stage.meaning || '')}</p>
-              <ul>${(stage.behaviors || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
-              <p><b>变化倾向：</b>${escapeHtml(stage.trend || '')}</p>
-              <p><b>阶段边界：</b>${escapeHtml(stage.boundary || '')}</p>
-            </div>
-          </details>
-        `).join('')}
+      <div class="slx-affection-section-head"><b>专属五阶段草稿</b><small>可直接修改，确认后才正式建档</small></div>
+      ${errorCount ? '<div class="slx-affection-editor-errors" role="alert">请补全专属阶段草稿后再确认。</div>' : ''}
+      <div class="slx-affection-create-draft-list slx-affection-stage-accordion">
+        ${stages.map((stage, index) => renderManualCreateDraftStage(
+          stage,
+          index,
+          expandedStageId === (stage.stageId || `S${index + 1}`),
+          fieldErrors[stage.stageId || `S${index + 1}`],
+          currentStage?.stageId || '',
+        )).join('')}
       </div>
     </section>
   `;
+}
+
+function updateManualCreateDraftField(input) {
+  const session = affectionPanelState.manualCreate;
+  if (!session?.draft?.stages || session.generationStatus === 'committing') return;
+  const stageIndex = Number(input.dataset.stageIndex);
+  const stage = session.draft.stages[stageIndex];
+  if (!stage) return;
+
+  if (input.dataset.slxAffectionCreateStageField) {
+    stage[input.dataset.slxAffectionCreateStageField] = input.value;
+  } else if (input.dataset.slxAffectionCreateStageBehavior !== undefined) {
+    const behaviorIndex = Number(input.dataset.slxAffectionCreateStageBehavior);
+    const behaviors = Array.isArray(stage.behaviors) ? [...stage.behaviors] : ['', '', ''];
+    behaviors[behaviorIndex] = input.value;
+    stage.behaviors = behaviors;
+  }
+
+  session.draftDirty = true;
+  const stageId = stage.stageId || `S${stageIndex + 1}`;
+  if (session.draftFieldErrors?.[stageId]) {
+    delete session.draftFieldErrors[stageId];
+  }
 }
 
 function renderManualCreateContextResult(session) {
@@ -1327,6 +1379,9 @@ function bindAffectionFormalEvents(panelRoot) {
     session.error = '';
     session.notice = '';
     session.draft = null;
+    session.draftExpandedStageId = '';
+    session.draftFieldErrors = {};
+    session.draftDirty = false;
     event.currentTarget.disabled = true;
     refreshPanel();
     const { generateDraft } = getManualCreateDeps();
@@ -1340,11 +1395,20 @@ function bindAffectionFormalEvents(panelRoot) {
       if (!isActiveManualCreateSession(session)) return;
       session.draft = draft;
       session.generationStatus = 'success';
-      session.notice = '专属阶段草稿已生成，请确认后创建档案。';
+      session.draftFieldErrors = {};
+      session.draftDirty = false;
+      const currentStage = getStageForValueTenths(initialValueTenths, draft.stages || []);
+      session.draftExpandedStageId = currentStage?.stageId
+        || draft.stages?.[0]?.stageId
+        || 'S1';
+      session.notice = '专属阶段草稿已生成，可直接修改后确认创建。';
     } catch (error) {
       if (!isActiveManualCreateSession(session)) return;
       session.generationStatus = 'error';
       session.draft = null;
+      session.draftExpandedStageId = '';
+      session.draftFieldErrors = {};
+      session.draftDirty = false;
       session.generationError = error?.message || String(error);
     }
     refreshPanel();
@@ -1385,6 +1449,32 @@ function bindAffectionFormalEvents(panelRoot) {
     refreshPanel();
   });
 
+  panelRoot.querySelectorAll('[data-slx-affection-toggle-create-stage]').forEach(button => {
+    button.addEventListener('click', () => {
+      const session = affectionPanelState.manualCreate;
+      if (!session || session.generationStatus === 'committing') return;
+      const stageId = button.dataset.slxAffectionToggleCreateStage;
+      const card = button.closest('.slx-affection-create-draft-card, .slx-affection-stage-draft-card');
+      const fields = card?.querySelector('.slx-affection-stage-fields');
+      const willOpen = !card?.classList.contains('is-open');
+      session.draftExpandedStageId = willOpen ? stageId : '';
+      panelRoot.querySelectorAll('.slx-affection-create-draft-card').forEach(item => item.classList.remove('is-open'));
+      panelRoot.querySelectorAll('[data-slx-affection-toggle-create-stage]').forEach(item => item.setAttribute('aria-expanded', 'false'));
+      panelRoot.querySelectorAll('.slx-affection-create-draft-card .slx-affection-stage-fields').forEach(item => {
+        item.hidden = true;
+      });
+      if (willOpen && card && fields) {
+        card.classList.add('is-open');
+        button.setAttribute('aria-expanded', 'true');
+        fields.hidden = false;
+      }
+    });
+  });
+
+  panelRoot.querySelectorAll('[data-slx-affection-create-stage-field], [data-slx-affection-create-stage-behavior]').forEach(input => {
+    input.addEventListener('input', () => updateManualCreateDraftField(input));
+  });
+
   panelRoot.querySelector('[data-slx-affection-commit-create-draft]')?.addEventListener('click', async event => {
     const session = affectionPanelState.manualCreate;
     if (!session?.draft) return;
@@ -1400,6 +1490,17 @@ function bindAffectionFormalEvents(panelRoot) {
       refreshPanel();
       return;
     }
+    const fieldErrors = getStageEditorErrors(session.draft.stages);
+    if (Object.keys(fieldErrors).length) {
+      session.draftFieldErrors = fieldErrors;
+      session.draftExpandedStageId = Object.keys(fieldErrors)[0];
+      session.error = '请补全专属阶段草稿后再确认。';
+      session.generationStatus = 'success';
+      affectionPanelState.focusSelector = '.slx-affection-create-draft-card.has-error [data-slx-affection-create-stage-field="name"]';
+      refreshPanel();
+      return;
+    }
+    session.draftFieldErrors = {};
     session.generationStatus = 'committing';
     session.error = '';
     event.currentTarget.disabled = true;
