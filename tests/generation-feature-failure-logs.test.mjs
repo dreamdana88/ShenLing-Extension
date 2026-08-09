@@ -26,6 +26,7 @@ import { configureAffectionWorkflow } from '../src/features/affection/runtime.js
 import { createGenericAffectionStages } from '../src/features/affection/profile.js';
 import {
   parseCaptureGenerationResponse,
+  prepareCaptureGeneration,
   runCaptureGeneration,
 } from '../src/features/memoir/capture-generation.js';
 import { configureCaptureWorkflow } from '../src/features/memoir/runtime.js';
@@ -600,6 +601,75 @@ test('Affection manual draft rethrows transport error with non-empty messages', 
 
 // ── Memoir Capture ────────────────────────────────────────────────────
 
+test('capture generation prepends persistent support messages before capture task messages', async () => {
+  const prepared = await prepareCaptureGeneration({
+    captureState: {
+      request: '提取当前剧情中的重要地点设定',
+      requestedType: 'location',
+      source: {
+        mode: 'recent_chat',
+        recentCount: 20,
+      },
+      optionalContext: {
+        includeCharacterCard: false,
+        includePersona: false,
+        worldbookRefs: [],
+      },
+      drafts: [],
+      lastError: '',
+    },
+    materialOptions: {
+      messages: [
+        { message_id: 0, role: 'user', message: '我们到了山脚的神庙。' },
+        { message_id: 1, role: 'assistant', message: '庙门半掩，香火仍在。' },
+      ],
+      names: { userName: '测试用户', characterName: '测试角色' },
+    },
+  });
+
+  assert.equal(prepared.ok, true);
+  assert.equal(prepared.messages.length, 6);
+  assert.deepEqual(
+    prepared.messages.map(message => message.role),
+    ['system', 'assistant', 'system', 'assistant', 'system', 'user'],
+  );
+
+  assert.match(prepared.messages[0].content, /CORE DIRECTIVE/);
+  assert.match(prepared.messages[1].content, /SYSTEM LOG/);
+  assert.match(prepared.messages[2].content, /Weaving_Rules/);
+  assert.match(prepared.messages[3].content, /STATUS/);
+  assert.match(prepared.messages[4].content, /独立的世界书资料整理任务/);
+  assert.match(prepared.messages[4].content, /提取当前剧情中的重要地点设定/);
+  assert.match(prepared.messages[4].content, /location|地点/i);
+  assert.match(prepared.messages[5].content, /参考材料｜主要剧情/);
+  assert.match(prepared.messages[5].content, /山脚的神庙|庙门半掩/);
+});
+
+test('capture generation preflight failure keeps empty messages without support headers', async () => {
+  const emptyRequest = await prepareCaptureGeneration({
+    captureState: {
+      request: '',
+      requestedType: 'npc',
+      source: { mode: 'recent_chat', recentCount: 20 },
+      optionalContext: {
+        includeCharacterCard: false,
+        includePersona: false,
+        worldbookRefs: [],
+      },
+      drafts: [],
+      lastError: '',
+    },
+    materialOptions: {
+      messages: [
+        { message_id: 0, role: 'user', message: '你好' },
+      ],
+    },
+  });
+  assert.equal(emptyRequest.ok, false);
+  assert.deepEqual(emptyRequest.messages, []);
+  assert.ok(emptyRequest.errors.some(error => error.code === 'empty_request'));
+});
+
 test('Memoir Capture HTTP 500 keeps prepared messages and safe responseText', async () => {
   await withHarness({
     fetchImpl: async () => createResponse({
@@ -647,6 +717,12 @@ test('Memoir Capture HTTP 500 keeps prepared messages and safe responseText', as
     assert.equal(logs[0].httpStatus, 500);
     assert.match(String(logs[0].responseText || ''), /boom|error/i);
     assert.equal(String(logs[0].responseText || '').includes(SECRET), false);
+    // 通讯日志记录完整 6 条：常驻头部 ×4 + Capture ×2
+    assert.equal(logs[0].messages.length, 6);
+    assert.deepEqual(
+      logs[0].messages.map(message => message.role),
+      ['system', 'assistant', 'system', 'assistant', 'system', 'user'],
+    );
   });
 });
 

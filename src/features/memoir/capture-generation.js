@@ -133,14 +133,26 @@ export async function prepareCaptureGeneration({
   if (!optionalResult.ok) errors.push(...optionalResult.errors);
 
   const settings = getGlobalSettings();
-  const messages = errors.length ? [] : buildCapturePromptMessages({
-    request: capture.request,
-    requestedType: capture.requestedType,
-    sourceMaterial: sourceResult.material,
-    optionalMaterial: optionalResult.material,
-  }, macroOverrides, {
-    messages: resolvePromptMessages(PROMPT_IDS.CAPTURE_MESSAGES, settings),
-  });
+  let messages = [];
+  if (!errors.length) {
+    // 与其他生成模块一致：常驻支持消息在前，Capture 自身任务消息在后
+    const supportMessages = resolvePromptMessages(
+      PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES,
+      settings,
+    );
+    const captureMessages = buildCapturePromptMessages({
+      request: capture.request,
+      requestedType: capture.requestedType,
+      sourceMaterial: sourceResult.material,
+      optionalMaterial: optionalResult.material,
+    }, macroOverrides, {
+      messages: resolvePromptMessages(PROMPT_IDS.CAPTURE_MESSAGES, settings),
+    });
+    messages = [
+      ...supportMessages,
+      ...captureMessages,
+    ];
+  }
   return {
     ok: errors.length === 0,
     capture,
