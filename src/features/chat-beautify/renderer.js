@@ -54,12 +54,13 @@ let refreshTimer = null;
 const dirtyMessageIds = new Set();
 let needsFullRefresh = false;
 
-/** @type {{ heavyCleanupCount: number, settingsBuildCount: number, fullRefreshCount: number, partialRenderIds: number[] }} */
+/** @type {{ heavyCleanupCount: number, settingsBuildCount: number, fullRefreshCount: number, lastPartialRenderIds: number[] }} */
 const perfCounters = {
   heavyCleanupCount: 0,
   settingsBuildCount: 0,
   fullRefreshCount: 0,
-  partialRenderIds: [],
+  /** Bound: overwritten each partial flush; never accumulates history. */
+  lastPartialRenderIds: [],
 };
 
 function getSettingsBundle() {
@@ -252,16 +253,13 @@ function hasObviousFieldOnlyLines(text) {
 
 /**
  * Lightweight leak probe: shallow checks only.
- * Must NOT TreeWalker / full p,div scan / full cleanup regex chain.
+ * Must NOT TreeWalker / full p,div scan / full cleanup regex chain / whole mes_text.innerHTML serialize.
  */
 export function hasLightweightMemoryLeak(mesText) {
   if (!mesText) return false;
   if (typeof mesText.querySelector === 'function') {
     if (mesText.querySelector('memory') || mesText.querySelector('grand_memory')) return true;
   }
-
-  const html = String(mesText.innerHTML || '');
-  if (OBVIOUS_ESCAPED_MEMORY_TAG_RE.test(html)) return true;
 
   const children = mesText.childNodes ? Array.from(mesText.childNodes) : [];
   for (const child of children) {
@@ -274,16 +272,17 @@ export function hasLightweightMemoryLeak(mesText) {
       if (child.classList?.contains?.('slx-memory-wrap')) continue;
       const tag = String(child.tagName || '').toLowerCase();
       if (tag === 'memory' || tag === 'grand_memory') return true;
+      // Direct child text only — do not serialize the whole mes_text subtree as innerHTML.
       const text = child.textContent || '';
-      if (OBVIOUS_MEMORY_TAG_RE.test(text)) return true;
+      if (OBVIOUS_MEMORY_TAG_RE.test(text) || OBVIOUS_ESCAPED_MEMORY_TAG_RE.test(text)) return true;
       if (hasObviousFieldOnlyLines(text)) return true;
     }
   }
 
-  // Fallback when childNodes unavailable (test doubles): sample textContent once.
+  // Fallback when childNodes unavailable (test doubles): sample textContent once, not innerHTML.
   if (!children.length) {
     const text = String(mesText.textContent || '');
-    if (OBVIOUS_MEMORY_TAG_RE.test(text)) return true;
+    if (OBVIOUS_MEMORY_TAG_RE.test(text) || OBVIOUS_ESCAPED_MEMORY_TAG_RE.test(text)) return true;
   }
   return false;
 }
@@ -548,22 +547,10 @@ function refreshVisibleMessages(renderContext = null) {
 }
 
 /**
- * Resolve a reliable message id from a Tavern event payload.
- * Returns null when the payload is not a trustworthy message id (caller must full-refresh).
+ * Extract a reliable message id from event args.
  * Never treats generation_id as messageId.
  */
-export function resolveBeautifyEventMessageId(eventName, ...args) {
-  const events = getTavernEventsSafe();
-  const name = String(eventName || '');
-  const alwaysFull = new Set(
-    [
-      events.CHAT_CHANGED,
-      events.GENERATION_ENDED,
-      events.GENERATION_AFTER_COMMANDS,
-    ].filter(Boolean).map(String),
-  );
-  if (alwaysFull.has(name)) return null;
-
+export function extractBeautifyMessageIdFromArgs(...args) {
   for (const arg of args) {
     if (typeof arg === 'number' && Number.isInteger(arg) && arg >= 0) {
       return arg;
@@ -591,6 +578,46 @@ export function resolveBeautifyEventMessageId(eventName, ...args) {
     }
   }
   return null;
+}
+
+/**
+ * Resolve a reliable message id for a named Tavern event.
+ * Returns null when the event should not use that id (caller consults resolveBeautifyEventAction).
+ * Never treats generation_id as messageId.
+ */
+export function resolveBeautifyEventMessageId(eventName, ...args) {
+  const events = getTavernEventsSafe();
+  const name = String(eventName || '');
+  if (events.CHAT_CHANGED && name === String(events.CHAT_CHANGED)) return null;
+  if (events.GENERATION_AFTER_COMMANDS && name === String(events.GENERATION_AFTER_COMMANDS)) return null;
+  return extractBeautifyMessageIdFromArgs(...args);
+}
+
+/**
+ * Classify how Beautify should react to a Tavern event.
+ * - full: CHAT_CHANGED or unparseable non-generation message events
+ * - partial: reliable messageId dirty enqueue
+ * - noop: GENERATION_AFTER_COMMANDS; GENERATION_ENDED without messageId
+ */
+export function resolveBeautifyEventAction(eventName, ...args) {
+  const events = getTavernEventsSafe();
+  const name = String(eventName || '');
+
+  if (events.CHAT_CHANGED && name === String(events.CHAT_CHANGED)) {
+    return { action: 'full', messageId: null };
+  }
+  if (events.GENERATION_AFTER_COMMANDS && name === String(events.GENERATION_AFTER_COMMANDS)) {
+    return { action: 'noop', messageId: null };
+  }
+  if (events.GENERATION_ENDED && name === String(events.GENERATION_ENDED)) {
+    const messageId = extractBeautifyMessageIdFromArgs(...args);
+    if (messageId === null) return { action: 'noop', messageId: null };
+    return { action: 'partial', messageId };
+  }
+
+  const messageId = extractBeautifyMessageIdFromArgs(...args);
+  if (messageId === null) return { action: 'full', messageId: null };
+  return { action: 'partial', messageId };
 }
 
 function enqueueRefresh({ full = false, messageId = null } = {}) {
@@ -649,40 +676,43 @@ export function flushBeautifyRefresh() {
   dirtyMessageIds.clear();
 
   if (doFull) {
+    perfCounters.lastPartialRenderIds = [];
     const context = createBeautifyRenderContext({ preload: 'all' });
     refreshVisibleMessages(context);
     return { mode: 'full', messageIds: ids };
   }
 
   if (!ids.length) {
+    perfCounters.lastPartialRenderIds = [];
     return { mode: 'noop', messageIds: [] };
   }
 
   const missing = ids.some(id => !getMessageElementById(id));
   if (missing) {
+    perfCounters.lastPartialRenderIds = [];
     const fullContext = createBeautifyRenderContext({ preload: 'all' });
     refreshVisibleMessages(fullContext);
     return { mode: 'full-fallback', messageIds: ids };
   }
 
   const context = createBeautifyRenderContext({ messageIds: ids });
+  // Bound counter: replace (never append across flushes).
+  perfCounters.lastPartialRenderIds = [...ids];
   ids.forEach(id => {
     const element = getMessageElementById(id);
-    if (element) {
-      perfCounters.partialRenderIds.push(id);
-      renderMessageElement(element, context);
-    }
+    if (element) renderMessageElement(element, context);
   });
   return { mode: 'partial', messageIds: ids };
 }
 
 function handleBeautifyTavernEvent(eventName, ...args) {
-  const messageId = resolveBeautifyEventMessageId(eventName, ...args);
-  if (messageId === null) {
+  const decision = resolveBeautifyEventAction(eventName, ...args);
+  if (decision.action === 'noop') return;
+  if (decision.action === 'full') {
     scheduleBeautifyRefresh({ full: true });
     return;
   }
-  scheduleBeautifyRefresh({ messageId });
+  scheduleBeautifyRefresh({ messageId: decision.messageId });
 }
 
 function bindCardToggle(event) {
@@ -791,7 +821,7 @@ export function getBeautifyPerfCountersForTests() {
     heavyCleanupCount: perfCounters.heavyCleanupCount,
     settingsBuildCount: perfCounters.settingsBuildCount,
     fullRefreshCount: perfCounters.fullRefreshCount,
-    partialRenderIds: [...perfCounters.partialRenderIds],
+    lastPartialRenderIds: [...perfCounters.lastPartialRenderIds],
   };
 }
 
@@ -812,5 +842,5 @@ export function resetBeautifyRendererStateForTests() {
   perfCounters.heavyCleanupCount = 0;
   perfCounters.settingsBuildCount = 0;
   perfCounters.fullRefreshCount = 0;
-  perfCounters.partialRenderIds = [];
+  perfCounters.lastPartialRenderIds = [];
 }

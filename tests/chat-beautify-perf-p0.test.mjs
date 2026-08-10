@@ -12,6 +12,7 @@ import {
   hasLightweightMemoryLeak,
   renderMessageElement,
   resetBeautifyRendererStateForTests,
+  resolveBeautifyEventAction,
   resolveBeautifyEventMessageId,
   scheduleBeautifyRefresh,
 } from '../src/features/chat-beautify/renderer.js';
@@ -363,8 +364,7 @@ test('两个不同 messageId 在 debounce 窗口内都会进入 dirty 队列并�
     assert.deepEqual(result.messageIds.sort((a, b) => a - b), [12, 13]);
     const counters = getBeautifyPerfCountersForTests();
     assert.equal(counters.fullRefreshCount, 0);
-    assert.ok(counters.partialRenderIds.includes(12));
-    assert.ok(counters.partialRenderIds.includes(13));
+    assert.deepEqual([...counters.lastPartialRenderIds].sort((a, b) => a - b), [12, 13]);
   } finally {
     runtime.restore();
   }
@@ -413,7 +413,7 @@ test('messageId 无法解析时安全 fallback 为 full refresh', () => {
   }
 });
 
-test('generation_id 不得被误判为 messageId；CHAT_CHANGED/GENERATION_* 强制 full', () => {
+test('generation_id 不得被误判为 messageId；Generation 事件不再强制 full', () => {
   const events = {
     chat_changed: 'chat_changed',
     generation_ended: 'generation_ended',
@@ -433,9 +433,168 @@ test('generation_id 不得被误判为 messageId；CHAT_CHANGED/GENERATION_* 强
   assert.equal(resolveBeautifyEventMessageId('message_updated', '8'), 8);
   assert.equal(resolveBeautifyEventMessageId('message_updated', { messageId: 3 }), 3);
   assert.equal(resolveBeautifyEventMessageId('message_updated', { mesid: 4 }), 4);
-  assert.equal(resolveBeautifyEventMessageId(events.chat_changed, 1), null);
-  assert.equal(resolveBeautifyEventMessageId(events.generation_ended, 2), null);
+
+  assert.deepEqual(resolveBeautifyEventAction(events.chat_changed, 1), { action: 'full', messageId: null });
+  assert.deepEqual(resolveBeautifyEventAction(events.generation_after_commands, 3), { action: 'noop', messageId: null });
+  assert.deepEqual(resolveBeautifyEventAction(events.generation_ended), { action: 'noop', messageId: null });
+  assert.deepEqual(resolveBeautifyEventAction(events.generation_ended, { generation_id: 9 }), { action: 'noop', messageId: null });
+  assert.deepEqual(resolveBeautifyEventAction(events.generation_ended, 20), { action: 'partial', messageId: 20 });
+  assert.equal(resolveBeautifyEventMessageId(events.generation_ended, 20), 20);
   assert.equal(resolveBeautifyEventMessageId(events.generation_after_commands, 3), null);
+});
+
+function applyBeautifyEventAction(eventName, ...args) {
+  const decision = resolveBeautifyEventAction(eventName, ...args);
+  if (decision.action === 'noop') return decision;
+  if (decision.action === 'full') {
+    scheduleBeautifyRefresh({ full: true, delayMs: 9999, schedule: () => 1, cancel() {} });
+    return decision;
+  }
+  scheduleBeautifyRefresh({ messageId: decision.messageId, delayMs: 9999, schedule: () => 1, cancel() {} });
+  return decision;
+}
+
+test('GENERATION_AFTER_COMMANDS 不进入 full 也不进入 dirty', () => {
+  const runtime = installRuntime({
+    messages: [{ message_id: 20, message: MEMORY_SAMPLE }],
+  });
+  try {
+    resetBeautifyRendererStateForTests();
+    applyBeautifyEventAction('generation_after_commands', 'normal', {}, false);
+    const queued = getBeautifyRefreshQueueStateForTests();
+    assert.equal(queued.needsFullRefresh, false);
+    assert.deepEqual(queued.dirtyMessageIds, []);
+    assert.equal(flushBeautifyRefresh().mode, 'noop');
+    assert.equal(getBeautifyPerfCountersForTests().fullRefreshCount, 0);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test('GENERATION_ENDED 无 messageId 时不进入 full queue', () => {
+  const runtime = installRuntime({
+    messages: [{ message_id: 20, message: MEMORY_SAMPLE }],
+  });
+  try {
+    resetBeautifyRendererStateForTests();
+    applyBeautifyEventAction('generation_ended');
+    applyBeautifyEventAction('generation_ended', { generation_id: 42 });
+    const queued = getBeautifyRefreshQueueStateForTests();
+    assert.equal(queued.needsFullRefresh, false);
+    assert.deepEqual(queued.dirtyMessageIds, []);
+    assert.equal(flushBeautifyRefresh().mode, 'noop');
+    assert.equal(getBeautifyPerfCountersForTests().fullRefreshCount, 0);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test('GENERATION_ENDED 有可靠 messageId 时进入 dirty 且不 full', () => {
+  const runtime = installRuntime({
+    messages: [{ message_id: 20, message: MEMORY_SAMPLE }],
+  });
+  try {
+    resetBeautifyRendererStateForTests();
+    applyBeautifyEventAction('generation_ended', 20);
+    const queued = getBeautifyRefreshQueueStateForTests();
+    assert.equal(queued.needsFullRefresh, false);
+    assert.deepEqual(queued.dirtyMessageIds, [20]);
+    const result = flushBeautifyRefresh();
+    assert.equal(result.mode, 'partial');
+    assert.equal(getBeautifyPerfCountersForTests().fullRefreshCount, 0);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test('正常生成组合 AFTER_COMMANDS + CHARACTER_MESSAGE_RENDERED + GENERATION_ENDED 只局部刷新目标楼', () => {
+  const runtime = installRuntime({
+    messages: [
+      { message_id: 19, message: MEMORY_SAMPLE },
+      { message_id: 20, message: MEMORY_SAMPLE },
+      { message_id: 21, message: MEMORY_SAMPLE },
+    ],
+  });
+  try {
+    resetBeautifyRendererStateForTests();
+    applyBeautifyEventAction('generation_after_commands', 'normal', {}, false);
+    applyBeautifyEventAction('character_message_rendered', 20);
+    applyBeautifyEventAction('generation_ended');
+    const queued = getBeautifyRefreshQueueStateForTests();
+    assert.equal(queued.needsFullRefresh, false);
+    assert.deepEqual(queued.dirtyMessageIds, [20]);
+    const result = flushBeautifyRefresh();
+    assert.equal(result.mode, 'partial');
+    assert.deepEqual(result.messageIds, [20]);
+    assert.equal(getBeautifyPerfCountersForTests().fullRefreshCount, 0);
+    assert.deepEqual(getBeautifyPerfCountersForTests().lastPartialRenderIds, [20]);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test('CHAT_CHANGED 仍然 full refresh', () => {
+  const runtime = installRuntime({
+    messages: [
+      { message_id: 0, message: MEMORY_SAMPLE },
+      { message_id: 1, message: MEMORY_SAMPLE },
+    ],
+  });
+  try {
+    resetBeautifyRendererStateForTests();
+    applyBeautifyEventAction('chat_changed');
+    assert.equal(getBeautifyRefreshQueueStateForTests().needsFullRefresh, true);
+    const result = flushBeautifyRefresh();
+    assert.equal(result.mode, 'full');
+    assert.equal(getBeautifyPerfCountersForTests().fullRefreshCount, 1);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test('partial perf counter 第二轮覆盖第一轮且不累计历史', () => {
+  const runtime = installRuntime({
+    messages: [
+      { message_id: 1, message: MEMORY_SAMPLE },
+      { message_id: 2, message: MEMORY_SAMPLE },
+      { message_id: 3, message: MEMORY_SAMPLE },
+    ],
+  });
+  try {
+    resetBeautifyRendererStateForTests();
+    scheduleBeautifyRefresh({ messageId: 1, delayMs: 9999, schedule: () => 1, cancel() {} });
+    scheduleBeautifyRefresh({ messageId: 2, delayMs: 9999, schedule: () => 1, cancel() {} });
+    flushBeautifyRefresh();
+    assert.deepEqual([...getBeautifyPerfCountersForTests().lastPartialRenderIds].sort((a, b) => a - b), [1, 2]);
+
+    scheduleBeautifyRefresh({ messageId: 3, delayMs: 9999, schedule: () => 1, cancel() {} });
+    flushBeautifyRefresh();
+    assert.deepEqual(getBeautifyPerfCountersForTests().lastPartialRenderIds, [3]);
+    assert.equal(getBeautifyPerfCountersForTests().lastPartialRenderIds.length, 1);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test('多轮 partial flush 计数状态长度不随运行轮次增长', () => {
+  const runtime = installRuntime({
+    messages: Array.from({ length: 5 }, (_, index) => ({
+      message_id: index,
+      message: MEMORY_SAMPLE,
+    })),
+  });
+  try {
+    resetBeautifyRendererStateForTests();
+    for (let round = 0; round < 20; round += 1) {
+      const id = round % 5;
+      scheduleBeautifyRefresh({ messageId: id, delayMs: 9999, schedule: () => 1, cancel() {} });
+      flushBeautifyRefresh();
+      assert.equal(getBeautifyPerfCountersForTests().lastPartialRenderIds.length, 1);
+      assert.deepEqual(getBeautifyPerfCountersForTests().lastPartialRenderIds, [id]);
+    }
+  } finally {
+    runtime.restore();
+  }
 });
 
 // ── 5 / 6：hash 命中 cleanup 短路 ───────────────────────────────────────
