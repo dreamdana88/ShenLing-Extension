@@ -18,6 +18,7 @@ import {
 import {
   registerWorldInfoContextEvents,
 } from './src/core/context-resolver.js';
+import { createViewportSyncController } from './src/core/viewport-sync.js';
 import { registerPendingCommitEvents } from './src/core/pending-commit.js';
 import { registerConfirmedLifecycleEvents } from './src/features/summary/confirmed-lifecycle.js';
 import { registerPromptStateLineSanitizerEvents } from './src/core/prompt-state-lines.js';
@@ -144,16 +145,7 @@ let panelRoot = null;
 let communicationLogOpen = false;
 let floatingButtonIgnoreClick = false;
 let settingsModuleTab = 'basic';
-
 const FLOATING_BUTTON_DRAG_THRESHOLD = 6;
-
-function syncViewportSize() {
-  const viewportHeight = globalThis.visualViewport?.height || globalThis.innerHeight;
-  if (viewportHeight) {
-    document.documentElement.style.setProperty('--slx-viewport-height', `${viewportHeight}px`);
-  }
-  syncFloatingButtonState();
-}
 
 function getViewportBox() {
   const visualViewport = globalThis.visualViewport;
@@ -161,6 +153,25 @@ function getViewportBox() {
     width: Math.max(1, visualViewport?.width || globalThis.innerWidth || document.documentElement.clientWidth || 1),
     height: Math.max(1, visualViewport?.height || globalThis.innerHeight || document.documentElement.clientHeight || 1),
   };
+}
+
+const viewportSyncController = createViewportSyncController({
+  getBox: getViewportBox,
+  apply: ({ height }) => {
+    if (height) {
+      document.documentElement.style.setProperty('--slx-viewport-height', `${height}px`);
+    }
+    syncFloatingButtonState({ allowGeometry: true });
+  },
+});
+
+function requestViewportSync() {
+  viewportSyncController.requestSync();
+}
+
+/** Backward-compatible name used by open path; routes through rAF coalescing. */
+function syncViewportSize() {
+  requestViewportSync();
 }
 
 function getFloatingButtonMode() {
@@ -197,11 +208,16 @@ function getFloatingButtonCustomPosition(settings = getGlobalSettings()) {
   };
 }
 
-function clampFloatingButtonPoint(left, top, button) {
+function clampFloatingButtonPoint(left, top, button, measured = null) {
   const viewport = getViewportBox();
-  const rect = button.getBoundingClientRect();
-  const width = rect.width || button.offsetWidth || 46;
-  const height = rect.height || button.offsetHeight || 46;
+  const width = measured?.width
+    ?? button.getBoundingClientRect?.().width
+    ?? button.offsetWidth
+    ?? 46;
+  const height = measured?.height
+    ?? button.getBoundingClientRect?.().height
+    ?? button.offsetHeight
+    ?? 46;
   const margin = getFloatingButtonMode() === 'mobile' ? 10 : 12;
 
   return {
@@ -221,7 +237,7 @@ function applyFloatingButtonCustomPosition(button, settings = getGlobalSettings(
     button.style.top = '';
     button.style.right = '';
     button.style.bottom = '';
-    return;
+    return false;
   }
 
   const viewport = getViewportBox();
@@ -232,6 +248,7 @@ function applyFloatingButtonCustomPosition(button, settings = getGlobalSettings(
     viewport.width * position.xRatio - width / 2,
     viewport.height * position.yRatio - height / 2,
     button,
+    { width, height },
   );
 
   button.dataset.position = 'custom';
@@ -239,6 +256,7 @@ function applyFloatingButtonCustomPosition(button, settings = getGlobalSettings(
   button.style.top = `${point.top}px`;
   button.style.right = 'auto';
   button.style.bottom = 'auto';
+  return true;
 }
 
 function getCommunicationLogStore(settings = getGlobalSettings()) {
@@ -1026,11 +1044,27 @@ function renderFloatingPanel(options = {}) {
 
 }
 
+function isFloatingPanelOpen() {
+  return Boolean(panelRoot?.classList?.contains('slx-panel-open'));
+}
+
+/**
+ * Background / event-driven panel refresh.
+ * Closed panel → no-op (must not build a hidden full panel).
+ * Open panel → full renderFloatingPanel.
+ * Explicit openFloatingPanel always calls renderFloatingPanel directly.
+ */
+function refreshFloatingPanelIfOpen(options = {}) {
+  if (!isFloatingPanelOpen()) return false;
+  renderFloatingPanel(options);
+  return true;
+}
+
 function openFloatingPanel() {
   const settings = getGlobalSettings();
   settings.ui.lastOpenedAt = formatTimestamp();
   saveGlobalSettings();
-  syncViewportSize();
+  requestViewportSync();
   scanExistingSummaryState();
   registerImmediateWordReplaceEvents();
   registerConfirmedLifecycleEvents();
@@ -1112,13 +1146,33 @@ function bindFloatingButtonDrag(button) {
   button.addEventListener('pointercancel', finishDrag);
 }
 
-function syncFloatingButtonState() {
+function syncFloatingButtonState(options = {}) {
   const settings = getGlobalSettings();
   const button = document.querySelector('#shenling-assistant-fab');
   if (!button) return;
 
-  button.hidden = !(settings.enabled && settings.ui.showFloatingButton);
+  const shouldShow = Boolean(settings.enabled && settings.ui.showFloatingButton);
+  button.hidden = !shouldShow;
   button.dataset.theme = settings.theme === 'dark' ? 'dark' : 'light';
+
+  // 插件禁用或 FAB 隐藏后不再做 geometry 读写。
+  if (!shouldShow || button.hidden) {
+    return;
+  }
+  if (options.allowGeometry === false) {
+    return;
+  }
+
+  // 无自定义位置时不做 getBoundingClientRect / clamp。
+  if (!getFloatingButtonCustomPosition(settings)) {
+    button.dataset.position = 'default';
+    button.style.left = '';
+    button.style.top = '';
+    button.style.right = '';
+    button.style.bottom = '';
+    return;
+  }
+
   applyFloatingButtonCustomPosition(button, settings);
 }
 
@@ -1229,10 +1283,10 @@ function renderSettingsPanel() {
 
 function init() {
   console.info('[蜃灵助手] 插件已加载。');
-  syncViewportSize();
-  globalThis.addEventListener?.('resize', syncViewportSize, { passive: true });
-  globalThis.visualViewport?.addEventListener?.('resize', syncViewportSize, { passive: true });
-  globalThis.visualViewport?.addEventListener?.('scroll', syncViewportSize, { passive: true });
+  requestViewportSync();
+  globalThis.addEventListener?.('resize', requestViewportSync, { passive: true });
+  globalThis.visualViewport?.addEventListener?.('resize', requestViewportSync, { passive: true });
+  globalThis.visualViewport?.addEventListener?.('scroll', requestViewportSync, { passive: true });
   configureSummaryPanel({
     getActiveApiProfile,
     getApiSettings,
@@ -1289,7 +1343,8 @@ function init() {
   configureAffectionWorkflow({
     addCommunicationLog,
     getActiveApiProfile,
-    refreshPanel: renderFloatingPanel,
+    // Background effect-driven refresh must not rebuild a closed panel.
+    refreshPanel: refreshFloatingPanelIfOpen,
   });
   configureScheduleWorkflow({
     addCommunicationLog,
@@ -1311,7 +1366,8 @@ function init() {
   });
   configureEmotionProfileWorkflow({
     notify: notifySummary,
-    refreshPanel: renderFloatingPanel,
+    // MESSAGE_UPDATED / SWIPED and other workflow-driven refreshes stay silent while closed.
+    refreshPanel: refreshFloatingPanelIfOpen,
   });
   getGlobalSettings();
   getChatState();

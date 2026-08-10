@@ -15,7 +15,7 @@ import {
 import { renderGrandMemoryCard } from './render-grand-memory.js?v=0.16.34';
 import { renderMemoryCard } from './render-memory.js';
 
-const MEMORY_RENDER_DELAY_MS = 220;
+export const MEMORY_RENDER_DELAY_MS = 220;
 const MEMORY_RENDER_FORMAT_VERSION = 9;
 const MEMORY_FIELD_KEYS = new Set([
   'number',
@@ -45,18 +45,32 @@ const GRAND_MEMORY_FIELD_KEYS = new Set([
   'next',
 ]);
 const MEMORY_FIELD_LINE_RE = /^\s*\[([A-Za-z][\w-]*)\s*:\s*([^\[\]]*?)\]\s*$/;
+const OBVIOUS_MEMORY_TAG_RE = /<\/?memory\b|<\/?grand_memory\b/i;
+const OBVIOUS_ESCAPED_MEMORY_TAG_RE = /&lt;\/?memory\b|&lt;\/?grand_memory\b/i;
 
 let rendererRegistered = false;
 let eventStops = [];
 let refreshTimer = null;
+const dirtyMessageIds = new Set();
+let needsFullRefresh = false;
 
-function getSettings() {
+/** @type {{ heavyCleanupCount: number, settingsBuildCount: number, fullRefreshCount: number, partialRenderIds: number[] }} */
+const perfCounters = {
+  heavyCleanupCount: 0,
+  settingsBuildCount: 0,
+  fullRefreshCount: 0,
+  partialRenderIds: [],
+};
+
+function getSettingsBundle() {
+  perfCounters.settingsBuildCount += 1;
   const globalSettings = getGlobalSettings();
   const beautifySettings = getChatBeautifySettings(globalSettings);
   return {
     globalSettings,
     beautifySettings,
     active: Boolean(globalSettings.enabled && beautifySettings.enabled && beautifySettings.renderMemory),
+    theme: getMemoryTheme(beautifySettings),
   };
 }
 
@@ -105,11 +119,6 @@ function getMessageElementById(messageId) {
 
 function getVisibleMessageElements() {
   return Array.from(document.querySelectorAll('.mes[mesid]'));
-}
-
-function getMessageText(messageId) {
-  const message = getChatMessageById(Number(messageId));
-  return String(message?.message || message?.mes || '');
 }
 
 function isMemoryFieldLine(line) {
@@ -226,9 +235,57 @@ function removeMemoryFieldParagraphs(mesText) {
 }
 
 function cleanupLeakedMemoryText(mesText) {
+  perfCounters.heavyCleanupCount += 1;
   removeMemoryGhostElements(mesText);
   removeMemoryFieldParagraphs(mesText);
   removeMemoryTextNodes(mesText);
+}
+
+function hasObviousFieldOnlyLines(text) {
+  const lines = String(text || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return false;
+  return lines.every(isBeautifyFieldLine);
+}
+
+/**
+ * Lightweight leak probe: shallow checks only.
+ * Must NOT TreeWalker / full p,div scan / full cleanup regex chain.
+ */
+export function hasLightweightMemoryLeak(mesText) {
+  if (!mesText) return false;
+  if (typeof mesText.querySelector === 'function') {
+    if (mesText.querySelector('memory') || mesText.querySelector('grand_memory')) return true;
+  }
+
+  const html = String(mesText.innerHTML || '');
+  if (OBVIOUS_ESCAPED_MEMORY_TAG_RE.test(html)) return true;
+
+  const children = mesText.childNodes ? Array.from(mesText.childNodes) : [];
+  for (const child of children) {
+    if (child?.nodeType === 3) {
+      const text = child.textContent || '';
+      if (OBVIOUS_MEMORY_TAG_RE.test(text) || hasObviousFieldOnlyLines(text)) return true;
+      continue;
+    }
+    if (child?.nodeType === 1) {
+      if (child.classList?.contains?.('slx-memory-wrap')) continue;
+      const tag = String(child.tagName || '').toLowerCase();
+      if (tag === 'memory' || tag === 'grand_memory') return true;
+      const text = child.textContent || '';
+      if (OBVIOUS_MEMORY_TAG_RE.test(text)) return true;
+      if (hasObviousFieldOnlyLines(text)) return true;
+    }
+  }
+
+  // Fallback when childNodes unavailable (test doubles): sample textContent once.
+  if (!children.length) {
+    const text = String(mesText.textContent || '');
+    if (OBVIOUS_MEMORY_TAG_RE.test(text)) return true;
+  }
+  return false;
 }
 
 function hasMemoryDisplaySource(mesText) {
@@ -242,9 +299,63 @@ function hasMemoryDisplaySource(mesText) {
     || extractBeautifyBlocks(mesText.innerText || mesText.textContent || '').length > 0;
 }
 
+function clearCleanupMarks(messageElement, mesText = null) {
+  if (messageElement?.removeAttribute) {
+    messageElement.removeAttribute('data-slx-memory-cleaned');
+    messageElement.removeAttribute('data-slx-memory-cleaned-source');
+  }
+  if (messageElement?.dataset) {
+    delete messageElement.dataset.slxMemoryCleaned;
+    delete messageElement.dataset.slxMemoryCleanedSource;
+  }
+  const target = mesText || messageElement?.querySelector?.('.mes_text');
+  if (target?.removeAttribute) {
+    target.removeAttribute('data-slx-memory-cleaned');
+    target.removeAttribute('data-slx-memory-cleaned-source');
+  }
+  if (target?.dataset) {
+    delete target.dataset.slxMemoryCleaned;
+    delete target.dataset.slxMemoryCleanedSource;
+  }
+}
+
+function markCleanupComplete(messageElement, mesText, hash) {
+  if (messageElement?.setAttribute) {
+    messageElement.setAttribute('data-slx-memory-cleaned', '1');
+    messageElement.setAttribute('data-slx-memory-cleaned-source', hash);
+  }
+  if (messageElement?.dataset) {
+    messageElement.dataset.slxMemoryCleaned = '1';
+    messageElement.dataset.slxMemoryCleanedSource = hash;
+  }
+  if (mesText?.setAttribute) {
+    mesText.setAttribute('data-slx-memory-cleaned', '1');
+    mesText.setAttribute('data-slx-memory-cleaned-source', hash);
+  }
+  if (mesText?.dataset) {
+    mesText.dataset.slxMemoryCleaned = '1';
+    mesText.dataset.slxMemoryCleanedSource = hash;
+  }
+}
+
+function isCleanupMarkedForHash(messageElement, mesText, hash) {
+  const source = messageElement?.dataset?.slxMemoryCleanedSource
+    ?? messageElement?.getAttribute?.('data-slx-memory-cleaned-source')
+    ?? mesText?.dataset?.slxMemoryCleanedSource
+    ?? mesText?.getAttribute?.('data-slx-memory-cleaned-source')
+    ?? '';
+  const cleaned = messageElement?.dataset?.slxMemoryCleaned
+    ?? messageElement?.getAttribute?.('data-slx-memory-cleaned')
+    ?? mesText?.dataset?.slxMemoryCleaned
+    ?? mesText?.getAttribute?.('data-slx-memory-cleaned')
+    ?? '';
+  return Boolean(cleaned) && source === hash;
+}
+
 function removeExistingCards(messageElement) {
   messageElement.querySelectorAll(':scope .slx-memory-wrap').forEach(element => element.remove());
   messageElement.removeAttribute('data-slx-memory-rendered');
+  clearCleanupMarks(messageElement);
 }
 
 function clearMessageElement(messageElement) {
@@ -252,12 +363,23 @@ function clearMessageElement(messageElement) {
   removeExistingCards(messageElement);
   const mesText = messageElement.querySelector('.mes_text');
   clearLegacyOriginalHtmlSnapshot(mesText);
+  clearCleanupMarks(messageElement, mesText);
+}
+
+function syncMemoryThemeControls(root = document, theme = getMemoryTheme()) {
+  const nextTheme = theme === 'dark' ? 'light' : 'dark';
+  root.querySelectorAll?.('[data-slx-memory-theme-toggle]')?.forEach(button => {
+    button.textContent = theme === 'dark' ? '\u2600\uFE0F' : '\u{1F319}';
+    button.setAttribute('aria-label', `切换小总结为${nextTheme === 'dark' ? '深色' : '浅色'}主题`);
+    button.title = `切换小总结为${nextTheme === 'dark' ? '深色' : '浅色'}主题`;
+  });
 }
 
 function syncMemoryWrapTheme(messageElement, theme) {
   messageElement
     ?.querySelectorAll?.(':scope .slx-memory-wrap')
     ?.forEach(element => {
+      if (element.dataset?.theme === theme) return;
       element.dataset.theme = theme;
       syncMemoryThemeControls(element, theme);
     });
@@ -276,17 +398,11 @@ function createMemoryWrap(blocks, theme) {
   return wrap;
 }
 
-function syncMemoryThemeControls(root = document, theme = getMemoryTheme()) {
-  const nextTheme = theme === 'dark' ? 'light' : 'dark';
-  root.querySelectorAll?.('[data-slx-memory-theme-toggle]')?.forEach(button => {
-    button.textContent = theme === 'dark' ? '☀️' : '🌙';
-    button.setAttribute('aria-label', `切换小总结为${nextTheme === 'dark' ? '深色' : '浅色'}主题`);
-    button.title = `切换小总结为${nextTheme === 'dark' ? '深色' : '浅色'}主题`;
-  });
-}
-
 function applyMemoryTheme(theme) {
   document.querySelectorAll('.slx-memory-wrap').forEach(element => {
+    if (element.dataset?.theme === theme) {
+      return;
+    }
     element.dataset.theme = theme;
     syncMemoryThemeControls(element, theme);
   });
@@ -300,38 +416,95 @@ function toggleMemoryTheme() {
   applyMemoryTheme(beautifySettings.theme);
 }
 
-function renderMessageElement(messageElement) {
-  const { beautifySettings, active } = getSettings();
+/**
+ * One-shot render context for a flush batch.
+ * settings are resolved once; chat snapshot is built once for the batch.
+ */
+export function createBeautifyRenderContext(options = {}) {
+  const bundle = getSettingsBundle();
+  const messageById = new Map();
+  let snapshotBuilt = false;
+
+  function ensureSnapshot(ids = null) {
+    if (snapshotBuilt) return messageById;
+    snapshotBuilt = true;
+    if (Array.isArray(ids) && ids.length > 0) {
+      ids.forEach(id => {
+        const message = getChatMessageById(Number(id));
+        if (message) messageById.set(Number(id), message);
+      });
+      return messageById;
+    }
+    getChatMessagesSafe(undefined, { hide_state: 'all' }).forEach(message => {
+      messageById.set(Number(message.message_id), message);
+    });
+    return messageById;
+  }
+
+  if (options.preload === 'all') {
+    ensureSnapshot(null);
+  } else if (Array.isArray(options.messageIds) && options.messageIds.length) {
+    ensureSnapshot(options.messageIds);
+  }
+
+  return {
+    ...bundle,
+    messageById,
+    ensureSnapshot,
+    getMessageText(messageId) {
+      ensureSnapshot(options.messageIds || null);
+      const message = messageById.get(Number(messageId)) || getChatMessageById(Number(messageId));
+      if (message && !messageById.has(Number(messageId))) {
+        messageById.set(Number(messageId), message);
+      }
+      return String(message?.message || message?.mes || '');
+    },
+  };
+}
+
+export function renderMessageElement(messageElement, renderContext = null) {
+  const context = renderContext || createBeautifyRenderContext();
+  const { beautifySettings, active, theme } = context;
   if (!active) {
     clearMessageElement(messageElement);
-    return;
+    return { status: 'inactive' };
   }
 
   const messageId = getMessageIdFromElement(messageElement);
-  if (messageId === null) return;
+  if (messageId === null) return { status: 'no-id' };
   const mesText = messageElement.querySelector('.mes_text');
-  if (!mesText) return;
+  if (!mesText) return { status: 'no-mes-text' };
 
-  const rawMessageText = getMessageText(messageId);
+  const rawMessageText = context.getMessageText(messageId);
   const blocks = extractBeautifyBlocks(rawMessageText);
   if (!blocks.length) {
     clearMessageElement(messageElement);
-    return;
+    return { status: 'no-blocks' };
   }
 
   const sourceKey = createMessageSourceKey(messageElement, rawMessageText);
   const hash = `${sourceKey}:${hashMemoryBlocks(blocks)}`;
-  const theme = getMemoryTheme(beautifySettings);
   const existingWrap = messageElement.querySelector(':scope .slx-memory-wrap');
   if (
     messageElement.dataset.slxMemoryRendered === hash
     && existingWrap
   ) {
     if (!beautifySettings.showRawAlongside) {
-      cleanupLeakedMemoryText(mesText);
+      const alreadyClean = isCleanupMarkedForHash(messageElement, mesText, hash);
+      const leak = hasLightweightMemoryLeak(mesText);
+      if (alreadyClean && !leak) {
+        syncMemoryWrapTheme(messageElement, theme);
+        return { status: 'fast-path', hash, heavyCleanup: false };
+      }
+      if (leak || !alreadyClean) {
+        cleanupLeakedMemoryText(mesText);
+        markCleanupComplete(messageElement, mesText, hash);
+        syncMemoryWrapTheme(messageElement, theme);
+        return { status: 'hash-hit-cleanup', hash, heavyCleanup: true };
+      }
     }
     syncMemoryWrapTheme(messageElement, theme);
-    return;
+    return { status: 'hash-hit', hash, heavyCleanup: false };
   }
 
   clearLegacyOriginalHtmlSnapshot(mesText);
@@ -346,16 +519,23 @@ function renderMessageElement(messageElement) {
   wrap.dataset.slxMemoryHash = hash;
   mesText.append(wrap);
   messageElement.dataset.slxMemoryRendered = hash;
+  if (!beautifySettings.showRawAlongside) {
+    markCleanupComplete(messageElement, mesText, hash);
+  }
+  return { status: 'rendered', hash, heavyCleanup: !beautifySettings.showRawAlongside && hadDisplaySource };
 }
 
-function refreshVisibleMessages() {
-  if (!getSettings().active) {
+function refreshVisibleMessages(renderContext = null) {
+  perfCounters.fullRefreshCount += 1;
+  const context = renderContext || createBeautifyRenderContext({ preload: 'all' });
+  if (!context.active) {
     clearChatBeautifyRenderer({ keepEvents: true });
     return;
   }
+  context.ensureSnapshot(null);
   const elements = getVisibleMessageElements();
   if (elements.length) {
-    elements.forEach(renderMessageElement);
+    elements.forEach(element => renderMessageElement(element, context));
     return;
   }
 
@@ -363,23 +543,146 @@ function refreshVisibleMessages() {
     .filter(message => extractBeautifyBlocks(message.message).length > 0)
     .forEach(message => {
       const element = getMessageElementById(message.message_id);
-      if (element) renderMessageElement(element);
+      if (element) renderMessageElement(element, context);
     });
 }
 
-function scheduleRefresh(messageId = null) {
-  window.clearTimeout(refreshTimer);
-  refreshTimer = window.setTimeout(() => {
-    refreshTimer = null;
-    if (messageId !== null && messageId !== undefined && Number.isInteger(Number(messageId))) {
-      const element = getMessageElementById(Number(messageId));
-      if (element) {
-        renderMessageElement(element);
-        return;
-      }
+/**
+ * Resolve a reliable message id from a Tavern event payload.
+ * Returns null when the payload is not a trustworthy message id (caller must full-refresh).
+ * Never treats generation_id as messageId.
+ */
+export function resolveBeautifyEventMessageId(eventName, ...args) {
+  const events = getTavernEventsSafe();
+  const name = String(eventName || '');
+  const alwaysFull = new Set(
+    [
+      events.CHAT_CHANGED,
+      events.GENERATION_ENDED,
+      events.GENERATION_AFTER_COMMANDS,
+    ].filter(Boolean).map(String),
+  );
+  if (alwaysFull.has(name)) return null;
+
+  for (const arg of args) {
+    if (typeof arg === 'number' && Number.isInteger(arg) && arg >= 0) {
+      return arg;
     }
-    refreshVisibleMessages();
-  }, MEMORY_RENDER_DELAY_MS);
+    if (typeof arg === 'string' && /^\d+$/.test(arg.trim())) {
+      return Number(arg.trim());
+    }
+    if (!arg || typeof arg !== 'object') continue;
+
+    // generation_id-only (or generation payload without message id fields) must not become a message id.
+    const hasGenerationId = Object.prototype.hasOwnProperty.call(arg, 'generation_id')
+      || Object.prototype.hasOwnProperty.call(arg, 'generationId');
+    const candidate = arg.message_id ?? arg.messageId ?? arg.mesid;
+    if (candidate !== undefined && candidate !== null && candidate !== '') {
+      const numeric = Number(candidate);
+      if (Number.isInteger(numeric) && numeric >= 0) return numeric;
+    }
+    if (hasGenerationId) {
+      // Do not fall through to generic `id` on generation payloads.
+      continue;
+    }
+    if (arg.id !== undefined && arg.id !== null && arg.id !== '') {
+      const numeric = Number(arg.id);
+      if (Number.isInteger(numeric) && numeric >= 0) return numeric;
+    }
+  }
+  return null;
+}
+
+function enqueueRefresh({ full = false, messageId = null } = {}) {
+  if (full || messageId === null || messageId === undefined) {
+    needsFullRefresh = true;
+  } else {
+    const numeric = Number(messageId);
+    if (Number.isInteger(numeric) && numeric >= 0) {
+      dirtyMessageIds.add(numeric);
+    } else {
+      needsFullRefresh = true;
+    }
+  }
+}
+
+export function scheduleBeautifyRefresh(options = {}) {
+  if (options === null || options === undefined) {
+    enqueueRefresh({ full: true });
+  } else if (typeof options === 'number' || typeof options === 'string') {
+    const numeric = Number(options);
+    if (Number.isInteger(numeric) && numeric >= 0) {
+      enqueueRefresh({ messageId: numeric });
+    } else {
+      enqueueRefresh({ full: true });
+    }
+  } else if (options.full === true) {
+    enqueueRefresh({ full: true });
+  } else if (options.messageId !== undefined && options.messageId !== null) {
+    enqueueRefresh({ messageId: options.messageId });
+  } else {
+    enqueueRefresh({ full: true });
+  }
+
+  const delay = Number.isFinite(options.delayMs) ? options.delayMs : MEMORY_RENDER_DELAY_MS;
+  const schedule = typeof options.schedule === 'function'
+    ? options.schedule
+    : (callback, ms) => window.setTimeout(callback, ms);
+  const cancel = typeof options.cancel === 'function'
+    ? options.cancel
+    : id => window.clearTimeout(id);
+
+  if (refreshTimer !== null && refreshTimer !== undefined) {
+    cancel(refreshTimer);
+  }
+  refreshTimer = schedule(() => {
+    refreshTimer = null;
+    flushBeautifyRefresh();
+  }, delay);
+  return refreshTimer;
+}
+
+export function flushBeautifyRefresh() {
+  const doFull = needsFullRefresh;
+  const ids = [...dirtyMessageIds];
+  needsFullRefresh = false;
+  dirtyMessageIds.clear();
+
+  if (doFull) {
+    const context = createBeautifyRenderContext({ preload: 'all' });
+    refreshVisibleMessages(context);
+    return { mode: 'full', messageIds: ids };
+  }
+
+  if (!ids.length) {
+    return { mode: 'noop', messageIds: [] };
+  }
+
+  const missing = ids.some(id => !getMessageElementById(id));
+  if (missing) {
+    const fullContext = createBeautifyRenderContext({ preload: 'all' });
+    refreshVisibleMessages(fullContext);
+    return { mode: 'full-fallback', messageIds: ids };
+  }
+
+  const context = createBeautifyRenderContext({ messageIds: ids });
+  ids.forEach(id => {
+    const element = getMessageElementById(id);
+    if (element) {
+      perfCounters.partialRenderIds.push(id);
+      renderMessageElement(element, context);
+    }
+  });
+  return { mode: 'partial', messageIds: ids };
+}
+
+function handleBeautifyTavernEvent(eventName, ...args) {
+  const messageId = resolveBeautifyEventMessageId(eventName, ...args);
+  if (messageId === null) {
+    scheduleBeautifyRefresh({ full: true });
+    return;
+  }
+  scheduleBeautifyRefresh({ messageId });
 }
 
 function bindCardToggle(event) {
@@ -433,7 +736,7 @@ function registerRendererEvents() {
 
   const uniqueEventNames = [...new Set(eventNames)];
   eventStops = uniqueEventNames
-    .map(eventName => registerTavernEvent(eventName, () => scheduleRefresh()))
+    .map(eventName => registerTavernEvent(eventName, (...args) => handleBeautifyTavernEvent(eventName, ...args)))
     .filter(Boolean);
   document.addEventListener('click', bindCardToggle);
   document.addEventListener('click', bindMemoryThemeToggle);
@@ -441,23 +744,27 @@ function registerRendererEvents() {
 
 export function registerChatBeautifyRenderer() {
   if (rendererRegistered) return;
-  if (!getSettings().active) {
+  if (!getSettingsBundle().active) {
     clearChatBeautifyRenderer();
     return;
   }
 
   registerRendererEvents();
   rendererRegistered = true;
-  scheduleRefresh();
+  scheduleBeautifyRefresh({ full: true });
 }
 
 export function refreshChatBeautifyRenderer() {
-  scheduleRefresh();
+  scheduleBeautifyRefresh({ full: true });
 }
 
 export function clearChatBeautifyRenderer(options = {}) {
-  window.clearTimeout(refreshTimer);
+  if (refreshTimer !== null && refreshTimer !== undefined) {
+    window.clearTimeout(refreshTimer);
+  }
   refreshTimer = null;
+  dirtyMessageIds.clear();
+  needsFullRefresh = false;
   getVisibleMessageElements().forEach(element => clearMessageElement(element));
 
   if (!options.keepEvents) {
@@ -467,4 +774,43 @@ export function clearChatBeautifyRenderer(options = {}) {
     document.removeEventListener('click', bindMemoryThemeToggle);
     rendererRegistered = false;
   }
+}
+
+/** Test helpers — not used by production paths. */
+export function getBeautifyRefreshQueueStateForTests() {
+  return {
+    dirtyMessageIds: [...dirtyMessageIds],
+    needsFullRefresh,
+    refreshTimer,
+    rendererRegistered,
+  };
+}
+
+export function getBeautifyPerfCountersForTests() {
+  return {
+    heavyCleanupCount: perfCounters.heavyCleanupCount,
+    settingsBuildCount: perfCounters.settingsBuildCount,
+    fullRefreshCount: perfCounters.fullRefreshCount,
+    partialRenderIds: [...perfCounters.partialRenderIds],
+  };
+}
+
+export function resetBeautifyRendererStateForTests() {
+  if (refreshTimer !== null && refreshTimer !== undefined) {
+    try {
+      window.clearTimeout?.(refreshTimer);
+    } catch {
+      // ignore
+    }
+  }
+  refreshTimer = null;
+  dirtyMessageIds.clear();
+  needsFullRefresh = false;
+  eventStops.forEach(stop => stop?.stop?.());
+  eventStops = [];
+  rendererRegistered = false;
+  perfCounters.heavyCleanupCount = 0;
+  perfCounters.settingsBuildCount = 0;
+  perfCounters.fullRefreshCount = 0;
+  perfCounters.partialRenderIds = [];
 }
