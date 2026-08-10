@@ -728,14 +728,6 @@ function renderModuleDetail(module, settings) {
         <div id="slx-settings-tab-panel" class="slx-settings-tab-panel" role="tabpanel" aria-labelledby="slx-settings-tab-${settingsModuleTab}">
           ${settingsModuleTab === 'prompts' ? renderPromptEditorPanel(settings) : `
             ${renderApiSettingsPanel(settings)}
-            <div class="slx-detail-card">
-              <div class="slx-detail-title">存储检查</div>
-              <p>确认全局设置与当前聊天状态可以正常保存。</p>
-              <div class="slx-action-row">
-                <button class="slx-soft-btn" type="button" data-slx-write-global>写入全局</button>
-                <button class="slx-soft-btn" type="button" data-slx-write-chat>写入聊天</button>
-              </div>
-            </div>
             <div class="slx-detail-card slx-muted-card">
               <div class="slx-detail-title">当前环境</div>
               ${renderDiagnosticLine('角色', info.characterName)}
@@ -752,8 +744,6 @@ function renderModuleDetail(module, settings) {
               ${renderDiagnosticLine('聊天 metadata 可用', diagnostics.hasChatMetadata ? '是' : '否')}
               ${renderDiagnosticLine('全局保存函数', diagnostics.canSaveGlobal ? '可用' : '未发现')}
               ${renderDiagnosticLine('聊天保存函数', diagnostics.canSaveChat ? '可用' : '未发现，暂用设置保存兜底')}
-              ${renderDiagnosticLine('全局测试值', diagnostics.globalProbe)}
-              ${renderDiagnosticLine('聊天测试值', diagnostics.chatProbe)}
               ${renderDiagnosticLine('通讯日志数', getCommunicationLogs(settings).length)}
               ${renderContextDiagnostics()}
               ${renderDiagnosticLine('全局最近保存', diagnostics.globalLastSavedAt)}
@@ -1034,19 +1024,6 @@ function renderFloatingPanel(options = {}) {
   }
 
 
-  panelRoot.querySelector('[data-slx-write-global]')?.addEventListener('click', () => {
-    settings.diagnostics.globalProbe = `全局 ${formatTimestamp()}`;
-    saveGlobalSettings();
-    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
-    syncSettingsPanelState();
-  });
-
-  panelRoot.querySelector('[data-slx-write-chat]')?.addEventListener('click', () => {
-    const chatState = getChatState();
-    chatState.diagnostics.chatProbe = `聊天 ${formatTimestamp()}`;
-    saveChatState();
-    renderFloatingPanel({ moduleScrollTop: panelRoot.querySelector('.slx-module-grid')?.scrollTop ?? 0 });
-  });
 }
 
 function openFloatingPanel() {

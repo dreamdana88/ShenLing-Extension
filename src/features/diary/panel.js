@@ -110,12 +110,6 @@ let diaryEditorState = {
   entryId: '',
 };
 
-let diaryContextTestState = {
-  status: 'idle',
-  result: null,
-  error: '',
-};
-
 export function configureDiaryPanel(options = {}) {
   panelOptions = {
     ...panelOptions,
@@ -513,40 +507,6 @@ function renderDiaryCapacityWarning(notebooks, totalEntries) {
   `;
 }
 
-function renderContextTestResult() {
-  if (diaryContextTestState.status !== 'success' || !diaryContextTestState.result) return '';
-  const result = diaryContextTestState.result;
-  const worldInfo = result.diagnostics?.worldInfo || {};
-  return `
-    <div class="slx-diary-context-result">
-      <div class="slx-detail-kicker">测试上下文</div>
-      <div class="slx-diary-stat-grid">
-        <span><b>${escapeHtml(result.materialLength)}</b><small>材料字数</small></span>
-        <span><b>${escapeHtml(result.recentMessageCount)}</b><small>最近楼层</small></span>
-        <span><b>${escapeHtml(result.memoryCount)}</b><small>memory</small></span>
-        <span><b>${escapeHtml(result.emotionProfileCount)}</b><small>情感档案</small></span>
-      </div>
-      <div class="slx-info-line"><span>世界书来源</span><b>${escapeHtml(worldInfo.source || '未记录')}</b></div>
-      <div class="slx-info-line"><span>世界书素材来源</span><b>${escapeHtml(worldInfo.materialSource || 'none')}</b></div>
-      <div class="slx-info-line"><span>世界书注入来源</span><b>${escapeHtml(worldInfo.injectionSource || 'none')}</b></div>
-      <div class="slx-info-line"><span>世界书兜底原因</span><b>${escapeHtml(worldInfo.fallbackReason || '无')}</b></div>
-      <div class="slx-info-line"><span>世界书可用条目</span><b>${escapeHtml(worldInfo.usedCount ?? 0)}</b></div>
-      <div class="slx-info-line"><span>世界书注入文本</span><b>${escapeHtml(worldInfo.injectionTextLength ?? 0)}</b></div>
-      <div class="slx-info-line"><span>裸 activated.text</span><b>${escapeHtml(worldInfo.activatedTextLength ?? 0)}</b></div>
-    </div>
-  `;
-}
-
-function getContextTestStatusText() {
-  if (diaryContextTestState.status === 'running') return '正在整理日记上下文';
-  if (diaryContextTestState.status === 'failed') return diaryContextTestState.error || '上下文测试失败';
-  if (diaryContextTestState.status === 'success') {
-    const worldInfo = diaryContextTestState.result?.diagnostics?.worldInfo || {};
-    return `材料 ${diaryContextTestState.result?.materialLength || 0} 字 · 世界书 ${worldInfo.source || '未记录'}`;
-  }
-  return '可先验证这本日记生成前会拿到哪些上下文';
-}
-
 function renderDiaryLibrary(chatState) {
   const notebooks = getNotebooks(chatState);
   const totalEntries = getDiaryEntries(chatState).length;
@@ -842,12 +802,7 @@ function renderDiaryCompose(chatState) {
           <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-create-unified-diary-draft ${isGenerating ? 'disabled' : ''}>
             <i class="fa-solid fa-feather"></i><span>${isGenerating ? '日记生成中' : '生成日记草稿'}</span>
           </button>
-          <button class="slx-soft-btn" type="button" data-slx-test-diary-context ${diaryContextTestState.status === 'running' ? 'disabled' : ''}>
-            <i class="fa-solid fa-magnifying-glass"></i><span>测试上下文</span>
-          </button>
           <div class="slx-field-hint">${escapeHtml(generationHint)}</div>
-          <div class="slx-field-hint">${escapeHtml(getContextTestStatusText())}</div>
-          ${renderContextTestResult()}
         </div>
       </section>
       <section class="slx-diary-book-page slx-diary-book-page-right">
@@ -861,13 +816,8 @@ function renderDiaryCompose(chatState) {
           <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-create-unified-diary-draft ${isGenerating ? 'disabled' : ''}>
             <i class="fa-solid fa-feather"></i><span>${isGenerating ? '日记生成中' : '生成日记草稿'}</span>
           </button>
-          <button class="slx-soft-btn" type="button" data-slx-test-diary-context ${diaryContextTestState.status === 'running' ? 'disabled' : ''}>
-            <i class="fa-solid fa-magnifying-glass"></i><span>测试上下文</span>
-          </button>
         </div>
         <div class="slx-field-hint">${escapeHtml(generationHint)}</div>
-        <div class="slx-field-hint">${escapeHtml(getContextTestStatusText())}</div>
-        ${renderContextTestResult()}
       </section>
     </div>
   `;
@@ -1388,41 +1338,6 @@ function exportDiaryBook() {
   URL.revokeObjectURL(url);
 }
 
-async function testDiaryContext(panelRoot) {
-  const targetRoleName = normalizeRoleName(panelRoot.querySelector('[data-slx-diary-compose-role]')?.value || diaryPanelState.roleName);
-  diaryPanelState.composeRoleName = targetRoleName;
-
-  diaryContextTestState = {
-    status: 'running',
-    result: null,
-    error: '',
-  };
-  refreshPanel();
-
-  try {
-    const context = await resolveDiaryContext(getDiaryContextOptions(targetRoleName));
-    diaryContextTestState = {
-      status: 'success',
-      result: {
-        materialLength: context.material.length,
-        recentMessageCount: context.diagnostics?.recentMessageCount ?? 0,
-        memoryCount: context.diagnostics?.memoryCount ?? 0,
-        grandMemoryCount: context.diagnostics?.grandMemoryCount ?? 0,
-        emotionProfileCount: context.diagnostics?.emotionProfileCount ?? 0,
-        diagnostics: context.diagnostics,
-      },
-      error: '',
-    };
-  } catch (error) {
-    diaryContextTestState = {
-      status: 'failed',
-      result: null,
-      error: error.message || String(error),
-    };
-  }
-  refreshPanel();
-}
-
 function saveDiarySettings(panelRoot) {
   const chatState = getChatState();
   const store = getDiaryStore(chatState);
@@ -1590,12 +1505,6 @@ export function bindDiaryPanelEvents(panelRoot) {
   panelRoot.querySelectorAll('[data-slx-create-unified-diary-draft]').forEach(button => {
     button.addEventListener('click', () => {
       void createUnifiedDiaryDraft(panelRoot);
-    });
-  });
-
-  panelRoot.querySelectorAll('[data-slx-test-diary-context]').forEach(button => {
-    button.addEventListener('click', () => {
-      void testDiaryContext(panelRoot);
     });
   });
 

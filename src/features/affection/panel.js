@@ -36,7 +36,6 @@ import {
   commitManualAffectionProfileDraft,
   createManualGenericAffectionProfile,
   generateManualAffectionProfileDraft,
-  resolveManualAffectionProfileContext,
 } from './manual-profile.js';
 import { createGenericAffectionStages } from './profile.js';
 import {
@@ -47,8 +46,7 @@ import {
 } from './workflow.js';
 let affectionPanelOptions = {
   refreshPanel: null,
-  // 可选注入：资料测试 / 草稿生成 / 正式提交（生产默认走真实实现）
-  resolveManualContext: null,
+  // 可选注入：草稿生成 / 正式提交（生产默认走真实实现）
   generateManualDraft: null,
   createManualGeneric: null,
   commitManualDraft: null,
@@ -101,10 +99,6 @@ function createManualCreateState(settings = getGlobalSettings(), chatId = getCur
     buildMode: affection.defaultBuildMode === 'generic' ? 'generic' : 'custom',
     apiMode: affection.profileBuildApiMode === 'main_api' ? 'main_api' : 'secondary_api',
     userRequirement: '',
-    contextStatus: 'idle',
-    contextResult: null,
-    contextError: '',
-    contextRequestId: '',
     generationStatus: 'idle',
     draft: null,
     draftExpandedStageId: '',
@@ -123,11 +117,7 @@ function clearManualCreateSession() {
   }
 }
 
-function createManualContextRequestId() {
-  return `affection-context:${Date.now()}:${Math.random().toString(36).slice(2)}`;
-}
-
-function invalidateManualCreateDraft(session, { clearContext = false } = {}) {
+function invalidateManualCreateDraft(session) {
   if (!session) return;
   session.draft = null;
   session.draftExpandedStageId = '';
@@ -136,12 +126,6 @@ function invalidateManualCreateDraft(session, { clearContext = false } = {}) {
   session.generationStatus = 'idle';
   session.generationError = '';
   session.notice = '';
-  if (clearContext) {
-    session.contextRequestId = '';
-    session.contextStatus = 'idle';
-    session.contextResult = null;
-    session.contextError = '';
-  }
 }
 
 function isActiveManualCreateSession(session) {
@@ -152,18 +136,10 @@ function isActiveManualCreateSession(session) {
   );
 }
 
-function isActiveManualContextRequest(session, requestId, roleName) {
-  return Boolean(
-    isActiveManualCreateSession(session)
-    && session.contextRequestId === requestId
-    && normalizeAffectionRoleName(session.roleName) === roleName,
-  );
-}
-
 /**
- * 输入变化后局部同步草稿/资料 UI，避免对角色名等高频 input 做完整 refreshPanel。
+ * 输入变化后局部同步草稿 UI，避免对角色名等高频 input 做完整 refreshPanel。
  */
-function syncManualCreateDraftInvalidation(panelRoot, { clearContext = false } = {}) {
+function syncManualCreateDraftInvalidation(panelRoot) {
   if (!panelRoot?.querySelector) return;
   panelRoot.querySelector('[data-slx-affection-create-draft-preview]')?.remove?.();
   panelRoot.querySelector('.slx-affection-create-draft-preview')?.remove?.();
@@ -171,24 +147,10 @@ function syncManualCreateDraftInvalidation(panelRoot, { clearContext = false } =
   if (commitButton) commitButton.disabled = true;
   panelRoot.querySelector('[data-slx-affection-create-notice]')?.remove?.();
   panelRoot.querySelector('[data-slx-affection-create-draft-notice]')?.remove?.();
-  if (clearContext) {
-    panelRoot.querySelector('[data-slx-affection-create-context-result]')?.remove?.();
-    panelRoot.querySelector('.slx-affection-create-context-result')?.remove?.();
-    panelRoot.querySelector('[data-slx-affection-create-context-status]')?.remove?.();
-    // 角色名变化使进行中的资料测试失效后，恢复测试按钮（非生成中时）
-    const session = affectionPanelState.manualCreate;
-    const genBusy = session?.generationStatus === 'running'
-      || session?.generationStatus === 'committing';
-    const testButton = panelRoot.querySelector('[data-slx-affection-test-create-context]');
-    if (testButton && !genBusy) testButton.disabled = false;
-  }
 }
 
 function getManualCreateDeps() {
   return {
-    resolveContext: typeof affectionPanelOptions.resolveManualContext === 'function'
-      ? affectionPanelOptions.resolveManualContext
-      : resolveManualAffectionProfileContext,
     generateDraft: typeof affectionPanelOptions.generateManualDraft === 'function'
       ? affectionPanelOptions.generateManualDraft
       : generateManualAffectionProfileDraft,
@@ -443,39 +405,6 @@ function renderAffectionProfiles(store) {
   `;
 }
 
-function formatManualContextSummary(contextResult) {
-  const diagnostics = isPlainObject(contextResult?.diagnostics) ? contextResult.diagnostics : {};
-  const worldInfo = isPlainObject(diagnostics.worldInfo) ? diagnostics.worldInfo : {};
-  const materialLength = String(contextResult?.material || '').length;
-  const recentMessageCount = Number.isFinite(Number(diagnostics.recentMessageCount))
-    ? Number(diagnostics.recentMessageCount)
-    : 0;
-  const memoryCount = Number.isFinite(Number(diagnostics.memoryCount))
-    ? Number(diagnostics.memoryCount)
-    : 0;
-  const grandMemoryCount = Number.isFinite(Number(diagnostics.grandMemoryCount))
-    ? Number(diagnostics.grandMemoryCount)
-    : 0;
-  const emotionProfileCount = Number.isFinite(Number(diagnostics.emotionProfileCount))
-    ? Number(diagnostics.emotionProfileCount)
-    : 0;
-  const usedCount = Number.isFinite(Number(worldInfo.usedCount))
-    ? Number(worldInfo.usedCount)
-    : 0;
-  const materialSource = String(worldInfo.materialSource || '').trim() || '未知';
-  const targetInjected = worldInfo.targetRoleInjected === true ? '是' : '否';
-  return {
-    materialLength,
-    recentMessageCount,
-    memoryCount,
-    grandMemoryCount,
-    emotionProfileCount,
-    usedCount,
-    materialSource,
-    targetInjected,
-  };
-}
-
 function renderManualCreateDraftStage(stage, index, expanded, stageErrors, currentStageId = '', disabled = false) {
   const stageId = stage.stageId || `S${index + 1}`;
   const errorText = stageErrors?.length ? `请补全：${stageErrors.join('、')}` : '';
@@ -558,42 +487,12 @@ function updateManualCreateDraftField(input) {
   }
 }
 
-function renderManualCreateContextResult(session) {
-  if (session.contextStatus === 'running') {
-    return '<div class="slx-affection-editor-status" data-slx-affection-create-context-status role="status">正在读取角色资料…</div>';
-  }
-  if (session.contextStatus === 'error') {
-    return `<div class="slx-affection-feedback is-error" data-slx-affection-create-context-status role="alert">${slxIcon('alert')}<span>${escapeHtml(session.contextError || '角色资料读取失败。')}</span></div>`;
-  }
-  if (session.contextStatus !== 'success' || !session.contextResult) return '';
-  const summary = formatManualContextSummary(session.contextResult);
-  return `
-    <div class="slx-affection-create-context-result" data-slx-affection-create-context-result>
-      <ul class="slx-affection-create-context-summary">
-        <li>参考资料总字符数：${summary.materialLength}</li>
-        <li>最近剧情数量：${summary.recentMessageCount}</li>
-        <li>memory 数量：${summary.memoryCount}</li>
-        <li>grand_memory 数量：${summary.grandMemoryCount}</li>
-        <li>Emotion Profile 数量：${summary.emotionProfileCount}</li>
-        <li>世界书条目：${summary.usedCount}</li>
-        <li>世界书材料来源：${escapeHtml(summary.materialSource)}</li>
-        <li>角色名是否加入扫描：${summary.targetInjected}</li>
-      </ul>
-      <details class="slx-affection-create-material-fold">
-        <summary>查看将发送的参考资料</summary>
-        <pre class="slx-affection-create-material-pre">${escapeHtml(session.contextResult.material || '')}</pre>
-      </details>
-    </div>
-  `;
-}
-
 export function renderManualAffectionCreateOverlay(store) {
   if (affectionPanelState.view !== 'create' || !affectionPanelState.manualCreate) return '';
   const session = affectionPanelState.manualCreate;
   const isCustom = session.buildMode === 'custom';
   const isBusy = session.generationStatus === 'running' || session.generationStatus === 'committing';
   const isCommitting = session.generationStatus === 'committing';
-  const isContextRunning = session.contextStatus === 'running';
   const fieldsDisabled = isBusy ? 'disabled' : '';
   const modeSubtitle = isCustom ? '专属阶段 · 生成后确认创建' : '通用阶段 · 不调用 API';
   const hasDraft = isCustom && isPlainObject(session.draft) && Array.isArray(session.draft.stages);
@@ -643,14 +542,10 @@ export function renderManualAffectionCreateOverlay(store) {
                 </div>
               </div>
               <div class="slx-affection-create-context-actions">
-                <button class="slx-soft-btn" type="button" data-slx-affection-test-create-context ${isBusy || isContextRunning ? 'disabled' : ''}>
-                  ${slxIcon('memoir')}<span>${isContextRunning ? '正在读取…' : '测试角色资料'}</span>
-                </button>
                 <button class="slx-soft-btn" type="button" data-slx-affection-generate-create-draft ${isBusy ? 'disabled' : ''}>
                   ${slxIcon('sparkles')}<span>${session.generationStatus === 'running' ? '正在生成专属阶段…' : '生成专属阶段'}</span>
                 </button>
               </div>
-              ${renderManualCreateContextResult(session)}
               ${session.generationStatus === 'running' ? '<div class="slx-affection-editor-status" role="status">正在生成专属阶段…</div>' : ''}
             ` : ''}
           </section>
@@ -1304,9 +1199,9 @@ function bindAffectionFormalEvents(panelRoot) {
     const session = affectionPanelState.manualCreate;
     if (!session || session.generationStatus === 'committing') return;
     session.roleName = event.currentTarget.value;
-    invalidateManualCreateDraft(session, { clearContext: true });
+    invalidateManualCreateDraft(session);
     session.error = '';
-    syncManualCreateDraftInvalidation(panelRoot, { clearContext: true });
+    syncManualCreateDraftInvalidation(panelRoot);
   });
 
   panelRoot.querySelector('[data-slx-affection-create-initial]')?.addEventListener('input', event => {
@@ -1315,7 +1210,7 @@ function bindAffectionFormalEvents(panelRoot) {
     session.initialValue = event.currentTarget.value;
     invalidateManualCreateDraft(session);
     session.error = '';
-    syncManualCreateDraftInvalidation(panelRoot, { clearContext: false });
+    syncManualCreateDraftInvalidation(panelRoot);
   });
 
   panelRoot.querySelector('[data-slx-affection-create-requirement]')?.addEventListener('input', event => {
@@ -1324,41 +1219,7 @@ function bindAffectionFormalEvents(panelRoot) {
     session.userRequirement = event.currentTarget.value;
     invalidateManualCreateDraft(session);
     session.error = '';
-    syncManualCreateDraftInvalidation(panelRoot, { clearContext: false });
-  });
-
-  panelRoot.querySelector('[data-slx-affection-test-create-context]')?.addEventListener('click', async event => {
-    const session = affectionPanelState.manualCreate;
-    if (!session) return;
-    const requestedRoleName = normalizeAffectionRoleName(session.roleName);
-    if (!requestedRoleName) {
-      session.error = '角色名不能为空。';
-      session.contextStatus = 'idle';
-      refreshPanel();
-      return;
-    }
-    const requestId = createManualContextRequestId();
-    session.contextRequestId = requestId;
-    session.contextStatus = 'running';
-    session.contextResult = null;
-    session.contextError = '';
-    session.error = '';
-    event.currentTarget.disabled = true;
-    refreshPanel();
-    const { resolveContext } = getManualCreateDeps();
-    try {
-      const result = await resolveContext(requestedRoleName);
-      if (!isActiveManualContextRequest(session, requestId, requestedRoleName)) return;
-      session.contextStatus = 'success';
-      session.contextResult = result;
-      session.contextError = '';
-    } catch (error) {
-      if (!isActiveManualContextRequest(session, requestId, requestedRoleName)) return;
-      session.contextStatus = 'error';
-      session.contextResult = null;
-      session.contextError = error?.message || String(error);
-    }
-    refreshPanel();
+    syncManualCreateDraftInvalidation(panelRoot);
   });
 
   panelRoot.querySelector('[data-slx-affection-generate-create-draft]')?.addEventListener('click', async event => {

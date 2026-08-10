@@ -144,9 +144,6 @@ function createPanelRoot() {
       if (sel === '[data-slx-affection-create-requirement]') {
         return ensure(sel, () => createClickable());
       }
-      if (sel === '[data-slx-affection-test-create-context]') {
-        return ensure(sel, () => createClickable());
-      }
       if (sel === '[data-slx-affection-generate-create-draft]') {
         return ensure(sel, () => createClickable());
       }
@@ -164,21 +161,10 @@ function createPanelRoot() {
         return node && !node.removed ? node : null;
       }
       if (
-        sel === '[data-slx-affection-create-context-result]'
-        || sel === '.slx-affection-create-context-result'
-      ) {
-        const node = store.get('[data-slx-affection-create-context-result]');
-        return node && !node.removed ? node : null;
-      }
-      if (
         sel === '[data-slx-affection-create-notice]'
         || sel === '[data-slx-affection-create-draft-notice]'
       ) {
         const node = store.get('[data-slx-affection-create-notice]');
-        return node && !node.removed ? node : null;
-      }
-      if (sel === '[data-slx-affection-create-context-status]') {
-        const node = store.get('[data-slx-affection-create-context-status]');
         return node && !node.removed ? node : null;
       }
       return null;
@@ -257,10 +243,6 @@ function createPanelRoot() {
       if (generate) {
         generate.disabled = isBusy;
       }
-      const testContext = this.querySelector('[data-slx-affection-test-create-context]');
-      if (testContext) {
-        testContext.disabled = isBusy || session?.contextStatus === 'running';
-      }
       if (hasDraft) {
         store.set('[data-slx-affection-create-draft-preview]', createClickable());
         // 为可编辑草稿重建字段节点，供 remount 后重新绑定
@@ -328,16 +310,6 @@ function createPanelRoot() {
         store.set('[data-slx-affection-create-notice]', createClickable());
       } else {
         store.delete('[data-slx-affection-create-notice]');
-      }
-      if (session?.contextStatus === 'success' && session.contextResult) {
-        store.set('[data-slx-affection-create-context-result]', createClickable());
-        store.get('[data-slx-affection-create-context-result]').textContent = String(session.contextResult.material || '');
-      } else if (session?.contextStatus === 'running' || session?.contextStatus === 'error') {
-        store.set('[data-slx-affection-create-context-status]', createClickable());
-        store.delete('[data-slx-affection-create-context-result]');
-      } else {
-        store.delete('[data-slx-affection-create-context-result]');
-        store.delete('[data-slx-affection-create-context-status]');
       }
       void html;
     },
@@ -438,7 +410,6 @@ async function withHarness(run, {
     });
     configureAffectionPanel({
       refreshPanel: null,
-      resolveManualContext: null,
       generateManualDraft: null,
       createManualGeneric: null,
       commitManualDraft: null,
@@ -489,7 +460,7 @@ test('create overlay generic and custom modes render exclusive fields with a11y'
     assert.match(html, /data-slx-affection-create-initial/);
     assert.match(html, /data-slx-affection-create-api/);
     assert.match(html, /阶段设计构思（可选）/);
-    assert.match(html, /data-slx-affection-test-create-context/);
+    assert.doesNotMatch(html, /data-slx-affection-test-create-context|测试角色资料/);
     assert.match(html, /data-slx-affection-generate-create-draft/);
 
     root.querySelectorAll('[data-slx-affection-create-mode]')[0].click();
@@ -688,10 +659,11 @@ test('createManualAffectionCreateState reads global defaults without mutating th
   const session = createManualAffectionCreateState(settings, 'chat-x');
   assert.equal(session.buildMode, 'generic');
   assert.equal(session.apiMode, 'main_api');
-  assert.equal(session.contextRequestId, '');
   assert.equal(session.draftExpandedStageId, '');
   assert.deepEqual(session.draftFieldErrors, {});
   assert.equal(session.draftDirty, false);
+  assert.equal(Object.hasOwn(session, 'contextRequestId'), false);
+  assert.equal(Object.hasOwn(session, 'contextStatus'), false);
 });
 
 function mockManualDraft(input, stages = createValidStages()) {
@@ -765,18 +737,15 @@ test('panel input change invalidates the active draft and disables commit immedi
     assert.equal(root.querySelector('[data-slx-affection-commit-create-draft]').disabled, true);
     assert.equal(root.querySelector('[data-slx-affection-create-notice]'), null);
 
-    // 角色名变化同时清空资料
-    session.contextStatus = 'success';
-    session.contextResult = { material: '旧资料', diagnostics: {} };
-    session.contextRequestId = 'old-req';
-    root.syncFromSession();
-    assert.ok(root.querySelector('[data-slx-affection-create-context-result]'));
-
+    // 角色名变化同样使草稿失效
+    root.querySelector('[data-slx-affection-create-role]').input('沈青');
+    root.querySelector('[data-slx-affection-create-initial]').input('35.0');
+    root.querySelector('[data-slx-affection-generate-create-draft]').click();
+    await flushMicrotasks();
+    assert.ok(session.draft);
     root.querySelector('[data-slx-affection-create-role]').input('萧景琰');
-    assert.equal(session.contextResult, null);
-    assert.equal(session.contextStatus, 'idle');
-    assert.equal(session.contextRequestId, '');
-    assert.equal(root.querySelector('[data-slx-affection-create-context-result]'), null);
+    assert.equal(session.draft, null);
+    assert.equal(session.generationStatus, 'idle');
   }, {
     panelOptions: {
       generateManualDraft: async (input) => {
@@ -793,74 +762,6 @@ test('panel input change invalidates the active draft and disables commit immedi
           stages: createValidStages(),
           contextDiagnostics: {},
           createdAt: 'now',
-        };
-      },
-    },
-  });
-});
-
-test('late context result is ignored after the role name changes', async () => {
-  let resolveOldContext;
-  const oldContextPromise = new Promise(resolve => {
-    resolveOldContext = resolve;
-  });
-  let contextCalls = 0;
-
-  await withHarness(async ({ mount }) => {
-    const root = mount();
-    openCreateView(root);
-
-    root.querySelector('[data-slx-affection-create-role]').input('梅长苏');
-    root.querySelector('[data-slx-affection-test-create-context]').click();
-    await flushMicrotasks();
-
-    const session = getManualAffectionCreateSession();
-    assert.equal(session.contextStatus, 'running');
-    assert.ok(session.contextRequestId);
-    const oldRequestId = session.contextRequestId;
-    assert.equal(contextCalls, 1);
-
-    // 角色名改为萧景琰 → 旧请求身份失效
-    root.querySelector('[data-slx-affection-create-role]').input('萧景琰');
-    assert.equal(session.contextRequestId, '');
-    assert.equal(session.contextStatus, 'idle');
-    assert.equal(session.contextResult, null);
-
-    resolveOldContext({
-      roleName: '梅长苏',
-      material: '梅长苏专属资料-不应出现',
-      diagnostics: {
-        worldInfo: { usedCount: 1, materialSource: 'injection', targetRoleInjected: true },
-      },
-    });
-    await flushMicrotasks();
-
-    assert.equal(getManualAffectionCreateSession().roleName, '萧景琰');
-    assert.equal(session.contextResult, null);
-    assert.notEqual(session.contextStatus, 'success');
-    assert.notEqual(session.contextRequestId, oldRequestId);
-    const html = renderManualAffectionCreateOverlay({});
-    assert.doesNotMatch(html, /梅长苏专属资料-不应出现/);
-    assert.equal(root.querySelector('[data-slx-affection-create-context-result]'), null);
-
-    // 新角色请求可正常成功
-    root.querySelector('[data-slx-affection-test-create-context]').click();
-    await flushMicrotasks();
-    assert.equal(session.contextStatus, 'success');
-    assert.match(session.contextResult.material, /萧景琰资料/);
-  }, {
-    panelOptions: {
-      resolveManualContext: async (roleName) => {
-        contextCalls += 1;
-        if (roleName === '梅长苏') {
-          return oldContextPromise;
-        }
-        return {
-          roleName,
-          material: `${roleName}资料`,
-          diagnostics: {
-            worldInfo: { usedCount: 0, materialSource: 'none', targetRoleInjected: true },
-          },
         };
       },
     },
