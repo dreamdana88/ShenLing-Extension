@@ -204,6 +204,7 @@ export const defaultGlobalSettings = Object.freeze({
     lastOpenedAt: '',
     sourceRulesCollapsed: true,
     showFloatingButton: true,
+    showWandMenuEntry: true,
     floatingButtonPosition: {
       desktop: null,
       mobile: null,

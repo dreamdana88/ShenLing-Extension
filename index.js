@@ -1176,6 +1176,72 @@ function syncFloatingButtonState(options = {}) {
   applyFloatingButtonCustomPosition(button, settings);
 }
 
+function shouldShowWandMenuEntry(settings = getGlobalSettings()) {
+  return Boolean(settings.enabled && settings.ui.showWandMenuEntry);
+}
+
+/**
+ * Idempotent mount of the SillyTavern magic-wand menu entry.
+ * Safe no-op when #extensionsMenu is missing.
+ */
+function ensureWandMenuEntry() {
+  const menu = document.querySelector('#extensionsMenu');
+  if (!menu) return false;
+
+  let container = document.querySelector('#shenling-assistant-wand-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'shenling-assistant-wand-container';
+    container.className = 'extension_container';
+    menu.appendChild(container);
+  }
+
+  // Hot-reload safety: keep exactly one container / entry in the document.
+  document.querySelectorAll('#shenling-assistant-wand-container').forEach((node, index) => {
+    if (index > 0) node.remove();
+  });
+  container = document.querySelector('#shenling-assistant-wand-container');
+  if (!container) return false;
+
+  let entry = container.querySelector('#shenling-assistant-wand-entry');
+  if (!entry) {
+    document.querySelectorAll('#shenling-assistant-wand-entry').forEach(node => node.remove());
+    entry = document.createElement('div');
+    entry.id = 'shenling-assistant-wand-entry';
+    entry.className = 'list-group-item flex-container flexGap5';
+    entry.setAttribute('role', 'button');
+    entry.setAttribute('tabindex', '0');
+    entry.title = '打开蜃灵助手';
+    entry.innerHTML = `
+      <div class="fa-solid fa-moon extensionsMenuExtensionButton"></div>
+      蜃灵助手
+    `;
+    entry.addEventListener('click', () => {
+      openFloatingPanel();
+    });
+    entry.dataset.slxWandBound = '1';
+    container.appendChild(entry);
+  } else {
+    container.querySelectorAll('#shenling-assistant-wand-entry').forEach((node, index) => {
+      if (index > 0) node.remove();
+    });
+  }
+
+  syncWandMenuEntryState();
+  return true;
+}
+
+function syncWandMenuEntryState() {
+  const settings = getGlobalSettings();
+  const container = document.querySelector('#shenling-assistant-wand-container');
+  if (!container) return;
+
+  const shouldShow = shouldShowWandMenuEntry(settings);
+  container.hidden = !shouldShow;
+  const entry = container.querySelector('#shenling-assistant-wand-entry');
+  if (entry) entry.hidden = !shouldShow;
+}
+
 function syncSettingsPanelState() {
   const settings = getGlobalSettings();
   const enabledInput = document.querySelector('#shenling-assistant-enabled');
@@ -1184,7 +1250,12 @@ function syncSettingsPanelState() {
   const floatingInput = document.querySelector('#shenling-assistant-floating-enabled');
   if (floatingInput) floatingInput.checked = Boolean(settings.ui.showFloatingButton);
 
+  const wandInput = document.querySelector('#shenling-assistant-wand-enabled');
+  if (wandInput) wandInput.checked = Boolean(settings.ui.showWandMenuEntry);
+
   syncFloatingButtonState();
+  ensureWandMenuEntry();
+  syncWandMenuEntryState();
 }
 
 function renderFloatingButton() {
@@ -1247,10 +1318,19 @@ function renderSettingsPanel() {
               <input id="shenling-assistant-enabled" type="checkbox" ${settings.enabled ? 'checked' : ''} />
               <span>启用插件</span>
             </label>
-            <label class="checkbox_label shenling-assistant-row" for="shenling-assistant-floating-enabled">
-              <input id="shenling-assistant-floating-enabled" type="checkbox" ${settings.ui.showFloatingButton ? 'checked' : ''} />
-              <span>启用悬浮球</span>
-            </label>
+          </div>
+          <div class="shenling-assistant-shortcut-group">
+            <div class="shenling-assistant-shortcut-label">快捷入口</div>
+            <div class="shenling-assistant-toggle-row">
+              <label class="checkbox_label shenling-assistant-row" for="shenling-assistant-floating-enabled">
+                <input id="shenling-assistant-floating-enabled" type="checkbox" ${settings.ui.showFloatingButton ? 'checked' : ''} />
+                <span>启用悬浮球</span>
+              </label>
+              <label class="checkbox_label shenling-assistant-row" for="shenling-assistant-wand-enabled">
+                <input id="shenling-assistant-wand-enabled" type="checkbox" ${settings.ui.showWandMenuEntry ? 'checked' : ''} />
+                <span>显示在魔法棒菜单</span>
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -1274,6 +1354,11 @@ function renderSettingsPanel() {
   });
   container.querySelector('#shenling-assistant-floating-enabled')?.addEventListener('change', event => {
     settings.ui.showFloatingButton = Boolean(event.currentTarget.checked);
+    saveGlobalSettings();
+    syncSettingsPanelState();
+  });
+  container.querySelector('#shenling-assistant-wand-enabled')?.addEventListener('change', event => {
+    settings.ui.showWandMenuEntry = Boolean(event.currentTarget.checked);
     saveGlobalSettings();
     syncSettingsPanelState();
   });
@@ -1396,6 +1481,8 @@ function init() {
   registerChatBeautifyRenderer();
   renderSettingsPanel();
   renderFloatingButton();
+  ensureWandMenuEntry();
+  syncSettingsPanelState();
 }
 
 if (document.readyState === 'loading') {
