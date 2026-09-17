@@ -70,6 +70,69 @@ import {
 
 const deferredGrandRecoveries = new Set();
 
+function getValidArchiveRecords(chatState, messages) {
+  const summaries = new Set(messages
+    .filter(message => GRAND_MEMORY_BLOCK_RE.test(String(message.message || '')))
+    .map(message => Number(message.message_id)));
+  return (chatState.summary.archiveRecords || []).filter(record => summaries.has(Number(record.summaryMessageId)));
+}
+
+function isCoveredByArchive(messageId, records) {
+  return records.some(record => messageId >= Number(record.archiveFrom) && messageId <= Number(record.archiveTo));
+}
+
+// A summary can be appended after newer, unarchived chat messages. Do not hide
+// gaps merely because they precede the summary's physical message ID.
+function collectTotalGrandHideCandidates(plan, chatState) {
+  const recordsById = new Map(chatState.summary.archiveRecords.map(record => [Number(record.summaryMessageId), record]));
+  const visited = new Set();
+  const ids = new Set();
+  function collect(record) {
+    const summaryId = Number(record.summaryMessageId);
+    if (visited.has(summaryId)) return;
+    visited.add(summaryId);
+    ids.add(summaryId);
+    if (Array.isArray(record.compressedRecordIds)) {
+      record.compressedRecordIds.forEach(id => {
+        const source = recordsById.get(Number(id));
+        if (source) collect(source);
+      });
+    } else {
+      createMessageIdRange(record.archiveFrom, record.archiveTo).forEach(id => ids.add(id));
+    }
+  }
+  plan.records.forEach(item => collect(item.record));
+  return [...ids];
+}
+
+// Only compute visibility here. Callers commit retained IDs after their existing chat guards succeed.
+export function buildArchiveVisibilityPlan(candidateIds, {
+  messages = getChatMessagesSafe(undefined, { hide_state: 'all' }),
+  chatState = getChatState(),
+  retainCount = getSummarySettings().retainRecentMessageCount,
+  excludeIds = [],
+} = {}) {
+  const count = Number.isSafeInteger(retainCount) && retainCount >= 0 ? retainCount : 0;
+  const isStory = message => (message.role === 'user' || message.role === 'assistant')
+    && !isGrandMemoryOnly(String(message.message || ''));
+  const storyMessages = messages.filter(isStory).sort((a, b) => Number(a.message_id) - Number(b.message_id));
+  const protectedIds = new Set(count > 0 ? storyMessages.slice(-count).map(message => Number(message.message_id)) : []);
+  const records = getValidArchiveRecords(chatState, messages);
+  const pendingIds = (chatState.summary.retainedArchiveMessageIds || [])
+    .filter(id => isCoveredByArchive(Number(id), records));
+  const candidates = new Set([...candidateIds, ...pendingIds].map(Number));
+  excludeIds.forEach(id => candidates.delete(Number(id)));
+  const hideIds = [];
+  const retainedIds = [];
+  for (const message of messages) {
+    const id = Number(message.message_id);
+    if (!candidates.has(id) || message.is_hidden) continue;
+    if (isStory(message) && protectedIds.has(id)) retainedIds.push(id);
+    else hideIds.push(id);
+  }
+  return { hideIds, retainedIds };
+}
+
 export function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
   const messages = createMessageIdRange(archiveFrom, archiveTo)
     .flatMap(messageId => getChatMessagesSafe(messageId, { hide_state: 'all' }))
@@ -264,10 +327,13 @@ export async function processAutoGrandMemory() {
 
     markSummaryWriteIgnored(Number(summaryMessageId));
 
-    const archiveMessageIds = createMessageIdRange(archiveFrom, archiveTo);
-    if (archiveMessageIds.length > 0) {
+    const visibilityPlan = buildArchiveVisibilityPlan(createMessageIdRange(archiveFrom, archiveTo), {
+      chatState,
+      excludeIds: [summaryMessageId],
+    });
+    if (visibilityPlan.hideIds.length > 0) {
       await setChatMessagesPartial(
-        archiveMessageIds.map(message_id => ({ message_id, is_hidden: true })),
+        visibilityPlan.hideIds.map(message_id => ({ message_id, is_hidden: true })),
         { refresh: 'all' },
       );
     }
@@ -296,10 +362,11 @@ export async function processAutoGrandMemory() {
     chatState.summary.lastArchivedMessageId = archiveTo;
     chatState.summary.lastGrandSummaryMessageId = Number(summaryMessageId);
     chatState.summary.archiveRecords = [...(chatState.summary.archiveRecords || []), archiveRecord];
+    chatState.summary.retainedArchiveMessageIds = visibilityPlan.retainedIds;
     chatState.summary.lastError = '';
     saveChatState();
     scanExistingSummaryState();
-    notifySummary('success', `已生成第 ${summaryMessageId} 楼大总结，并隐藏 ${archiveFrom}-${archiveTo}。`);
+    notifySummary('success', `已生成第 ${summaryMessageId} 楼大总结；本次隐藏 ${visibilityPlan.hideIds.length} 层，保留已归档剧情 ${visibilityPlan.retainedIds.length} 层。`);
     await processAutoTotalGrandMemory();
     await tryExtractMemoirAfterGrandSummary(archiveRecord, grandMemory);
     refreshSummaryPanelAfterAction();
@@ -519,6 +586,7 @@ export async function processTotalGrandMemory({
   const settings = getGlobalSettings();
   const summary = getSummarySettings(settings);
   const chatState = getChatState();
+  const chatIdentity = getCurrentChatIdentity();
   if (chatState.summary.runningTask !== 'none') return;
 
   const scope = captureManualChatScopeOrThrow(guardChatScope);
@@ -541,8 +609,6 @@ export async function processTotalGrandMemory({
     const memoryTo = plan.memoryTo ?? plan.archiveTo;
     const prompt = buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, material, { summary });
     // Manual panel passes configured; auto total keeps its own transportPolicy.
-    // 当前路径未启用 Manual Chat Scope Guard。
-    // 仅在出现真实、稳定、可复现的问题后单独立项。
     const generationOptions = transportPolicy === SUMMARY_TRANSPORT_POLICY.CONFIGURED
       ? createManualSummaryGenerationOptions('合并大总结', transportPolicy)
       : {
@@ -551,6 +617,7 @@ export async function processTotalGrandMemory({
       };
     const result = await generateSummaryMemory(prompt, generationOptions);
 
+    if (!isCurrentChatIdentity(chatIdentity)) return;
     let guard = evaluateManualChatGuards(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot));
     if (!guard.ok) {
       finalizeManualGuardDiscard(guard.reason, { scope, title: '总档案压缩' });
@@ -560,6 +627,7 @@ export async function processTotalGrandMemory({
     const grandMemory = forceGrandMemoryRange(result, memoryFrom, memoryTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
 
+    if (!isCurrentChatIdentity(chatIdentity)) return;
     guard = evaluateManualChatGuards(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot));
     if (!guard.ok) {
       // May leave an orphan total floor in A.
@@ -575,15 +643,18 @@ export async function processTotalGrandMemory({
 
     markSummaryWriteIgnored(Number(summaryMessageId));
 
-    const hideIds = createMessageIdRange(Number(plan.archiveFrom), Number(plan.archiveTo))
-      .filter(messageId => messageId !== Number(summaryMessageId));
-    if (hideIds.length > 0) {
+    const visibilityPlan = buildArchiveVisibilityPlan(collectTotalGrandHideCandidates(plan, getChatState()), {
+      chatState: getChatState(),
+      excludeIds: [summaryMessageId],
+    });
+    if (visibilityPlan.hideIds.length > 0) {
       await setChatMessagesPartial(
-        hideIds.map(message_id => ({ message_id, is_hidden: true })),
+        visibilityPlan.hideIds.map(message_id => ({ message_id, is_hidden: true })),
         { refresh: 'all' },
       );
     }
 
+    if (!isCurrentChatIdentity(chatIdentity)) return;
     guard = evaluateManualChatGuards(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot));
     if (!guard.ok) {
       finalizeManualGuardDiscard(guard.reason, {
@@ -615,13 +686,15 @@ export async function processTotalGrandMemory({
 
     currentChatState.summary.runningTask = 'none';
     currentChatState.summary.lastArchivedMessageId = plan.archiveTo;
+    currentChatState.summary.retainedArchiveMessageIds = visibilityPlan.retainedIds;
     currentChatState.summary.lastGrandSummaryMessageId = Number(summaryMessageId);
     currentChatState.summary.lastError = '';
     saveChatState();
     scanExistingSummaryState();
-    notifySummary('success', `已生成第 ${summaryMessageId} 楼总档案，并合并 ${plan.count} 条大总结。`, '总档案压缩');
+    notifySummary('success', `已生成第 ${summaryMessageId} 楼总档案，并合并 ${plan.count} 条大总结；本次隐藏 ${visibilityPlan.hideIds.length} 层，保留已归档剧情 ${visibilityPlan.retainedIds.length} 层。`, '总档案压缩');
     refreshSummaryPanelAfterAction();
   } catch (error) {
+    if (!isCurrentChatIdentity(chatIdentity)) return;
     if (scope) {
       const scopeResult = evaluateChatScope(scope);
       if (!scopeResult.valid) return;
@@ -649,12 +722,17 @@ export function cleanLegacyArchiveMessageContent(message, summary = getSummarySe
 }
 
 export function collectLegacyArchiveMessages(summary = getSummarySettings()) {
-  return getChatMessagesSafe(undefined, { hide_state: 'all' })
+  const messages = getChatMessagesSafe(undefined, { hide_state: 'all' });
+  const chatState = getChatState();
+  const records = getValidArchiveRecords(chatState, messages);
+  const retainedIds = new Set(chatState.summary.retainedArchiveMessageIds || []);
+  return messages
     .map(message => ({
       message,
       role: message.role === 'user' || message.is_user ? 'user' : 'assistant',
     }))
     .filter(record => !record.message.is_hidden && !isGrandMemoryOnly(record.message.message))
+    .filter(record => !retainedIds.has(Number(record.message.message_id)) || !isCoveredByArchive(Number(record.message.message_id), records))
     .filter(record => summary.includeUserInput || record.role === 'assistant')
     .map(record => ({
       messageId: record.message.message_id,
@@ -696,6 +774,7 @@ export async function processLegacyGrandArchive({
   const settings = getGlobalSettings();
   const summary = getSummarySettings(settings);
   const chatState = getChatState();
+  const chatIdentity = getCurrentChatIdentity();
   if (chatState.summary.runningTask !== 'none') return;
 
   const scope = captureManualChatScopeOrThrow(guardChatScope);
@@ -742,10 +821,16 @@ export async function processLegacyGrandArchive({
   notifySummary('info', '旧聊天归档开始：' + plan.batchTotal + ' 批。', '旧聊天归档');
   refreshSummaryPanelAfterAction();
 
-  const checkArchiveGuards = () => evaluateManualChatGuards(
-    scope,
-    () => isLegacyArchiveSnapshotValid(archiveSnapshot),
-  );
+  const checkArchiveGuards = (afterHide = false) => {
+    if (!isCurrentChatIdentity(chatIdentity)) return { ok: false, reason: 'CHAT_SCOPE_CHANGED' };
+    return evaluateManualChatGuards(scope, () => afterHide
+      ? archiveSnapshot.entries.every(entry => {
+        const message = getChatMessageById(entry.messageId);
+        return message && message.role === entry.role
+          && createMessageContentFingerprint(cleanLegacyArchiveMessageContent(message, summary)) === entry.fingerprint;
+      })
+      : isLegacyArchiveSnapshotValid(archiveSnapshot));
+  };
 
   try {
     let finalMaterial = '';
@@ -820,12 +905,18 @@ export async function processLegacyGrandArchive({
 
     markSummaryWriteIgnored(Number(summaryMessageId));
 
-    await setChatMessagesPartial(
-      plan.entries.map(entry => ({ message_id: entry.messageId, is_hidden: true })),
-      { refresh: 'all' },
-    );
+    const visibilityPlan = buildArchiveVisibilityPlan(plan.entries.map(entry => entry.messageId), {
+      chatState,
+      excludeIds: [summaryMessageId],
+    });
+    if (visibilityPlan.hideIds.length > 0) {
+      await setChatMessagesPartial(
+        visibilityPlan.hideIds.map(message_id => ({ message_id, is_hidden: true })),
+        { refresh: 'all' },
+      );
+    }
 
-    guard = checkArchiveGuards();
+    guard = checkArchiveGuards(true);
     if (!guard.ok) {
       finalizeManualGuardDiscard(guard.reason, {
         scope,
@@ -846,6 +937,8 @@ export async function processLegacyGrandArchive({
       createdAt: Date.now(),
     };
 
+    chatState.summary.retainedArchiveMessageIds = visibilityPlan.retainedIds;
+
     chatState.summary.runningTask = 'none';
     chatState.summary.memoryCountSinceArchive = 0;
     chatState.summary.memoryCountedMessageIds = [];
@@ -858,12 +951,12 @@ export async function processLegacyGrandArchive({
       batchSize,
       batchTotal: plan.batchTotal,
       batchIndex: plan.batchTotal,
-      lastResult: '已生成第 ' + summaryMessageId + ' 楼旧聊天大总结，并隐藏 ' + plan.totalMessages + ' 楼。',
+      lastResult: `已生成第 ${summaryMessageId} 楼旧聊天大总结；本次隐藏 ${visibilityPlan.hideIds.length} 层，保留已归档剧情 ${visibilityPlan.retainedIds.length} 层。`,
     };
     chatState.summary.lastError = '';
     saveChatState();
     scanExistingSummaryState();
-    notifySummary('success', '已生成第 ' + summaryMessageId + ' 楼旧聊天大总结。', '旧聊天归档');
+    notifySummary('success', `已生成第 ${summaryMessageId} 楼旧聊天大总结；本次隐藏 ${visibilityPlan.hideIds.length} 层，保留已归档剧情 ${visibilityPlan.retainedIds.length} 层。`, '旧聊天归档');
     await processEmotionUpdateFromArchiveResult(result, {
       messageId: Number(summaryMessageId),
       sourceType: 'legacy_archive',
@@ -871,6 +964,7 @@ export async function processLegacyGrandArchive({
     await processAutoTotalGrandMemory();
     refreshSummaryPanelAfterAction();
   } catch (error) {
+    if (!isCurrentChatIdentity(chatIdentity)) return;
     if (scope) {
       const scopeResult = evaluateChatScope(scope);
       if (!scopeResult.valid) return;

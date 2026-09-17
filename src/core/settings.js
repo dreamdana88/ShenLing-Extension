@@ -215,6 +215,7 @@ export const defaultGlobalSettings = Object.freeze({
       enabled: false,
       autoGrandMemoryEnabled: false,
       grandMemoryInterval: 6,
+      retainRecentMessageCount: 0,
       autoTotalGrandMemoryEnabled: false,
       totalGrandMemoryInterval: 5,
       legacyArchiveBatchSize: '',
@@ -342,6 +343,7 @@ export const defaultChatState = Object.freeze({
     smallSummaryCount: 0,
     memoryCountSinceArchive: 0,
     memoryCountedMessageIds: [],
+    retainedArchiveMessageIds: [],
     processedMessageFingerprints: {},
     lastSummaryMessageId: null,
     lastGrandSummaryMessageId: null,
@@ -525,6 +527,7 @@ export function normalizeSummaryLifecycleMetadata(chatState = getChatState()) {
   summary.lifecycleSchemaVersion = 1;
   summary.processedMessageFingerprints = normalizeProcessedMessageFingerprints(summary.processedMessageFingerprints);
   summary.memoryCountedMessageIds = normalizeMemoryCountedMessageIds(summary.memoryCountedMessageIds);
+  summary.retainedArchiveMessageIds = normalizeMemoryCountedMessageIds(summary.retainedArchiveMessageIds);
   delete summary.pending;
   summary.confirmedTasks = normalizeConfirmedSummaryTasks(summary.confirmedTasks);
 

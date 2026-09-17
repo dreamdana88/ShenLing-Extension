@@ -1612,10 +1612,19 @@ body.slx-panel-open-lock {
   color: #8b4b43;
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 13px;
+  max-width: calc(100% - 56px);
+}
+
+.slx-diary-page-footer-left > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .slx-diary-page-footer-left .slx-diary-page-corner-btn {
   position: static;
+  flex-shrink: 0;
 }
 
 .slx-diary-page-actions {
@@ -2381,6 +2390,10 @@ body.slx-panel-open-lock {
   color: #8b4b43;
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 13px;
+  max-width: calc(100% - 76px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .slx-diary-blank-page {
@@ -6203,6 +6216,7 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-book-info small {
   font-size: 11px;
   color: #a07060;
+  overflow-wrap: anywhere;
 }
 
 .slx-diary-tcho-open-pill {
@@ -6799,6 +6813,9 @@ body.slx-panel-open-lock {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 150px;
 }
 
 .slx-diary-tcho-open-pill {

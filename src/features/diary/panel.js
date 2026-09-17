@@ -15,6 +15,7 @@ import {
 import {
   getBackgroundStreamingEnabled,
   getChatState,
+  getContextInfo,
   getGlobalSettings,
   getWordReplaceSettings,
   saveChatState,
@@ -109,6 +110,8 @@ let diaryEditorState = {
   open: false,
   entryId: '',
 };
+
+let notebookNameEditor = null;
 
 export function configureDiaryPanel(options = {}) {
   panelOptions = {
@@ -391,6 +394,12 @@ function getRoleEntries(entries, roleName) {
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 }
 
+function getNotebookDisplayName(chatState, roleName) {
+  const cleanRoleName = normalizeRoleName(roleName);
+  const book = getDiaryStore(chatState).books.find(item => normalizeRoleName(item.roleName || item.name) === cleanRoleName);
+  return String(book?.displayName || '').trim() || cleanRoleName;
+}
+
 function getNotebooks(chatState) {
   const store = getDiaryStore(chatState);
   const entries = getDiaryEntries(chatState);
@@ -401,6 +410,7 @@ function getNotebooks(chatState) {
     if (!roleName) return;
     roles.set(roleName, {
       roleName,
+      displayName: getNotebookDisplayName(chatState, roleName),
       createdAt: String(book.createdAt || ''),
       updatedAt: String(book.updatedAt || ''),
       entryCount: 0,
@@ -413,6 +423,7 @@ function getNotebooks(chatState) {
     if (!roles.has(roleName)) {
       roles.set(roleName, {
         roleName,
+        displayName: roleName,
         createdAt: entry.createdAt || '',
         updatedAt: entry.updatedAt || '',
         entryCount: 0,
@@ -491,7 +502,7 @@ function renderDiaryCapacityWarning(notebooks, totalEntries) {
   if (!crowdedBooks.length) return '';
   const topBooks = crowdedBooks
     .slice(0, 3)
-    .map(book => `${book.roleName} ${book.entryCount} 篇`)
+    .map(book => `${book.displayName} ${book.entryCount} 篇`)
     .join('、');
 
   return `
@@ -561,11 +572,13 @@ function renderDiaryLibrary(chatState) {
             <div class="slx-diary-tcho-book-card">
               <span class="slx-diary-tcho-book-spine" style="background: ${escapeHtml(getTchoSpineColor(book.roleName))}"></span>
               <div class="slx-diary-tcho-book-info">
-                <b>${escapeHtml(book.roleName)}</b>
+                <b>${escapeHtml(book.displayName)}</b>
+                ${book.displayName !== book.roleName ? `<small>所属角色：${escapeHtml(book.roleName)}</small>` : ''}
                 <small>${escapeHtml(book.entryCount)} 篇日记</small>
               </div>
               <div class="slx-diary-tcho-book-actions">
                 <button class="slx-diary-tcho-open-pill" type="button" data-slx-open-diary-book="${escapeHtml(book.roleName)}">打开</button>
+                <button class="slx-diary-tcho-open-pill" type="button" data-slx-rename-diary-book="${escapeHtml(book.roleName)}">改名</button>
                 <button class="slx-diary-tcho-delete-pill" type="button" data-slx-delete-diary-book="${escapeHtml(book.roleName)}" title="删除日记本">
                   <i class="fa-solid fa-trash-can"></i>
                 </button>
@@ -655,6 +668,7 @@ function renderDiarySettings(chatState) {
 
 function renderDiaryCover(chatState) {
   const roleName = diaryPanelState.roleName;
+  const displayName = getNotebookDisplayName(chatState, roleName);
   const settings = getDiaryStore(chatState).settings;
   const coverTheme = getDiaryCoverTheme(settings.coverPreset);
   return `
@@ -664,10 +678,10 @@ function renderDiaryCover(chatState) {
       </button>
       <button class="slx-diary-cover ${coverTheme ? `slx-diary-cover-${coverTheme}` : ''}" type="button" data-slx-open-diary-toc>
         ${coverTheme
-          ? `<span class="slx-diary-cover-owner">${escapeHtml(roleName || '未命名角色')}</span>`
+          ? `<span class="slx-diary-cover-owner">${escapeHtml(displayName || '未命名角色')}</span>`
           : `
             <span class="slx-diary-cover-label">SHENLING DIARY</span>
-            <b>${escapeHtml(roleName || '未命名角色')}</b>
+            <b>${escapeHtml(displayName || '未命名角色')}</b>
           `}
       </button>
     </div>
@@ -708,7 +722,7 @@ function renderDiaryToc(chatState) {
         <button class="slx-diary-feather-btn" type="button" data-slx-open-diary-compose title="撰写日记">
           <i class="fa-solid fa-feather"></i>
         </button>
-        <div class="slx-diary-book-page-num">${escapeHtml(roleName || '')}</div>
+        <div class="slx-diary-book-page-num">${escapeHtml(getNotebookDisplayName(chatState, roleName))}</div>
       </section>
     </div>
   `;
@@ -748,7 +762,7 @@ function renderDiaryEntryPage(chatState) {
           <button class="slx-diary-page-corner-btn" type="button" data-slx-diary-back-toc title="返回目录">
             <i class="fa-solid fa-list"></i>
           </button>
-          <span>${escapeHtml(index + 1)}</span>
+          <span>${escapeHtml(getNotebookDisplayName(chatState, diaryPanelState.roleName))} · ${escapeHtml(index + 1)}</span>
         </div>
       </section>
       <section class="slx-diary-book-page slx-diary-book-page-right">
@@ -883,6 +897,31 @@ function renderDiaryEditor(chatState) {
   `;
 }
 
+function renderNotebookNameEditor(chatState) {
+  if (!notebookNameEditor) return '';
+  if (notebookNameEditor.chatId !== getContextInfo().chatId) {
+    notebookNameEditor = null;
+    return '';
+  }
+  const roleName = notebookNameEditor.roleName;
+  const book = getDiaryStore(chatState).books.find(item => normalizeRoleName(item.roleName || item.name) === roleName);
+  return `
+    <div class="slx-rule-modal slx-diary-editor-modal" data-slx-close-notebook-name>
+      <div class="slx-rule-modal-card slx-diary-editor-card" role="dialog" aria-modal="true" aria-label="日记本改名" data-slx-notebook-name-card>
+        <div class="slx-summary-card-head">
+          <div class="slx-detail-title">日记本改名</div>
+          <button class="slx-mini-action-btn" type="button" data-slx-close-notebook-name title="关闭"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="slx-form-grid">
+          <label class="slx-field"><span>所属角色</span><input type="text" readonly value="${escapeHtml(roleName)}" /></label>
+          <label class="slx-field"><span>日记本名称</span><input type="text" data-slx-notebook-display-name value="${escapeHtml(book?.displayName || '')}" placeholder="${escapeHtml(roleName)}" /><small>只改变显示名称；清空后恢复角色名。</small></label>
+        </div>
+        <button class="slx-soft-btn slx-primary-btn" type="button" data-slx-save-notebook-name>保存名称</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderDiaryNotebookBody(chatState) {
   if (diaryPanelState.screen === 'cover') return renderDiaryCover(chatState);
   if (diaryPanelState.screen === 'toc') return renderDiaryToc(chatState);
@@ -924,6 +963,7 @@ export function renderDiaryPanel(settings, chatState) {
     </div>
     ${renderDiaryNotebookModal(chatState)}
     ${renderDiaryEditor(chatState)}
+    ${renderNotebookNameEditor(chatState)}
   `;
 }
 
@@ -1291,9 +1331,10 @@ function deleteDiaryBook(roleName) {
   const store = getDiaryStore(chatState);
   const entries = getDiaryEntries(chatState);
   const deleteCount = entries.filter(entry => getEntryRoleName(entry) === cleanRoleName).length;
+  const displayName = getNotebookDisplayName(chatState, cleanRoleName);
   const message = deleteCount
-    ? `删除「${cleanRoleName}」这本日记本？里面的 ${deleteCount} 篇日记也会一起删除。`
-    : `删除「${cleanRoleName}」这本空日记本？`;
+    ? `删除「${displayName}」（所属角色：${cleanRoleName}）这本日记本？里面的 ${deleteCount} 篇日记也会一起删除。`
+    : `删除「${displayName}」（所属角色：${cleanRoleName}）这本空日记本？`;
   if (!confirm(message)) return;
 
   store.books = store.books.filter(book => normalizeRoleName(book.roleName || book.name) !== cleanRoleName);
@@ -1401,6 +1442,39 @@ function clearDiaryImage(key) {
 }
 
 export function bindDiaryPanelEvents(panelRoot) {
+  panelRoot.querySelectorAll('[data-slx-rename-diary-book]').forEach(button => {
+    button.addEventListener('click', () => {
+      notebookNameEditor = { roleName: button.dataset.slxRenameDiaryBook, chatId: getContextInfo().chatId };
+      refreshPanel();
+    });
+  });
+  panelRoot.querySelectorAll('[data-slx-close-notebook-name]').forEach(node => {
+    node.addEventListener('click', event => {
+      if (event.target.closest?.('[data-slx-notebook-name-card]') && !event.target.closest?.('[data-slx-close-notebook-name]')?.matches('button')) return;
+      notebookNameEditor = null;
+      refreshPanel();
+    });
+  });
+  panelRoot.querySelector('[data-slx-save-notebook-name]')?.addEventListener('click', () => {
+    if (!notebookNameEditor || notebookNameEditor.chatId !== getContextInfo().chatId) return;
+    const roleName = notebookNameEditor.roleName;
+    const displayName = String(panelRoot.querySelector('[data-slx-notebook-display-name]')?.value || '').trim();
+    ensureNotebook(roleName);
+    const store = getDiaryStore(getChatState());
+    const book = store.books.find(item => normalizeRoleName(item.roleName || item.name) === roleName);
+    if (displayName) book.displayName = displayName;
+    else delete book.displayName;
+    book.updatedAt = store.lastSavedAt = formatTimestamp();
+    saveChatState();
+    notebookNameEditor = null;
+    notifyDiary('success', `日记本名称已保存为「${displayName || roleName}」。`, '日记本改名');
+    refreshPanel();
+  });
+  panelRoot.querySelector('[data-slx-notebook-display-name]')?.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    panelRoot.querySelector('[data-slx-save-notebook-name]')?.click();
+  });
   panelRoot.addEventListener('click', event => {
     const openCover = event.target.closest?.('[data-slx-open-diary-toc]');
     if (openCover) {

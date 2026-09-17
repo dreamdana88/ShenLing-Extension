@@ -146,7 +146,7 @@ function renderArchiveRecordView(view) {
       <div class="slx-archive-top">
         <div class="slx-archive-title">
           第 ${escapeHtml(view.record.summaryMessageId)} 楼大总结
-          <span>${rangePrefix}隐藏 ${escapeHtml(view.record.archiveFrom)}-${escapeHtml(view.record.archiveTo)}</span>
+          <span>${rangePrefix}归档范围 ${escapeHtml(view.record.archiveFrom)}-${escapeHtml(view.record.archiveTo)}</span>
         </div>
         <button class="slx-mini-action-btn" type="button" data-slx-edit-grand-memory="${escapeHtml(view.record.summaryMessageId)}" title="编辑大总结正文" ${view.summaryMissing ? 'disabled' : ''}><i class="fa-solid fa-pen-to-square"></i></button>
       </div>
@@ -156,7 +156,7 @@ function renderArchiveRecordView(view) {
         ${view.missingIds.length ? `<span class="slx-archive-pill slx-archive-pill-warn">缺失 ${view.missingIds.length}</span>` : ''}
         <span class="slx-archive-pill${warnClass}">${escapeHtml(view.summaryStatus)}</span>
       </div>
-      ${view.visibleIds.length ? `<div class="slx-archive-detail">例外显示楼层：${escapeHtml(formatMessageIdList(view.visibleIds))}</div>` : ''}
+      ${view.visibleIds.length ? `<div class="slx-archive-detail">当前显示楼层：${escapeHtml(formatMessageIdList(view.visibleIds))}</div>` : ''}
       ${view.missingIds.length ? `<div class="slx-archive-detail slx-archive-warn">未找到楼层：${escapeHtml(formatMessageIdList(view.missingIds))}</div>` : ''}
     </div>
   `;
@@ -282,7 +282,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
   const compressedArchiveCount = archiveRecords.length - activeArchiveRecords.length;
   const latestArchiveRecord = activeArchiveRecords.at(-1) || archiveRecords.at(-1) || null;
   const latestArchiveLabel = latestArchiveRecord
-    ? `第 ${latestArchiveRecord.summaryMessageId ?? '?'} 楼 | 隐藏 ${latestArchiveRecord.archiveFrom ?? '?'}-${latestArchiveRecord.archiveTo ?? '?'}`
+    ? `第 ${latestArchiveRecord.summaryMessageId ?? '?'} 楼 | 归档范围 ${latestArchiveRecord.archiveFrom ?? '?'}-${latestArchiveRecord.archiveTo ?? '?'}`
     : '无';
   const latestLog = settings.communicationLog?.entries?.[0];
   const latestLogLabel = latestLog ? `${latestLog.status === 'failure' ? '失败' : '成功'} · ${latestLog.startedAt}` : '无';
@@ -362,7 +362,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
       <label class="slx-setting-toggle-row" for="slx-summary-grand-enabled">
         <span>
           <b>自动大总结</b>
-          <small>达到间隔后生成大总结并隐藏归档区间。</small>
+          <small>达到间隔后生成大总结，按保留设置隐藏已归档剧情。</small>
         </span>
         <input id="slx-summary-grand-enabled" type="checkbox" data-slx-summary-field="autoGrandMemoryEnabled" ${summary.autoGrandMemoryEnabled ? 'checked' : ''} />
       </label>
@@ -370,6 +370,11 @@ export function renderSummarySettingsPanel(settings, chatState) {
         <span>大总结间隔</span>
         <input type="number" min="1" step="1" data-slx-summary-field="grandMemoryInterval" value="${escapeHtml(grandInterval)}" />
         <small>每 N 次成功小总结后触发一次大总结。</small>
+      </label>
+      <label class="slx-field">
+        <span>归档后保留最近剧情消息数</span>
+        <input type="number" min="0" step="1" required data-slx-summary-field="retainRecentMessageCount" value="${escapeHtml(summary.retainRecentMessageCount)}" />
+        <small>用户消息与 AI 回复各算一条，不计系统消息与纯大总结楼。0 表示不保留；下次成功归档或合并生效，不恢复已隐藏楼层。</small>
       </label>
       <label class="slx-setting-toggle-row" for="slx-summary-total-grand-enabled">
         <span>
@@ -509,7 +514,17 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
     const field = input.dataset.slxSummaryField;
     if (!field || !Object.hasOwn(summary, field)) return false;
 
-    if (input.type === 'checkbox') {
+    if (field === 'retainRecentMessageCount') {
+      const value = Number(input.value);
+      if (!input.value.trim() || !Number.isSafeInteger(value) || value < 0) {
+        notifySummary('warning', '保留消息数必须是非负整数，当前输入未保存。', '总结设置');
+        input.setCustomValidity('请输入非负整数。');
+        input.reportValidity();
+        return false;
+      }
+      input.setCustomValidity('');
+      summary[field] = value;
+    } else if (input.type === 'checkbox') {
       summary[field] = Boolean(input.checked);
     } else if (input.type === 'number') {
       const value = Number.parseInt(input.value, 10);
