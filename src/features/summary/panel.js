@@ -348,45 +348,41 @@ export function renderSummarySettingsPanel(settings, chatState) {
       <label class="slx-setting-toggle-row" for="slx-summary-enabled">
         <span>
           <b>自动小总结</b>
-          <small>AI 回复后自动写入 memory。</small>
         </span>
         <input id="slx-summary-enabled" type="checkbox" data-slx-summary-field="enabled" ${summary.enabled ? 'checked' : ''} />
       </label>
       <label class="slx-setting-toggle-row" for="slx-summary-include-user-input">
         <span>
           <b>纳入用户输入</b>
-          <small>续写模式开启；转述模式关闭。</small>
         </span>
         <input id="slx-summary-include-user-input" type="checkbox" data-slx-summary-field="includeUserInput" ${summary.includeUserInput ? 'checked' : ''} />
       </label>
       <label class="slx-setting-toggle-row" for="slx-summary-grand-enabled">
         <span>
           <b>自动大总结</b>
-          <small>达到间隔后生成大总结，按保留设置隐藏已归档剧情。</small>
         </span>
         <input id="slx-summary-grand-enabled" type="checkbox" data-slx-summary-field="autoGrandMemoryEnabled" ${summary.autoGrandMemoryEnabled ? 'checked' : ''} />
       </label>
       <label class="slx-field slx-field-wide">
         <span>大总结间隔</span>
         <input type="number" min="1" step="1" data-slx-summary-field="grandMemoryInterval" value="${escapeHtml(grandInterval)}" />
-        <small>每 N 次成功小总结后触发一次大总结。</small>
+        <small>每 N 次成功小总结触发一次。</small>
       </label>
       <label class="slx-field">
-        <span>归档后保留最近剧情消息数</span>
+        <span>大总结后保留最近楼层</span>
         <input type="number" min="0" step="1" required data-slx-summary-field="retainRecentMessageCount" value="${escapeHtml(summary.retainRecentMessageCount)}" />
-        <small>用户消息与 AI 回复各算一条，不计系统消息与纯大总结楼。0 表示不保留；下次成功归档或合并生效，不恢复已隐藏楼层。</small>
+        <small>0 表示不保留。</small>
       </label>
       <label class="slx-setting-toggle-row" for="slx-summary-total-grand-enabled">
         <span>
           <b>自动合并大总结</b>
-          <small>未合并的大总结达到阈值后生成总档案。</small>
         </span>
         <input id="slx-summary-total-grand-enabled" type="checkbox" data-slx-summary-field="autoTotalGrandMemoryEnabled" ${summary.autoTotalGrandMemoryEnabled ? 'checked' : ''} />
       </label>
       <label class="slx-field slx-field-wide">
         <span>合并阈值</span>
         <input type="number" min="2" step="1" data-slx-summary-field="totalGrandMemoryInterval" value="${escapeHtml(totalGrandInterval)}" />
-        <small>例如 5：累计 5 条未合并大总结后自动压缩。</small>
+        <small>累计 N 条未合并大总结后压缩。</small>
       </label>
     </div>
 
@@ -394,7 +390,7 @@ export function renderSummarySettingsPanel(settings, chatState) {
       <div class="slx-summary-card-head">
         <div>
           <div class="slx-detail-title">正文读取规则</div>
-          ${sourceRulesCollapsed ? '' : '<p>这里只处理正文里的杂讯标签。&lt;memory&gt; 与 &lt;grand_memory&gt; 会由小总结/大总结流程单独读取，不作为默认排除项。</p>'}
+          ${sourceRulesCollapsed ? '' : '<p>只处理正文杂讯。不要排除 memory / grand_memory。</p>'}
         </div>
         <div class="slx-card-actions">
           ${sourceRulesCollapsed ? '' : '<button class="slx-mini-action-btn" type="button" data-slx-reset-source-tags title="恢复蜃灵默认标签"><i class="fa-solid fa-rotate-left"></i></button>'}
@@ -406,12 +402,10 @@ export function renderSummarySettingsPanel(settings, chatState) {
           <label class="slx-field slx-field-wide">
             <span>纳入正文标签</span>
             <input type="text" data-slx-summary-tag-field="includeTags" value="${escapeHtml(formatTagList(sourceTags.includeTags))}" placeholder="content" />
-            <small>用逗号分隔，例如 content。留空时会使用排除后的全文。</small>
           </label>
           <label class="slx-field slx-field-wide">
             <span>排除正文杂讯标签</span>
             <input type="text" data-slx-summary-tag-field="excludeTags" value="${escapeHtml(formatTagList(sourceTags.excludeTags))}" placeholder="thinking, wave" />
-            <small>用逗号分隔，例如 thinking, wave。不要默认排除 memory / grand_memory。</small>
           </label>
         </div>
         <div class="slx-tag-preview">
@@ -453,7 +447,6 @@ export function renderSummarySettingsPanel(settings, chatState) {
       <div class="slx-summary-card-head">
         <div>
           <div class="slx-detail-title">归档管理器</div>
-          <p>查看、编辑和刷新归档。</p>
         </div>
         <button class="slx-mini-action-btn" type="button" data-slx-refresh-archive-scan title="刷新归档状态"><i class="fa-solid fa-rotate-right"></i></button>
       </div>
@@ -464,11 +457,10 @@ export function renderSummarySettingsPanel(settings, chatState) {
 
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">旧聊天归档</div>
-      <p>把旧聊天分批整理为大总结。当前范围：${escapeHtml(legacyScopeLabel)}。</p>
+      <p>当前范围：${escapeHtml(legacyScopeLabel)}。</p>
       <label class="slx-field slx-field-wide">
         <span>每批楼层数</span>
         <input type="number" min="1" step="1" data-slx-legacy-archive-batch-size value="${escapeHtml(legacyBatchSize)}" placeholder="留空默认 30" />
-        <small>输入 4 就按每 4 楼一批；留空默认每 30 楼一批。</small>
       </label>
       <div class="slx-diagnostics">
         ${renderDiagnosticLine('归档取材', legacyScopeLabel)}
@@ -484,14 +476,13 @@ export function renderSummarySettingsPanel(settings, chatState) {
     </div>
     <div class="slx-detail-card slx-muted-card">
       <div class="slx-detail-title">小总结管理</div>
-      <p>重写或编辑指定楼层 memory。</p>
       <label class="slx-field slx-field-wide">
         <span>重写指定楼层小总结</span>
         <div class="slx-model-row">
           <input type="number" min="0" data-slx-rewrite-memory-floor placeholder="留空默认最新AI楼层" />
           <button class="slx-mini-action-btn" type="button" data-slx-rewrite-memory title="重新生成并覆盖该楼 memory" ${chatState.summary.runningTask !== 'none' ? 'disabled' : ''}><i class="fa-solid fa-rotate-right"></i></button>
         </div>
-        <small>适合大改楼层后刷新小总结，不会增加累计次数。</small>
+        <small>不会增加累计次数。</small>
       </label>
       <label class="slx-field slx-field-wide">
         <span>编辑指定楼层小总结</span>
@@ -499,7 +490,6 @@ export function renderSummarySettingsPanel(settings, chatState) {
           <input type="number" min="0" data-slx-edit-memory-floor placeholder="输入楼层号" />
           <button class="slx-mini-action-btn" type="button" data-slx-edit-memory title="读取该楼 memory"><i class="fa-solid fa-pen-to-square"></i></button>
         </div>
-        <small>适合只改几个字，保存后只覆盖该楼 memory。</small>
       </label>
     </div>
 
@@ -517,7 +507,7 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
     if (field === 'retainRecentMessageCount') {
       const value = Number(input.value);
       if (!input.value.trim() || !Number.isSafeInteger(value) || value < 0) {
-        notifySummary('warning', '保留消息数必须是非负整数，当前输入未保存。', '总结设置');
+        notifySummary('warning', '保留楼层数必须是非负整数，当前输入未保存。', '总结设置');
         input.setCustomValidity('请输入非负整数。');
         input.reportValidity();
         return false;
