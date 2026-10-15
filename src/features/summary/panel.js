@@ -22,7 +22,9 @@ import {
   normalizeMemoryBlock,
 } from '../../core/summary.js';
 import {
+  getChatState,
   getSummarySettings,
+  saveChatState,
   saveGlobalSettings,
 } from '../../core/settings.js';
 import {
@@ -30,6 +32,7 @@ import {
   createTotalGrandMemoryPlan,
   processLegacyGrandArchive,
   processTotalGrandMemory,
+  recoverStaleLegacyArchive,
   updateLegacyArchiveStatus,
 } from './archive.js';
 import { SUMMARY_TRANSPORT_POLICY } from './generation.js';
@@ -368,6 +371,11 @@ export function renderSummarySettingsPanel(settings, chatState) {
         <input type="number" min="1" step="1" data-slx-summary-field="grandMemoryInterval" value="${escapeHtml(grandInterval)}" />
         <small>每 N 次成功小总结触发一次。</small>
       </label>
+      <label class="slx-field slx-field-wide">
+        <span>手动总结单次等待上限（秒）</span>
+        <input type="number" min="1" max="3600" step="1" required data-slx-summary-field="manualGenerationTimeoutSeconds" value="${escapeHtml(summary.manualGenerationTimeoutSeconds)}" />
+        <small>默认 300，可调为 600、900 等，最长 3600 秒。用于手动总结、重新生成、大总结合并与旧聊天每批／最终合并；下次任务生效。</small>
+      </label>
       <label class="slx-field">
         <span>大总结后保留最近楼层</span>
         <input type="number" min="0" step="1" required data-slx-summary-field="retainRecentMessageCount" value="${escapeHtml(summary.retainRecentMessageCount)}" />
@@ -504,7 +512,17 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
     const field = input.dataset.slxSummaryField;
     if (!field || !Object.hasOwn(summary, field)) return false;
 
-    if (field === 'retainRecentMessageCount') {
+    if (field === 'manualGenerationTimeoutSeconds') {
+      const value = Number(input.value);
+      if (!input.value.trim() || !Number.isSafeInteger(value) || value < 1 || value > 3600) {
+        input.setCustomValidity('请输入 1～3600 之间的整数秒数。');
+        input.reportValidity();
+        notifySummary('warning', '等待上限必须为 1～3600 之间的整数秒数，当前输入未保存。', '总结设置');
+        return false;
+      }
+      input.setCustomValidity('');
+      summary[field] = value;
+    } else if (field === 'retainRecentMessageCount') {
       const value = Number(input.value);
       if (!input.value.trim() || !Number.isSafeInteger(value) || value < 0) {
         notifySummary('warning', '保留楼层数必须是非负整数，当前输入未保存。', '总结设置');
@@ -605,8 +623,16 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
   });
 
   panelRoot.querySelector('[data-slx-scan-legacy-archive]')?.addEventListener('click', () => {
+    recoverStaleLegacyArchive();
+    const chatState = getChatState();
+    if (chatState.summary.runningTask !== 'none') {
+      notifySummary('info', '当前总结任务仍在进行，请等待结束后重新扫描。', '旧聊天归档');
+      return;
+    }
     const batchSize = syncLegacyArchiveBatchSize();
     const plan = createLegacyArchivePlan(batchSize);
+    chatState.summary.lastError = '';
+    saveChatState();
     updateLegacyArchiveStatus({
       phase: 'scanned',
       totalMessages: plan.totalMessages,

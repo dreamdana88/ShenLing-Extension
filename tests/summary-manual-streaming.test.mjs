@@ -7,9 +7,11 @@ import {
   processAutoTotalGrandMemory,
   processLegacyGrandArchive,
   processTotalGrandMemory,
+  recoverStaleLegacyArchive,
 } from '../src/features/summary/archive.js';
 import {
   generateSummaryMemory,
+  createManualSummaryGenerationOptions,
   MANUAL_SUMMARY_GENERATION_TIMEOUT_MS,
   SUMMARY_TRANSPORT_POLICY,
 } from '../src/features/summary/generation.js';
@@ -954,4 +956,71 @@ test('workflow source keeps profileSnapshot out of transportPlan and freezes sec
     generation,
     /transportPlan\s*[:=][^\n]*profileSnapshot/,
   );
+});
+
+
+test('manual summary timeout setting changes request and timeout copy without changing the shared default', async () => {
+  await withSummaryHarness({}, async ({ context }) => {
+    const settings = context.extensionSettings[MODULE_NAME];
+    settings.modules = { summary: { manualGenerationTimeoutSeconds: 900 } };
+    const plan = { apiMode: 'main_api', actualMode: 'legacy' };
+    const options = createManualSummaryGenerationOptions('旧聊天大总结', SUMMARY_TRANSPORT_POLICY.CONFIGURED, plan);
+    assert.equal(options.timeoutMs, 900000);
+    assert.match(options.timeoutMessage, /900 秒/);
+    assert.equal(LONG_FORM_GENERATION_TIMEOUT_MS, 300000);
+    for (const invalid of [0, -1, 1.5, 3601]) {
+      settings.modules.summary.manualGenerationTimeoutSeconds = invalid;
+      const fallback = createManualSummaryGenerationOptions('旧聊天大总结', SUMMARY_TRANSPORT_POLICY.CONFIGURED, plan);
+      assert.equal(fallback.timeoutMs, 300000);
+      assert.match(fallback.timeoutMessage, /300 秒/);
+    }
+  });
+});
+
+test('legacy archive releases replacement metadata after failure and can retry without unlocking a live task', async () => {
+  await withLegacyArchiveHarness({ mode: 'main_api', batchSize: '1', messageCount: 2 }, async ({ context }) => {
+    globalThis.generateRaw = async () => {
+      assert.equal(recoverStaleLegacyArchive(), false);
+      assert.equal(context.chatMetadata[CHAT_STATE_KEY].summary.runningTask, 'legacy_grand_memory');
+      context.chatMetadata = structuredClone(context.chatMetadata);
+      throw new Error('模拟请求超时');
+    };
+    await processLegacyGrandArchive();
+    const failed = context.chatMetadata[CHAT_STATE_KEY].summary;
+    assert.equal(failed.runningTask, 'none');
+    assert.equal(failed.legacyArchiveStatus.phase, 'error');
+    assert.match(failed.lastError, /第 1 \/ 2 批摘要失败/);
+    assert.equal(context.chat.length, 2);
+    globalThis.generateRaw = async () => '<grand_memory>\n[volume: 0-1]\n重试成功\n</grand_memory>';
+    await processLegacyGrandArchive();
+    const retried = context.chatMetadata[CHAT_STATE_KEY].summary;
+    assert.equal(retried.runningTask, 'none');
+    assert.equal(retried.legacyArchiveStatus.phase, 'done');
+    assert.equal(retried.lastError, '');
+    assert.equal(context.chat.length, 3);
+  });
+});
+
+test('scan recovery releases only an abandoned legacy archive lock', async () => {
+  await withLegacyArchiveHarness({}, async ({ context }) => {
+    const summary = context.chatMetadata[CHAT_STATE_KEY].summary;
+    summary.runningTask = 'legacy_grand_memory';
+    assert.equal(recoverStaleLegacyArchive(), true);
+    assert.equal(summary.runningTask, 'none');
+    summary.runningTask = 'manual_memory';
+    assert.equal(recoverStaleLegacyArchive(), false);
+    assert.equal(summary.runningTask, 'manual_memory');
+  });
+});
+
+
+test('single-batch archive failure identifies final generation and releases the task', async () => {
+  await withLegacyArchiveHarness({ mode: 'main_api', messageCount: 1 }, async ({ context }) => {
+    globalThis.generateRaw = async () => { throw new Error('模拟最终合并超时'); };
+    await processLegacyGrandArchive();
+    const summary = context.chatMetadata[CHAT_STATE_KEY].summary;
+    assert.equal(summary.runningTask, 'none');
+    assert.match(summary.lastError, /最终大总结失败/);
+    assert.equal(context.chat.length, 1);
+  });
 });

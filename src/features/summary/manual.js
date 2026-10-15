@@ -518,11 +518,14 @@ export async function regenerateLatestGrandMemory({
       return;
     }
 
-    record.memoryFrom = archiveData.memoryFrom;
-    record.memoryTo = archiveData.memoryTo;
+    const currentChatState = getChatState();
+    const currentRecord = currentChatState.summary.archiveRecords.find(item => Number(item.summaryMessageId) === Number(record.summaryMessageId));
+    if (!currentRecord) throw new Error('原大总结归档记录已不存在，请刷新归档状态。');
+    currentRecord.memoryFrom = archiveData.memoryFrom;
+    currentRecord.memoryTo = archiveData.memoryTo;
 
-    chatState.summary.runningTask = 'none';
-    chatState.summary.lastError = '';
+    currentChatState.summary.runningTask = 'none';
+    currentChatState.summary.lastError = '';
     saveChatState();
     scanExistingSummaryState();
     notifySummary('success', `已重新生成第 ${record.summaryMessageId} 楼大总结。`, '归档管理器');
@@ -536,8 +539,9 @@ export async function regenerateLatestGrandMemory({
       }
     }
     clearSummaryWriteIgnored(Number(record.summaryMessageId), scope?.chatId);
-    chatState.summary.runningTask = 'none';
-    chatState.summary.lastError = error.message || String(error);
+    const currentChatState = getChatState();
+    currentChatState.summary.runningTask = 'none';
+    currentChatState.summary.lastError = error.message || String(error);
     saveChatState();
     notifySummary('error', error.message || String(error), '重新生成大总结失败');
     refreshSummaryPanelAfterAction();

@@ -15,6 +15,7 @@ import { replacePromptMessageMacros } from '../../core/macros.js';
 import {
   getBackgroundStreamingEnabled,
   getGlobalSettings,
+  getSummarySettings,
 } from '../../core/settings.js';
 import { buildMemorySummaryMessages } from '../../core/summary.js';
 import {
@@ -40,7 +41,7 @@ export const SUMMARY_TRANSPORT_POLICY = Object.freeze({
   LEGACY: 'legacy',
 });
 
-/** Manual Summary / Grand / archive generation timeout (same long-form 300s contract). */
+/** Default manual Summary / Grand / archive timeout; the summary setting can override it. */
 export const MANUAL_SUMMARY_GENERATION_TIMEOUT_MS = LONG_FORM_GENERATION_TIMEOUT_MS;
 
 function normalizeSummaryApiMode(apiMode, settings = getGlobalSettings()) {
@@ -84,9 +85,10 @@ export function resolveSummaryTransportPlan({
   return plan;
 }
 
-function buildManualSummaryTimeoutMessage(featureName, apiMode, transportPlan) {
+function buildManualSummaryTimeoutMessage(featureName, apiMode, transportPlan, timeoutMs) {
   return getLongFormGenerationTimeoutMessage(featureName, apiMode, {
     transportMode: transportPlan?.actualMode || 'legacy',
+    timeoutMs,
   });
 }
 
@@ -117,7 +119,7 @@ export async function generateSummaryMemory(prompt, {
   if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
     generationOptions.timeoutMs = timeoutMs;
     generationOptions.timeoutMessage = timeoutMessage
-      || buildManualSummaryTimeoutMessage(type, resolvedApiMode, plan);
+      || buildManualSummaryTimeoutMessage(type, resolvedApiMode, plan, timeoutMs);
   }
 
   if (resolvedApiMode === 'main_api') {
@@ -231,6 +233,10 @@ export function createManualSummaryGenerationOptions(
   profileSnapshot = null,
 ) {
   const settings = getGlobalSettings();
+  const seconds = getSummarySettings(settings).manualGenerationTimeoutSeconds;
+  const timeoutMs = Number.isSafeInteger(seconds) && seconds >= 1 && seconds <= 3600
+    ? seconds * 1000
+    : MANUAL_SUMMARY_GENERATION_TIMEOUT_MS;
   const plan = transportPlan || resolveSummaryTransportPlan({
     transportPolicy,
     settings,
@@ -240,8 +246,8 @@ export function createManualSummaryGenerationOptions(
     transportPolicy,
     transportPlan: plan,
     profileSnapshot,
-    timeoutMs: MANUAL_SUMMARY_GENERATION_TIMEOUT_MS,
-    timeoutMessage: buildManualSummaryTimeoutMessage(type, plan.apiMode, plan),
+    timeoutMs,
+    timeoutMessage: buildManualSummaryTimeoutMessage(type, plan.apiMode, plan, timeoutMs),
   };
 }
 

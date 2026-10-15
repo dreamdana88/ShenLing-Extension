@@ -215,6 +215,7 @@ export const defaultGlobalSettings = Object.freeze({
       enabled: false,
       autoGrandMemoryEnabled: false,
       grandMemoryInterval: 6,
+      manualGenerationTimeoutSeconds: 300,
       retainRecentMessageCount: 0,
       autoTotalGrandMemoryEnabled: false,
       totalGrandMemoryInterval: 5,

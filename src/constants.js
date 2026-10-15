@@ -1,7 +1,7 @@
 export const MODULE_NAME = 'shenling_assistant';
 export const CHAT_STATE_KEY = `${MODULE_NAME}_chat_state`;
 export const STORAGE_VERSION = 1;
-export const PLUGIN_VERSION = '0.17.37';
+export const PLUGIN_VERSION = '0.17.38';
 export const DEFAULT_SUMMARY_INCLUDE_TAGS = Object.freeze(['content']);
 export const DEFAULT_SUMMARY_EXCLUDE_TAGS = Object.freeze(['thinking', 'wave']);
 export const MEMORY_BLOCK_RE = /<memory>[\s\S]*?<\/memory>/gi;
@@ -22,10 +22,10 @@ export const GENERATION_TRANSPORT_MODE = Object.freeze({
 export function getLongFormGenerationTimeoutMessage(
   featureName,
   apiMode,
-  { transportMode = GENERATION_TRANSPORT_MODE.LEGACY } = {},
+  { transportMode = GENERATION_TRANSPORT_MODE.LEGACY, timeoutMs = LONG_FORM_GENERATION_TIMEOUT_MS } = {},
 ) {
   const label = String(featureName || '生成').trim() || '生成';
-  const seconds = LONG_FORM_GENERATION_TIMEOUT_MS / 1000;
+  const seconds = timeoutMs / 1000;
   if (transportMode === GENERATION_TRANSPORT_MODE.STREAM) {
     return `${label}生成等待超过 ${seconds} 秒，已请求停止后台流式生成，请稍后重试。`;
   }
