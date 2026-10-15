@@ -17,10 +17,6 @@ export function registerPendingCommitHandler(id, handler) {
   };
 }
 
-export function getPendingCommitHandlerIds() {
-  return [...pendingCommitHandlers.keys()];
-}
-
 export async function runPendingCommitHandlers(handlerEntries = [], context = {}) {
   const entries = Array.isArray(handlerEntries) ? handlerEntries : [];
   const results = [];
@@ -64,8 +60,4 @@ export function registerPendingCommitEvents() {
   if (!stop) return false;
   pendingCommitEventStop = stop;
   return true;
-}
-
-export function isPendingCommitEventRegistered() {
-  return Boolean(pendingCommitEventStop);
 }

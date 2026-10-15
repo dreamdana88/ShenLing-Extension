@@ -68,10 +68,6 @@ export function shouldRunWordReplace(settings = getGlobalSettings()) {
   return Boolean(settings.enabled && getWordReplaceSettings(settings).enabled);
 }
 
-export function shouldRunMessagePostprocess(settings = getGlobalSettings()) {
-  return shouldRunAutoSummary(settings) || shouldRunWordReplace(settings);
-}
-
 export async function processImmediateWordReplace(messageId) {
   const settings = getGlobalSettings();
   const wordReplace = getWordReplaceSettings(settings);

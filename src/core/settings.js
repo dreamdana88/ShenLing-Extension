@@ -325,12 +325,6 @@ export function getBackgroundStreamingEnabled(settings = getGlobalSettings()) {
   return normalizeGenerationSettings(settings).backgroundStreamingEnabled === true;
 }
 
-export function setBackgroundStreamingEnabled(enabled, settings = getGlobalSettings()) {
-  const generation = normalizeGenerationSettings(settings);
-  generation.backgroundStreamingEnabled = enabled === false ? false : true;
-  return generation.backgroundStreamingEnabled;
-}
-
 export const defaultChatState = Object.freeze({
   schemaVersion: STORAGE_VERSION,
   identity: {

@@ -29,14 +29,6 @@ function isPromptBundle(prompt) {
   return Boolean(prompt && typeof prompt === 'object' && prompt[PROMPT_BUNDLE_MARKER]);
 }
 
-export function flattenSummaryPrompt(prompt) {
-  return isPromptBundle(prompt) ? prompt.flatContent : String(prompt || '');
-}
-
-export function getSummaryPromptUserInput(prompt) {
-  return isPromptBundle(prompt) ? prompt.userContent : String(prompt || '');
-}
-
 export function stripMemoryBlock(content) {
   return String(content || '').replace(MEMORY_BLOCK_RE, '').trim();
 }

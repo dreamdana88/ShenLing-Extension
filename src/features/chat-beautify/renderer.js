@@ -784,10 +784,6 @@ export function registerChatBeautifyRenderer() {
   scheduleBeautifyRefresh({ full: true });
 }
 
-export function refreshChatBeautifyRenderer() {
-  scheduleBeautifyRefresh({ full: true });
-}
-
 export function clearChatBeautifyRenderer(options = {}) {
   if (refreshTimer !== null && refreshTimer !== undefined) {
     window.clearTimeout(refreshTimer);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { CHAT_STATE_KEY, MODULE_NAME, PLUGIN_VERSION } from '../src/constants.js';
+import { CHAT_STATE_KEY, MODULE_NAME } from '../src/constants.js';
 import {
   commitAffectionUpdateFromConfirmedSummary,
   commitSelectedPendingAffectionUpdates,
@@ -360,10 +360,6 @@ test('rewriteAffectionMemoryFields removes retired first lines', () => {
   );
   assert.match(rewritten, /\[affection:沈青\|0\.1\|35\.1\]/);
   assert.doesNotMatch(rewritten, /affection_first/);
-});
-
-test('plugin version is 0.17.35 after magic wand entry', () => {
-  assert.equal(PLUGIN_VERSION, '0.17.35');
 });
 
 test('formal affection panel keeps responsive styles after diagnostics retirement', async () => {

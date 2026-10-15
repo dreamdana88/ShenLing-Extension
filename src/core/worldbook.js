@@ -40,16 +40,6 @@ function resolveTavernHelperWorldbookFunction(name) {
   return null;
 }
 
-/** Memoir 写入与“新建并切换”所需的最小函数是否可用。 */
-export function isWorldbookApiAvailable() {
-  return !!resolveTavernHelperWorldbookFunction('getWorldbookNames')
-    && !!resolveTavernHelperWorldbookFunction('getChatWorldbookName')
-    && !!resolveTavernHelperWorldbookFunction('rebindChatWorldbook')
-    && !!resolveTavernHelperWorldbookFunction('getWorldbook')
-    && !!resolveTavernHelperWorldbookFunction('createWorldbook')
-    && !!resolveTavernHelperWorldbookFunction('updateWorldbookWith');
-}
-
 /** 只读消费者所需的世界书能力；角色绑定查询在旧 Compatibility 环境中允许缺失。 */
 export function getWorldbookReadApi() {
   const getWorldbookNames = resolveTavernHelperWorldbookFunction('getWorldbookNames');

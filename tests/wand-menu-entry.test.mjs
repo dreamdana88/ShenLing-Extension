@@ -286,8 +286,10 @@ test('设置页包含快捷入口分组与 wand checkbox', () => {
   assert.match(indexSource, /fa-moon/);
 });
 
-test('版本三处一致 = 0.17.35', () => {
-  assert.equal(PLUGIN_VERSION, '0.17.35');
-  assert.equal(manifest.version, '0.17.35');
-  assert.match(readme, /当前版本：`0\.17\.35`/);
+test('版本三处一致（constants / manifest / README）', () => {
+  assert.equal(PLUGIN_VERSION, manifest.version);
+  assert.ok(
+    readme.includes(`当前版本：\`${manifest.version}\``),
+    `README 当前版本应为 ${manifest.version}`,
+  );
 });

@@ -67,13 +67,6 @@ export function createSimpleFingerprint(content) {
   return `${text.length}:${hash}`;
 }
 
-export function hasMessageBeenCountedForMemory(chatState, messageId) {
-  return (
-    chatState.summary.memoryCountedMessageIds.includes(messageId) ||
-    Object.hasOwn(chatState.summary.processedMessageFingerprints || {}, String(messageId))
-  );
-}
-
 export function collectPriorMemoriesForSummary(messageId) {
   if (!Number.isFinite(Number(messageId)) || Number(messageId) <= 0) return [];
 
