@@ -625,7 +625,7 @@ export function buildEmotionUpdatePromptSection({
 
 只有正文/剧情事实确实支持时才 changed=true。
 
-请在 <memory> 内追加情感判断行，位置放在 [db:...] 之后、[progress:...] 之前。
+请在 <memory> 内的 [db:...] 之后追加情感判断行。
 
 如果本轮存在显著情感变化，输出：
 [emotion_changed:true]
@@ -675,7 +675,7 @@ export function buildAffectionUpdatePromptSection({
 
 若当前没有已建档角色（已知攻略状态为“暂无已建档角色”或等价空名单），本轮不输出任何 affection 行。
 
-请在 [emotion:...] 之后、[progress:...] 之前追加（仅当存在已建档角色且本轮有可判断变化时）：
+请在情感判断行之后追加；未输出情感判断行时，在 <memory> 内已有记忆字段之后追加（仅当存在已建档角色且本轮有可判断变化时）：
 [affection:\${角色名}|\${好感变化值}]
 
 要求：
