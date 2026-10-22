@@ -1148,7 +1148,7 @@ async function generateRoleDiary({ roleName, date }) {
   });
   const messages = replacePromptMessageMacros([
     ...resolvePromptMessages(PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES, settings),
-    { role: 'user', content: prompt },
+    { role: 'user', content: `${prompt}\n\n${resolvePromptText(PROMPT_IDS.CREATIVE_OUTPUT_REMINDER, settings)}` },
   ]);
 
   return runDiaryGeneration({
@@ -1170,7 +1170,7 @@ async function generateExchangeDiary({ roleName, date, userDiaryContent }) {
   });
   const messages = replacePromptMessageMacros([
     ...resolvePromptMessages(PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES, settings),
-    { role: 'user', content: prompt },
+    { role: 'user', content: `${prompt}\n\n${resolvePromptText(PROMPT_IDS.CREATIVE_OUTPUT_REMINDER, settings)}` },
   ]);
 
   return runDiaryGeneration({

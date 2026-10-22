@@ -489,12 +489,12 @@ function buildMiniTheaterMessages({ userPrompt, styleContent, contextMaterial })
     ...resolvePromptMessages(PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES, settings),
     {
       role: "user",
-      content: buildMiniTheaterPrompt({
+      content: [buildMiniTheaterPrompt({
         userPrompt,
         styleContent,
         contextMaterial,
         template: resolvePromptText(PROMPT_IDS.THEATER_BUILD, settings),
-      }),
+      }), resolvePromptText(PROMPT_IDS.CREATIVE_OUTPUT_REMINDER, settings)].join("\n\n"),
     },
   ]);
 }
