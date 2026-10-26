@@ -798,7 +798,6 @@ export async function processLegacyGrandArchive({
     } else {
       const batchSummaries = [];
       for (const [index, batch] of plan.batches.entries()) {
-        if (discardOnArchiveGuardFailure()) return;
         updateLegacyArchiveStatus({
           phase: 'batching',
           batchIndex: index + 1,
@@ -815,8 +814,6 @@ export async function processLegacyGrandArchive({
       }
       finalMaterial = buildLegacyArchiveFinalMaterial(batchSummaries);
     }
-
-    if (discardOnArchiveGuardFailure()) return;
 
     updateLegacyArchiveStatus({
       phase: 'finalizing',
