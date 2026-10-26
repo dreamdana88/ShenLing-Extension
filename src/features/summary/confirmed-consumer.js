@@ -310,6 +310,7 @@ export function createConfirmedSummaryConsumer(options = {}) {
     if (typeof generateGroup !== 'function' || typeof writeGroup !== 'function') return;
     const group = [];
     let queueChanged = false;
+    const committedTasks = [];
     for (const task of pendingTasks) {
       if (group.length >= batchSize) break;
       if (!isTargetValid(task)) {
@@ -329,14 +330,17 @@ export function createConfirmedSummaryConsumer(options = {}) {
         task.status = 'SUMMARIZED';
         task.updatedAt = formatTimestamp();
         queueChanged = true;
-        void Promise.resolve(onSummaryCommitted?.(task)).catch(error => {
-          console.warn('[蜃灵助手] confirmed Summary 下游 effect 调度失败。', error);
-        });
+        committedTasks.push(task);
         continue;
       }
       group.push(task);
     }
     if (queueChanged) saveState();
+    committedTasks.forEach(committed => {
+      void Promise.resolve(onSummaryCommitted?.(committed)).catch(error => {
+        console.warn('[蜃灵助手] confirmed Summary 下游 effect 调度失败。', error);
+      });
+    });
     if (group.length < batchSize) return;
     if (group.some(isAwaitingGenerationTerminal)) return;
     await runConfirmedTaskGroup(state, group);

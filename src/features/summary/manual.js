@@ -55,6 +55,7 @@ import {
   getLatestArchiveBoundary,
   hasMatchingSummarizedConfirmedTask,
 } from './archive.js';
+import { SUMMARY_MERGED_BATCH_INSTRUCTION } from '../../prompts.js';
 import {
   createManualSummaryGenerationOptions,
   generateSummaryMemory,
@@ -488,6 +489,7 @@ export async function regenerateMemoryForMessage(messageId, {
     const emotionPromptSection = buildEmotionUpdatePromptSection(getGlobalSettings());
     const plotOutlineProgressSection = buildPlotOutlineProgressPromptSection(getChatState());
     const result = await generateSummaryMemory(buildMemorySummaryPrompt(promptContent, priorMemories, summary, {
+      ...(groupMaterials ? { materialInstructions: SUMMARY_MERGED_BATCH_INSTRUCTION } : {}),
       extraInstructions: joinSummaryExtraInstructions(emotionPromptSection, plotOutlineProgressSection),
     }), createManualSummaryGenerationOptions('手动重写小总结', transportPolicy));
 

@@ -7,6 +7,7 @@ import {
   markChatScopeChanged,
   resetChatScopeEpochForTests,
 } from '../src/core/chat-scope.js';
+import { getAssistantMessageContentFingerprint } from '../src/core/message-fingerprint.js';
 import {
   processLegacyGrandArchive,
   processTotalGrandMemory,
@@ -705,5 +706,92 @@ test('host-write pending A→B→A still discards post-write metadata commit', a
     } finally {
       write.restoreConsole();
     }
+  });
+});
+
+// ── Phase 2: 合并小总结楼层的手动整组重写 ─────────────────────────────
+
+function mergedTask(message, overrides = {}) {
+  return {
+    taskKey: `t${message.message_id}`,
+    chatIdentity: 'chat-a',
+    originalMessageId: message.message_id,
+    assistantFingerprint: getAssistantMessageContentFingerprint(message),
+    selectedSwipeId: 0,
+    confirmingUserMessageId: message.message_id - 1,
+    confirmingUserFingerprint: '1:2',
+    status: 'SUMMARIZED',
+    createdAt: 'a',
+    updatedAt: 'a',
+    ...overrides,
+  };
+}
+
+/** Floors 2/4/6/8: a merged group of 4; memory block only on the lead (8). */
+function mergedGroupChat() {
+  return [
+    assistant(0, '0楼开场'),
+    assistant(1, '用户输入', { role: 'user' }),
+    assistant(2, '成员2正文'),
+    assistant(3, '用户输入', { role: 'user' }),
+    assistant(4, '成员4正文'),
+    assistant(5, '用户输入', { role: 'user' }),
+    assistant(6, '成员6正文'),
+    assistant(7, '用户输入', { role: 'user' }),
+    assistant(8, 'lead8正文\n<memory>旧合并</memory>'),
+  ];
+}
+
+function mergedGroupSummary(chat) {
+  return {
+    confirmedTasks: [2, 4, 6, 8].map(id => mergedTask(chat[id])),
+  };
+}
+
+for (const rewriteFloor of [2, 8]) {
+  test(`manual rewrite on floor ${rewriteFloor} of a merged group rewrites the whole group, replacing only the lead block`, async () => {
+    const chat = mergedGroupChat();
+    await withManualScopeHarness({
+      chatA: chat,
+      summaryA: mergedGroupSummary(chat),
+      generateImpl: request => {
+        const flat = request?.flatContent ?? JSON.stringify(request);
+        assert.ok(flat.includes('成员2正文'), 'group material includes member 2');
+        assert.ok(flat.includes('成员6正文'), 'group material includes member 6');
+        assert.ok(flat.includes('合并为一条小总结'), 'merged instruction is sent');
+        return '<memory>\n整组重写结果\n</memory>';
+      },
+    }, async ({ contextA, hostCalls, manualOptions }) => {
+      await regenerateMemoryForMessage(rewriteFloor, manualOptions);
+
+      assert.equal(hostCalls.set.length, 1, 'exactly one floor write');
+      assert.equal(hostCalls.set[0].updates.length, 1);
+      assert.equal(Number(hostCalls.set[0].updates[0].message_id), 8, 'write targets the lead floor');
+      assert.ok(contextA.chat[8].message.includes('整组重写结果'), 'lead block replaced');
+      assert.ok(contextA.chat[8].message.includes('lead8正文'), 'lead body kept');
+      for (const memberId of [2, 4, 6]) {
+        assert.equal(contextA.chat[memberId].message.includes('<memory>'), false, `member ${memberId} gets no new block`);
+      }
+    });
+  });
+}
+
+test('manual group rewrite discards the result when a member floor changes during generation', async () => {
+  const chat = mergedGroupChat();
+  await withManualScopeHarness({
+    chatA: chat,
+    summaryA: mergedGroupSummary(chat),
+  }, async ({ contextA, hostCalls, resolveGenerate, manualOptions }) => {
+    const run = regenerateMemoryForMessage(8, manualOptions);
+    await Promise.resolve();
+    // Member floor 4 edited while generation is in flight.
+    contextA.chat[4].message = '成员4正文 已被编辑';
+    resolveGenerate('<memory>\n过期结果\n</memory>');
+    await run;
+
+    assert.equal(hostCalls.set.length, 0, 'nothing is written');
+    assert.equal(contextA.chat[8].message, 'lead8正文\n<memory>旧合并</memory>');
+    assert.equal(contextA.chatMetadata[CHAT_STATE_KEY].summary.runningTask, 'none');
+    assert.equal(contextA.chatMetadata[CHAT_STATE_KEY].summary.lastError, '目标内容在任务期间发生变化，本次结果已丢弃，请重新执行。');
   });
 });
