@@ -1005,10 +1005,6 @@ body.slx-panel-open-lock {
 }
 
 .slx-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
 }
 
 .slx-emotion-shell-card .slx-action-row {
@@ -2505,7 +2501,6 @@ body.slx-panel-open-lock {
 }
 
 .slx-danger-mini-btn {
-  color: var(--slx-danger, #c0392b);
 }
 
 .slx-danger-mini-btn:hover:not(:disabled) {
@@ -4961,25 +4956,16 @@ body.slx-panel-open-lock {
   #shenling-assistant-panel-root {
     align-items: center;
     justify-content: center;
-    padding:
-      max(8px, var(--slx-safe-top))
-      max(8px, var(--slx-safe-right))
-      max(8px, var(--slx-safe-bottom))
-      max(8px, var(--slx-safe-left));
   }
 
   .slx-panel {
-    width: min(420px, calc(100vw - 16px - var(--slx-safe-left) - var(--slx-safe-right)));
     height: min(720px, calc(var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 16px));
     max-height: calc(var(--slx-viewport-height) - var(--slx-safe-top) - var(--slx-safe-bottom) - 16px);
     border-radius: 16px;
   }
 
   .slx-body {
-    grid-template-columns: 62px minmax(0, 1fr);
     overflow: hidden;
-    gap: 8px;
-    padding: 8px;
   }
 
   .slx-module-grid {
@@ -4991,12 +4977,10 @@ body.slx-panel-open-lock {
   }
 
   .slx-module-btn {
-    min-height: 54px;
     justify-content: center;
     flex-direction: column;
     gap: 0;
     padding: 5px 3px;
-    border-radius: 13px;
   }
 
   .slx-module-btn:hover {
@@ -5005,7 +4989,6 @@ body.slx-panel-open-lock {
 
   .slx-module-icon {
     width: auto;
-    font-size: 19px;
     line-height: 1.05;
   }
 
@@ -5013,7 +4996,6 @@ body.slx-panel-open-lock {
     display: block;
     max-width: 100%;
     color: var(--slx-muted);
-    font-size: 10px;
     font-weight: 700;
     line-height: 1.15;
     margin-top: 3px;
@@ -5037,24 +5019,17 @@ body.slx-panel-open-lock {
 
   .slx-detail {
     min-width: 0;
-    padding: 10px;
     border-radius: 14px;
   }
 
   .slx-detail-head {
-    gap: 8px;
-    padding-bottom: 9px;
   }
 
   .slx-detail-icon {
-    width: 34px;
-    height: 34px;
     border-radius: 11px;
-    font-size: 18px;
   }
 
   .slx-detail-name {
-    font-size: 14px;
   }
 
   .slx-detail-card {
@@ -5345,38 +5320,21 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-frame {
   display: flex;
   flex-direction: column;
-  border: 2px solid #e8b0a8;
-  border-radius: 16px;
-  background: #fef6f0;
 }
 
 .slx-diary-tcho-frame .slx-segment-row.slx-diary-tabs {
-  display: grid;
   grid-template-columns: 1fr 1fr;
-  align-items: end;
-  gap: 6px;
-  margin: 10px 12px 0;
-  padding: 0;
   background: transparent;
-  border: none;
   border-bottom: 1.5px solid #e8c0b8;
   overflow: visible;
 }
 
 .slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn {
-  min-height: 36px;
-  border: 1.5px solid #e8c0b8;
   border-bottom: none;
-  border-radius: 10px 10px 0 0;
-  background: rgba(255, 234, 226, 0.6);
-  color: #c09080;
-  font-size: 12px;
-  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  transform: translateY(1.5px);
   transition: background 0.2s, color 0.2s;
 }
 
@@ -5387,12 +5345,8 @@ body.slx-panel-open-lock {
 
 .slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn-active,
 .slx-diary-tcho-frame .slx-diary-tabs .slx-segment-btn-active:hover {
-  min-height: 40px;
   background: #fef6f0;
-  color: #7a3a30;
   border-color: #e8b0a8;
-  transform: translateY(1.5px);
-  box-shadow: 0 -2px 8px rgba(200, 120, 110, 0.06);
 }
 
 /* ── 内容区 ── */
@@ -5404,21 +5358,15 @@ body.slx-panel-open-lock {
 /* ── Library 屏 ── */
 
 .slx-diary-tcho-library {
-  position: relative;
-  padding: 16px 16px 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
 /* 散落的闪亮星星 */
 .slx-diary-tcho-stars {
   position: absolute;
-  top: 12px;
-  right: 14px;
   display: flex;
   align-items: center;
-  gap: 5px;
   pointer-events: none;
 }
 
@@ -5429,7 +5377,6 @@ body.slx-panel-open-lock {
 /* 标题区 */
 .slx-diary-tcho-header {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   padding-top: 4px;
@@ -5438,15 +5385,9 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-title-block {
   display: flex;
   align-items: center;
-  gap: 10px;
 }
 
 .slx-diary-tcho-icon-slot {
-  width: 56px;
-  height: 56px;
-  border-radius: 10px;
-  background: rgba(232, 176, 168, 0.12);
-  border: 1.5px dashed #e8b8b0;
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
@@ -5483,17 +5424,10 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-tcho-title {
-  font-family: 'Noto Serif SC', Georgia, serif;
-  font-size: 22px;
-  font-weight: 700;
-  color: #6b3a2e;
   line-height: 1.15;
-  letter-spacing: 0.02em;
 }
 
 .slx-diary-tcho-wave {
-  width: 114px;
-  height: 9px;
   display: block;
 }
 
@@ -5503,16 +5437,9 @@ body.slx-panel-open-lock {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 10px;
-  border: 1.5px solid #e0b0a0;
-  border-radius: 8px;
-  background: rgba(255, 246, 240, 0.95);
-  color: #a06050;
   font: inherit;
-  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 1px 2px 5px rgba(200, 120, 100, 0.1);
   transition: background 0.2s, border-color 0.2s;
   margin-top: 4px;
 }
@@ -5531,7 +5458,6 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-create-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
 .slx-diary-tcho-create-label {
@@ -5539,34 +5465,20 @@ body.slx-panel-open-lock {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 9px 14px;
-  background: linear-gradient(135deg, #f5bfb8, #efaaa0);
-  border-radius: 10px;
-  color: #7a3530;
-  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  box-shadow: 0 2px 7px rgba(200, 100, 90, 0.15);
 }
 
 .slx-diary-tcho-input {
   width: 100%;
   box-sizing: border-box;
-  min-height: 40px;
-  border: 1.5px solid #e8c0b8;
   border-bottom: 2px solid #d8a090;
-  border-radius: 10px;
-  background: rgba(255, 252, 249, 0.92);
-  color: #6b3a2e;
   font: inherit;
-  font-size: 13px;
-  padding: 8px 13px;
   outline: none;
   transition: border-color 0.2s, background 0.2s;
 }
 
 .slx-diary-tcho-input::placeholder {
-  color: #c8a09a;
 }
 
 .slx-diary-tcho-input:focus {
@@ -5576,13 +5488,8 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-tcho-create-btn {
-  min-height: 44px;
-  border: none;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #f0aaa2, #e89090);
   color: #fff;
   font: inherit;
-  font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.04em;
   display: flex;
@@ -5590,7 +5497,6 @@ body.slx-panel-open-lock {
   justify-content: center;
   gap: 7px;
   cursor: pointer;
-  box-shadow: 0 3px 10px rgba(200, 100, 90, 0.22);
   transition: filter 0.2s, transform 0.18s;
 }
 
@@ -5621,11 +5527,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-tcho-section-hd > span {
-  padding: 5px 16px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #8ab49a, #6a9a7a);
-  color: #fff;
-  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
   white-space: nowrap;
@@ -5650,19 +5552,10 @@ body.slx-panel-open-lock {
 
 .slx-diary-tcho-book-card {
   width: 100%;
-  min-height: 70px;
-  border: 1.5px solid #edd8d0;
-  border-radius: 12px;
-  background: rgba(255, 250, 247, 0.92);
   color: #5c3d2e;
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px 10px 0;
   text-align: left;
-  cursor: pointer;
-  box-shadow: 1px 2px 8px rgba(180, 120, 100, 0.07);
   overflow: hidden;
   transition: box-shadow 0.2s, border-color 0.2s, transform 0.18s;
 }
@@ -5675,8 +5568,6 @@ body.slx-panel-open-lock {
 
 .slx-diary-tcho-book-spine {
   align-self: stretch;
-  width: 14px;
-  border-radius: 6px 0 0 6px;
   flex-shrink: 0;
 }
 
@@ -5689,26 +5580,18 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-tcho-book-info b {
-  font-size: 14px;
   font-weight: 700;
-  color: #5c3d2e;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .slx-diary-tcho-book-info small {
-  font-size: 11px;
-  color: #a07060;
   overflow-wrap: anywhere;
 }
 
 .slx-diary-tcho-open-pill {
   flex-shrink: 0;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #8ab49a, #6a9a7a);
-  color: #fff;
   font-size: 12px;
   font-weight: 700;
   transition: filter 0.2s;
@@ -5724,7 +5607,6 @@ body.slx-panel-open-lock {
   padding: 18px 14px;
   border: 1.5px dashed #e8c0b8;
   border-radius: 12px;
-  background: rgba(255, 246, 242, 0.6);
   color: #b08070;
   text-align: center;
   font-size: 13px;
@@ -5735,9 +5617,6 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-tagline {
   margin: 0;
   text-align: center;
-  color: #c09888;
-  font-size: 12px;
-  font-style: italic;
   font-family: 'Noto Serif SC', Georgia, serif;
 }
 
@@ -5775,14 +5654,10 @@ body.slx-panel-open-lock {
   background: transparent !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  padding: 16px !important;
   gap: 14px !important;
 }
 
 .slx-diary-tcho-settings .slx-detail-title {
-  font-family: 'Noto Serif SC', Georgia, serif;
-  font-size: 17px;
-  color: #6b3a2e;
 }
 
 .slx-diary-tcho-settings .slx-summary-card-head p {
@@ -5799,8 +5674,6 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-tcho-settings .slx-diary-pill-toggle {
-  border-color: #e0b8a8;
-  background: rgba(255, 240, 235, 0.8);
 }
 
 .slx-diary-tcho-settings .slx-diary-pill-toggle button {
@@ -5808,7 +5681,6 @@ body.slx-panel-open-lock {
 }
 
 .slx-diary-tcho-settings .slx-diary-pill-toggle button.is-active {
-  background: linear-gradient(135deg, #f0aaa2, #e89090);
   color: #fff;
 }
 
@@ -5892,7 +5764,6 @@ body.slx-panel-open-lock {
 .slx-diary-tcho-settings .slx-soft-btn {
   border-color: #e0b8a8;
   color: #8b5a4e;
-  background: rgba(255, 246, 242, 0.9);
 }
 
 .slx-diary-tcho-settings .slx-soft-btn:hover:not(:disabled) {
@@ -5910,7 +5781,6 @@ body.slx-panel-open-lock {
 
 @media (max-width: 720px) {
   .slx-diary-tcho-frame {
-    border-radius: 14px;
   }
 
   .slx-diary-tcho-library {
@@ -5919,15 +5789,12 @@ body.slx-panel-open-lock {
   }
 
   .slx-diary-tcho-title {
-    font-size: 19px;
   }
 
   .slx-diary-tcho-wave {
-    width: 92px;
   }
 
   .slx-diary-tcho-book-card {
-    min-height: 62px;
   }
 
   .slx-diary-tcho-settings {
