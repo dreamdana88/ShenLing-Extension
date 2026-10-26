@@ -53,6 +53,7 @@ import {
 } from './generation.js';
 import {
   captureManualChatScopeOrThrow,
+  discardOnGuardFailure,
   evaluateManualChatGuards,
   finalizeManualGuardDiscard,
 } from './manual-guard.js';
@@ -582,28 +583,21 @@ export async function processTotalGrandMemory({
     const result = await generateSummaryMemory(prompt, generationOptions);
 
     if (!isCurrentChatIdentity(chatIdentity)) return;
-    let guard = evaluateManualChatGuards(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot));
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, { scope, title: '总档案压缩' });
-      return;
-    }
+    if (discardOnGuardFailure(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot), {
+      title: '总档案压缩',
+    })) return;
 
     const grandMemory = forceGrandMemoryRange(result, memoryFrom, memoryTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
 
     if (!isCurrentChatIdentity(chatIdentity)) return;
-    guard = evaluateManualChatGuards(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot));
-    if (!guard.ok) {
-      // May leave an orphan total floor in A.
-      // 宿主多步写入可能形成部分提交。
-      // 事务回滚保留在问题 Backlog。
-      finalizeManualGuardDiscard(guard.reason, {
-        scope,
-        title: '总档案压缩',
-        clearIgnoredMessageId: Number(summaryMessageId),
-      });
-      return;
-    }
+    // May leave an orphan total floor in A.
+    // 宿主多步写入可能形成部分提交。
+    // 事务回滚保留在问题 Backlog。
+    if (discardOnGuardFailure(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot), {
+      title: '总档案压缩',
+      clearIgnoredMessageId: Number(summaryMessageId),
+    })) return;
 
     markSummaryWriteIgnored(Number(summaryMessageId));
 
@@ -614,15 +608,10 @@ export async function processTotalGrandMemory({
     );
 
     if (!isCurrentChatIdentity(chatIdentity)) return;
-    guard = evaluateManualChatGuards(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot));
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, {
-        scope,
-        title: '总档案压缩',
-        clearIgnoredMessageId: Number(summaryMessageId),
-      });
-      return;
-    }
+    if (discardOnGuardFailure(scope, () => isTotalGrandPlanSnapshotValid(planSnapshot), {
+      title: '总档案压缩',
+      clearIgnoredMessageId: Number(summaryMessageId),
+    })) return;
 
     const currentChatState = getChatState();
     const oldIds = new Set(plan.records.map(item => Number(item.record.summaryMessageId)));
@@ -782,7 +771,7 @@ export async function processLegacyGrandArchive({
   };
   beginSummaryTask(chatState, 'legacy_grand_memory', '旧聊天归档开始：' + plan.batchTotal + ' 批。', '旧聊天归档');
 
-  const checkArchiveGuards = (afterHide = false) => {
+  const discardOnArchiveGuardFailure = (afterHide = false, clearIgnoredMessageId = null) => {
     const guard = evaluateManualChatGuards(scope, () => afterHide
       ? archiveSnapshot.entries.every(entry => {
         const message = getChatMessageById(entry.messageId);
@@ -790,8 +779,16 @@ export async function processLegacyGrandArchive({
           && createMessageContentFingerprint(cleanLegacyArchiveMessageContent(message, summary)) === entry.fingerprint;
       })
       : isLegacyArchiveSnapshotValid(archiveSnapshot));
-    if (guard.ok) chatState = getChatState();
-    return guard;
+    if (guard.ok) {
+      chatState = getChatState();
+      return false;
+    }
+    finalizeManualGuardDiscard(guard.reason, {
+      scope,
+      title: '旧聊天归档',
+      ...(clearIgnoredMessageId !== null ? { clearIgnoredMessageId } : {}),
+    });
+    return true;
   };
 
   try {
@@ -801,11 +798,7 @@ export async function processLegacyGrandArchive({
     } else {
       const batchSummaries = [];
       for (const [index, batch] of plan.batches.entries()) {
-        let guard = checkArchiveGuards();
-        if (!guard.ok) {
-          finalizeManualGuardDiscard(guard.reason, { scope, title: '旧聊天归档' });
-          return;
-        }
+        if (discardOnArchiveGuardFailure()) return;
         updateLegacyArchiveStatus({
           phase: 'batching',
           batchIndex: index + 1,
@@ -813,11 +806,7 @@ export async function processLegacyGrandArchive({
         });
         const prompt = buildLegacyArchiveBatchPrompt(batch, index, plan.batchTotal);
         const result = await generateSummaryMemory(prompt, batchGenerationOptions);
-        guard = checkArchiveGuards();
-        if (!guard.ok) {
-          finalizeManualGuardDiscard(guard.reason, { scope, title: '旧聊天归档' });
-          return;
-        }
+        if (discardOnArchiveGuardFailure()) return;
         batchSummaries.push({
           archiveFrom: batch[0]?.messageId ?? plan.archiveFrom,
           archiveTo: batch.at(-1)?.messageId ?? plan.archiveTo,
@@ -827,11 +816,7 @@ export async function processLegacyGrandArchive({
       finalMaterial = buildLegacyArchiveFinalMaterial(batchSummaries);
     }
 
-    let guard = checkArchiveGuards();
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, { scope, title: '旧聊天归档' });
-      return;
-    }
+    if (discardOnArchiveGuardFailure()) return;
 
     updateLegacyArchiveStatus({
       phase: 'finalizing',
@@ -846,24 +831,12 @@ export async function processLegacyGrandArchive({
     });
     const result = await generateSummaryMemory(prompt, finalGenerationOptions);
 
-    guard = checkArchiveGuards();
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, { scope, title: '旧聊天归档' });
-      return;
-    }
+    if (discardOnArchiveGuardFailure()) return;
 
     const grandMemory = forceGrandMemoryRange(result, plan.archiveFrom, plan.archiveTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
 
-    guard = checkArchiveGuards();
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, {
-        scope,
-        title: '旧聊天归档',
-        clearIgnoredMessageId: Number(summaryMessageId),
-      });
-      return;
-    }
+    if (discardOnArchiveGuardFailure(false, Number(summaryMessageId))) return;
 
     markSummaryWriteIgnored(Number(summaryMessageId));
 
@@ -873,15 +846,7 @@ export async function processLegacyGrandArchive({
       chatState,
     );
 
-    guard = checkArchiveGuards(true);
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, {
-        scope,
-        title: '旧聊天归档',
-        clearIgnoredMessageId: Number(summaryMessageId),
-      });
-      return;
-    }
+    if (discardOnArchiveGuardFailure(true, Number(summaryMessageId))) return;
 
     const archiveRecord = {
       id: String(summaryMessageId) + '-' + Date.now(),

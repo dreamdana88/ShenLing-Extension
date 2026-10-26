@@ -64,6 +64,7 @@ import {
 } from './generation.js';
 import {
   captureManualChatScopeOrThrow,
+  discardOnGuardFailure,
   evaluateManualChatGuards,
   finalizeManualGuardDiscard,
   MANUAL_CHAT_GUARD_REASON,
@@ -319,15 +320,10 @@ export async function summarizeOpeningMessage({
       ].join('\n'),
     }), createManualSummaryGenerationOptions('0楼小总结', transportPolicy));
 
-    let guard = evaluateManualChatGuards(scope, () => isManualMessageTargetValid(target));
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, {
-        scope,
-        title: '小总结管理',
-        clearIgnoredMessageId: 0,
-      });
-      return;
-    }
+    if (discardOnGuardFailure(scope, () => isManualMessageTargetValid(target), {
+      title: '小总结管理',
+      clearIgnoredMessageId: 0,
+    })) return;
 
     const memory = stripMemoryEmotionControlLines(forceMemoryNumber(result, 0));
     const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings());
@@ -338,15 +334,10 @@ export async function summarizeOpeningMessage({
     await setChatMessageContent(0, `${body}\n\n${memoryReplacementResult.text}`);
 
     // Host write may race with CHAT_CHANGED; re-check before any metadata / success path.
-    guard = evaluateManualChatGuards(scope, () => isManualMessageTargetValid(target));
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, {
-        scope,
-        title: '小总结管理',
-        clearIgnoredMessageId: 0,
-      });
-      return;
-    }
+    if (discardOnGuardFailure(scope, () => isManualMessageTargetValid(target), {
+      title: '小总结管理',
+      clearIgnoredMessageId: 0,
+    })) return;
 
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = '';
@@ -478,15 +469,10 @@ export async function regenerateMemoryForMessage(messageId, {
       extraInstructions: joinSummaryExtraInstructions(emotionPromptSection, plotOutlineProgressSection),
     }), createManualSummaryGenerationOptions('手动重写小总结', transportPolicy));
 
-    let guard = evaluateManualChatGuards(scope, () => isManualMessageTargetValid(target));
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, {
-        scope,
-        title: '重写小总结',
-        clearIgnoredMessageId: leadMessageId,
-      });
-      return;
-    }
+    if (discardOnGuardFailure(scope, () => isManualMessageTargetValid(target), {
+      title: '重写小总结',
+      clearIgnoredMessageId: leadMessageId,
+    })) return;
 
     if (groupMaterials) {
       const mismatch = groupMaterials.some(
@@ -582,30 +568,20 @@ export async function regenerateLatestGrandMemory({
       createManualSummaryGenerationOptions('重新生成大总结', transportPolicy),
     );
 
-    let guard = evaluateManualChatGuards(scope, () => isGrandRecordTargetValid(target));
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, {
-        scope,
-        title: '归档管理器',
-        clearIgnoredMessageId: Number(record.summaryMessageId),
-      });
-      return;
-    }
+    if (discardOnGuardFailure(scope, () => isGrandRecordTargetValid(target), {
+      title: '归档管理器',
+      clearIgnoredMessageId: Number(record.summaryMessageId),
+    })) return;
 
     const grandMemory = forceGrandMemoryRange(result, archiveData.memoryFrom, archiveData.memoryTo);
     markSummaryWriteIgnored(Number(record.summaryMessageId), 1500, scope.chatId);
     await setChatMessageContent(Number(record.summaryMessageId), grandMemory);
 
     // Floor content intentionally changed; re-check scope + record binding only.
-    guard = evaluateManualChatGuards(scope, () => isGrandRecordTargetStillBound(target));
-    if (!guard.ok) {
-      finalizeManualGuardDiscard(guard.reason, {
-        scope,
-        title: '归档管理器',
-        clearIgnoredMessageId: Number(record.summaryMessageId),
-      });
-      return;
-    }
+    if (discardOnGuardFailure(scope, () => isGrandRecordTargetStillBound(target), {
+      title: '归档管理器',
+      clearIgnoredMessageId: Number(record.summaryMessageId),
+    })) return;
 
     const currentChatState = getChatState();
     const currentRecord = currentChatState.summary.archiveRecords.find(item => Number(item.summaryMessageId) === Number(record.summaryMessageId));

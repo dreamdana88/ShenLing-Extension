@@ -45,6 +45,13 @@ export function evaluateManualChatGuards(scope, isTargetValid = null) {
   return { ok: true, reason: null };
 }
 
+export function discardOnGuardFailure(scope, isTargetValid, options = {}) {
+  const guard = evaluateManualChatGuards(scope, isTargetValid);
+  if (guard.ok) return false;
+  finalizeManualGuardDiscard(guard.reason, { scope, ...options });
+  return true;
+}
+
 /**
  * Scope mismatch: silent discard (no toast, no write to current or left chat).
  * Target mismatch while still in original chat: clear runningTask + neutral lastError.
