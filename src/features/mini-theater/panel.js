@@ -1234,6 +1234,27 @@ function renderSavesTab() {
 
 // ── 模态弹窗 ──────────────────────────────────────────────────────────
 
+function renderTheaterModalHeader(title) {
+  return `
+      <div class="slx-theater-modal-header">
+        <span class="slx-theater-modal-title">${title}</span>
+        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
+      </div>
+    `;
+}
+
+function renderTheaterModalFooter(primaryButtonHtml, leftHtml = "<span></span>") {
+  return `
+      <div class="slx-theater-modal-footer">
+        ${leftHtml}
+        <div style="display:flex;gap:8px">
+          <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
+          ${primaryButtonHtml}
+        </div>
+      </div>
+    `;
+}
+
 function renderModalContent() {
   const m = panelState.modal;
   if (!m) return "";
@@ -1242,10 +1263,7 @@ function renderModalContent() {
     const mt = getMiniTheaterSettings();
     const isEdit = Boolean(m.promptId);
     return `
-      <div class="slx-theater-modal-header">
-        <span class="slx-theater-modal-title">${isEdit ? "编辑提示词" : "新建提示词"}</span>
-        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
-      </div>
+      ${renderTheaterModalHeader(isEdit ? "编辑提示词" : "新建提示词")}
       <div class="slx-theater-modal-body">
         <div class="slx-theater-modal-form-row">
           <div class="slx-theater-form-field">
@@ -1276,27 +1294,19 @@ function renderModalContent() {
           >${escapeHtml(m.fields.content)}</textarea>
         </div>
       </div>
-      <div class="slx-theater-modal-footer">
-        ${
-          isEdit
-            ? `<button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-modal-delete-prompt="${escapeHtml(m.promptId)}">删除</button>`
-            : "<span></span>"
-        }
-        <div style="display:flex;gap:8px">
-          <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
-          <button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>保存</button>
-        </div>
-      </div>
+      ${renderTheaterModalFooter(
+        `<button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>保存</button>`,
+        isEdit
+          ? `<button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-modal-delete-prompt="${escapeHtml(m.promptId)}">删除</button>`
+          : undefined,
+      )}
     `;
   }
 
   if (m.type === "style-form") {
     const isEdit = Boolean(m.styleId);
     return `
-      <div class="slx-theater-modal-header">
-        <span class="slx-theater-modal-title">${isEdit ? "编辑文风" : "新建文风"}</span>
-        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
-      </div>
+      ${renderTheaterModalHeader(isEdit ? "编辑文风" : "新建文风")}
       <div class="slx-theater-modal-body">
         <div class="slx-theater-form-field">
           <label for="slx-theater-style-modal-name">名称</label>
@@ -1312,26 +1322,18 @@ function renderModalContent() {
           >${escapeHtml(m.fields.content)}</textarea>
         </div>
       </div>
-      <div class="slx-theater-modal-footer">
-        ${
-          isEdit
-            ? `<button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-modal-delete-style="${escapeHtml(m.styleId)}">删除</button>`
-            : "<span></span>"
-        }
-        <div style="display:flex;gap:8px">
-          <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
-          <button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>保存</button>
-        </div>
-      </div>
+      ${renderTheaterModalFooter(
+        `<button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>保存</button>`,
+        isEdit
+          ? `<button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-modal-delete-style="${escapeHtml(m.styleId)}">删除</button>`
+          : undefined,
+      )}
     `;
   }
 
   if (m.type === "result-form") {
     return `
-      <div class="slx-theater-modal-header">
-        <span class="slx-theater-modal-title">手动添加小剧场</span>
-        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
-      </div>
+      ${renderTheaterModalHeader("手动添加小剧场")}
       <div class="slx-theater-modal-body">
         <div class="slx-theater-form-field">
           <label for="slx-theater-result-modal-title">标题</label>
@@ -1347,22 +1349,15 @@ function renderModalContent() {
           >${escapeHtml(m.fields.content)}</textarea>
         </div>
       </div>
-      <div class="slx-theater-modal-footer">
-        <span></span>
-        <div style="display:flex;gap:8px">
-          <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
-          <button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>保存</button>
-        </div>
-      </div>
+      ${renderTheaterModalFooter(
+        `<button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>保存</button>`,
+      )}
     `;
   }
 
   if (m.type === "folder-form") {
     return `
-      <div class="slx-theater-modal-header">
-        <span class="slx-theater-modal-title">新建文件夹</span>
-        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
-      </div>
+      ${renderTheaterModalHeader("新建文件夹")}
       <div class="slx-theater-modal-body">
         <div class="slx-theater-form-field">
           <label for="slx-theater-modal-folder-name">文件夹名称</label>
@@ -1371,13 +1366,9 @@ function renderModalContent() {
             data-theater-modal-field="name" maxlength="30" autocomplete="off">
         </div>
       </div>
-      <div class="slx-theater-modal-footer">
-        <span></span>
-        <div style="display:flex;gap:8px">
-          <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
-          <button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>创建</button>
-        </div>
-      </div>
+      ${renderTheaterModalFooter(
+        `<button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>创建</button>`,
+      )}
     `;
   }
 
@@ -1385,22 +1376,15 @@ function renderModalContent() {
     const extra =
       m.target === "folder" ? "<br>文件夹内的提示词将移至未分类。" : "";
     return `
-      <div class="slx-theater-modal-header">
-        <span class="slx-theater-modal-title">确认删除</span>
-        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
-      </div>
+      ${renderTheaterModalHeader("确认删除")}
       <div class="slx-theater-modal-body">
         <p style="margin:0;line-height:1.6;color:var(--slx-text)">
           删除「${escapeHtml(m.name)}」？此操作无法撤销。${extra}
         </p>
       </div>
-      <div class="slx-theater-modal-footer">
-        <span></span>
-        <div style="display:flex;gap:8px">
-          <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
-          <button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-modal-confirm-delete>确认删除</button>
-        </div>
-      </div>
+      ${renderTheaterModalFooter(
+        `<button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-modal-confirm-delete>确认删除</button>`,
+      )}
     `;
   }
 
@@ -1415,10 +1399,7 @@ function renderModalContent() {
       0,
     );
     return `
-      <div class="slx-theater-modal-header">
-        <span class="slx-theater-modal-title">选择提示词</span>
-        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
-      </div>
+      ${renderTheaterModalHeader("选择提示词")}
       <div class="slx-theater-modal-body slx-theater-pick-body">
         <input type="search" class="slx-theater-search-input" placeholder="搜索…"
           value="${escapeHtml(panelState.pickSearch)}"
@@ -1467,10 +1448,7 @@ function renderModalContent() {
       sortBy: "name",
     });
     return `
-      <div class="slx-theater-modal-header">
-        <span class="slx-theater-modal-title">选择文风</span>
-        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
-      </div>
+      ${renderTheaterModalHeader("选择文风")}
       <div class="slx-theater-modal-body slx-theater-pick-body">
         <input type="search" class="slx-theater-search-input" placeholder="搜索文风…"
           value="${escapeHtml(panelState.pickSearch)}"
