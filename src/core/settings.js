@@ -215,6 +215,7 @@ export const defaultGlobalSettings = Object.freeze({
       enabled: false,
       autoGrandMemoryEnabled: false,
       grandMemoryInterval: 6,
+      manualGenerationTimeoutSeconds: 300,
       retainRecentMessageCount: 0,
       autoTotalGrandMemoryEnabled: false,
       totalGrandMemoryInterval: 5,
@@ -323,12 +324,6 @@ export function normalizeGenerationSettings(settings = {}) {
 
 export function getBackgroundStreamingEnabled(settings = getGlobalSettings()) {
   return normalizeGenerationSettings(settings).backgroundStreamingEnabled === true;
-}
-
-export function setBackgroundStreamingEnabled(enabled, settings = getGlobalSettings()) {
-  const generation = normalizeGenerationSettings(settings);
-  generation.backgroundStreamingEnabled = enabled === false ? false : true;
-  return generation.backgroundStreamingEnabled;
 }
 
 export const defaultChatState = Object.freeze({

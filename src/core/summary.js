@@ -29,14 +29,6 @@ function isPromptBundle(prompt) {
   return Boolean(prompt && typeof prompt === 'object' && prompt[PROMPT_BUNDLE_MARKER]);
 }
 
-export function flattenSummaryPrompt(prompt) {
-  return isPromptBundle(prompt) ? prompt.flatContent : String(prompt || '');
-}
-
-export function getSummaryPromptUserInput(prompt) {
-  return isPromptBundle(prompt) ? prompt.userContent : String(prompt || '');
-}
-
 export function stripMemoryBlock(content) {
   return String(content || '').replace(MEMORY_BLOCK_RE, '').trim();
 }
@@ -268,6 +260,21 @@ ${cleanUserContent}
 
 【最新正文】
 ${cleanAiContent}`;
+}
+
+export function buildSummaryPromptContentForMessages(materials, { includeUserInput = false } = {}) {
+  return materials
+    .map(material => {
+      const messageId = Number(material.messageId);
+      const userContent = includeUserInput ? String(material.userContent || '').trim() : '';
+      const sections = [];
+      if (userContent) {
+        sections.push(`【第 ${messageId} 楼·用户输入】\n${userContent}`);
+      }
+      sections.push(`【第 ${messageId} 楼·正文】\n${String(material.aiContent || '').trim()}`);
+      return sections.join('\n\n');
+    })
+    .join('\n\n');
 }
 
 export function forceMemoryNumber(memory, number) {

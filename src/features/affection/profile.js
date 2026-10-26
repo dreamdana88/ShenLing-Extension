@@ -1,4 +1,4 @@
-import { formatTimestamp, isPlainObject } from '../../utils/text.js';
+import { isPlainObject } from '../../utils/text.js';
 import {
   AFFECTION_STAGE_RANGES,
   formatAffectionValueTenths,
@@ -147,21 +147,4 @@ export function parseAffectionProfileResponse(value) {
   } catch {
     throw new Error('专属阶段表返回不是合法 JSON。');
   }
-}
-
-export function createProfileDraft(task, stages) {
-  const now = formatTimestamp();
-  return {
-    roleName: task.roleName,
-    initialValueTenths: task.initialValueTenths,
-    valueTenths: task.initialValueTenths,
-    buildMode: task.buildMode,
-    buildStatus: 'ready',
-    stages,
-    records: [],
-    sourceMessageId: task.messageId,
-    sourceFingerprint: task.fingerprint,
-    createdAt: now,
-    updatedAt: now,
-  };
 }

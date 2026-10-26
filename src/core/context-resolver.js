@@ -1022,25 +1022,6 @@ export function registerWorldInfoContextEvents() {
   }
 }
 
-export function createEmptyWorldInfoContext() {
-  return createWorldInfoContextResult({
-    entries: [],
-    worldInfoBefore: '',
-    worldInfoAfter: '',
-    injectionText: '',
-    diagnostics: {
-      source: 'event_cache_empty',
-      mode: 'cache_only',
-      cacheCount: 0,
-      activatedCount: 0,
-      filteredCount: 0,
-      suspiciousCount: 0,
-      usedCount: 0,
-      notes: ['尚未捕获到本聊天的世界书激活事件。'],
-    },
-  });
-}
-
 export async function resolveShenlingContext(options = {}) {
   const {
     purpose = 'general',
@@ -1162,14 +1143,6 @@ export function formatCharacterCardForPrompt(characterCard) {
     characterCard.personality ? `角色性格：\n${characterCard.personality}` : '',
     characterCard.scenario ? `场景设定：\n${characterCard.scenario}` : '',
   ].filter(Boolean).join('\n\n');
-}
-
-export function formatMemoryItemsForPrompt(items = [], _options = {}) {
-  if (!Array.isArray(items) || !items.length) return '';
-  return items.map(item => {
-    const source = Number.isFinite(Number(item.messageId)) ? `第 ${item.messageId} 楼` : '未记录楼层';
-    return `### ${source}\n${cleanText(item.content)}`;
-  }).join('\n\n');
 }
 
 export function formatEmotionProfilesForPrompt(items = []) {

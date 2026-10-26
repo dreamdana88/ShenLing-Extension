@@ -78,6 +78,7 @@ let panelState = {
   modal 类型：
   { type: 'prompt-form', promptId: null|string, fields: { name, content, folderId } }
   { type: 'style-form', styleId: null|string, fields: { name, content } }
+  { type: 'result-form', fields: { title, content } }
   { type: 'folder-form', fields: { name } }
   { type: 'delete-confirm', target: 'prompt'|'folder'|'saved'|'style', id, name }
   { type: 'pick-prompt' }
@@ -489,12 +490,12 @@ function buildMiniTheaterMessages({ userPrompt, styleContent, contextMaterial })
     ...resolvePromptMessages(PROMPT_IDS.SUMMARY_SUPPORT_MESSAGES, settings),
     {
       role: "user",
-      content: buildMiniTheaterPrompt({
+      content: [buildMiniTheaterPrompt({
         userPrompt,
         styleContent,
         contextMaterial,
         template: resolvePromptText(PROMPT_IDS.THEATER_BUILD, settings),
-      }),
+      }), resolvePromptText(PROMPT_IDS.CREATIVE_OUTPUT_REMINDER, settings)].join("\n\n"),
     },
   ]);
 }
@@ -1212,6 +1213,9 @@ function renderSavesTab() {
         <button class="slx-soft-btn" type="button" data-theater-export-saved ${results.length ? "" : "disabled"}>
           <i class="fa-solid fa-file-export"></i> 导出小剧场
         </button>
+        <button class="slx-soft-btn" type="button" data-theater-add-saved>
+          <i class="fa-solid fa-plus"></i> 手动添加
+        </button>
       </div>
       ${renderTheaterCapacityWarning(results)}
       ${
@@ -1314,6 +1318,37 @@ function renderModalContent() {
             ? `<button class="slx-soft-btn slx-theater-btn-danger" type="button" data-theater-modal-delete-style="${escapeHtml(m.styleId)}">删除</button>`
             : "<span></span>"
         }
+        <div style="display:flex;gap:8px">
+          <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
+          <button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>保存</button>
+        </div>
+      </div>
+    `;
+  }
+
+  if (m.type === "result-form") {
+    return `
+      <div class="slx-theater-modal-header">
+        <span class="slx-theater-modal-title">手动添加小剧场</span>
+        <button class="slx-icon-btn" type="button" data-theater-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="slx-theater-modal-body">
+        <div class="slx-theater-form-field">
+          <label for="slx-theater-result-modal-title">标题</label>
+          <input id="slx-theater-result-modal-title" type="text" class="slx-theater-text-input"
+            value="${escapeHtml(m.fields.title)}" placeholder="例如：雨夜番外…"
+            data-theater-modal-field="title" maxlength="60" autocomplete="off">
+        </div>
+        <div class="slx-theater-form-field">
+          <label for="slx-theater-result-modal-content">正文</label>
+          <textarea id="slx-theater-result-modal-content" class="slx-theater-prompt-textarea slx-theater-modal-textarea" rows="12"
+            placeholder="粘贴小剧场正文，可以是纯文字或 HTML…"
+            data-theater-modal-field="content"
+          >${escapeHtml(m.fields.content)}</textarea>
+        </div>
+      </div>
+      <div class="slx-theater-modal-footer">
+        <span></span>
         <div style="display:flex;gap:8px">
           <button class="slx-soft-btn" type="button" data-theater-modal-close>取消</button>
           <button class="slx-soft-btn slx-primary-btn slx-theater-modal-primary-btn" type="button" data-theater-modal-save>保存</button>
@@ -1472,7 +1507,9 @@ function renderModal() {
   if (!panelState.modal) return "";
   const modalClass = [
     "slx-theater-modal",
-    panelState.modal.type === "prompt-form" || panelState.modal.type === "style-form"
+    panelState.modal.type === "prompt-form" ||
+    panelState.modal.type === "style-form" ||
+    panelState.modal.type === "result-form"
       ? "slx-theater-modal-prompt-form"
       : "",
     panelState.modal.type === "pick-prompt" || panelState.modal.type === "pick-style"
@@ -1712,6 +1749,14 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
 
   root.querySelectorAll("[data-theater-export-saved]").forEach((btn) => {
     btn.addEventListener("click", exportTheaterResults);
+  });
+
+  root.querySelector("[data-theater-add-saved]")?.addEventListener("click", () => {
+    panelState.modal = {
+      type: "result-form",
+      fields: { title: "", content: "" },
+    };
+    refreshPanel();
   });
 
   // ── API 模式 ──
@@ -2177,6 +2222,24 @@ export function bindMiniTheaterPanelEvents(panelRoot) {
         if (!name) return;
         getMiniTheaterSettings().folders.push({ id: genId(), name });
         saveGlobalSettings();
+        panelState.modal = null;
+        refreshPanel();
+      }
+
+      if (m.type === "result-form") {
+        const content = (m.fields.content || "").trim();
+        if (!content) return;
+        const title = (m.fields.title || "").trim() || "手动添加的小剧场";
+        const info = getContextInfo();
+        saveTheaterResultToStore({
+          id: genId(),
+          promptName: title,
+          resultContent: content,
+          resultType: detectTheaterResultType(content),
+          characterName: info.characterName || "",
+          chatName: info.chatName || "",
+          createdAt: formatTimestamp(),
+        });
         panelState.modal = null;
         refreshPanel();
       }

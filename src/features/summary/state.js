@@ -67,13 +67,6 @@ export function createSimpleFingerprint(content) {
   return `${text.length}:${hash}`;
 }
 
-export function hasMessageBeenCountedForMemory(chatState, messageId) {
-  return (
-    chatState.summary.memoryCountedMessageIds.includes(messageId) ||
-    Object.hasOwn(chatState.summary.processedMessageFingerprints || {}, String(messageId))
-  );
-}
-
 export function collectPriorMemoriesForSummary(messageId) {
   if (!Number.isFinite(Number(messageId)) || Number(messageId) <= 0) return [];
 
@@ -270,6 +263,11 @@ export function createSummarySourceMaterial(messageId, summary = getSummarySetti
 
 export function getAutoSummaryFingerprint(messageId) {
   return createSummarySourceMaterial(messageId)?.fingerprint || null;
+}
+
+export function getSummaryBatchSize(summary = getSummarySettings()) {
+  const value = Number.parseInt(String(summary?.intervalMessages ?? ''), 10);
+  return Number.isInteger(value) && value >= 1 && value <= 10 ? value : 1;
 }
 
 export function getLatestAssistantSummaryTargetId() {

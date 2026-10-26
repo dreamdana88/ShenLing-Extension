@@ -26,13 +26,6 @@ export function normalizeApiBaseUrl(url) {
   return normalized;
 }
 
-/**
- * Normalize a bare URL for display / simple trim. Prefer deriveCustomApiBaseUrl for streaming.
- */
-export function normalizeCustomApiUrl(url) {
-  return String(url || '').trim().replace(/\/+$/, '');
-}
-
 export function buildApiUrl(profile) {
   const baseUrl = normalizeApiBaseUrl(profile.baseUrl);
   if (!baseUrl) {

@@ -30,6 +30,7 @@ import {
   buildGrandMemoryMaterialPrompt,
   buildMemorySummaryPrompt,
   buildOpeningSummaryPromptContent,
+  buildSummaryPromptContentForMessages,
   extractMemoryBlocks,
   forceGrandMemoryRange,
   forceMemoryNumber,
@@ -51,6 +52,11 @@ import {
 } from '../plot-outline/workflow.js';
 import { buildArchiveMemoryMaterial } from './archive.js';
 import {
+  getLatestArchiveBoundary,
+  hasMatchingSummarizedConfirmedTask,
+} from './archive.js';
+import { SUMMARY_MERGED_BATCH_INSTRUCTION } from '../../prompts.js';
+import {
   createManualSummaryGenerationOptions,
   generateSummaryMemory,
   joinSummaryExtraInstructions,
@@ -60,6 +66,7 @@ import {
   captureManualChatScopeOrThrow,
   evaluateManualChatGuards,
   finalizeManualGuardDiscard,
+  MANUAL_CHAT_GUARD_REASON,
 } from './manual-guard.js';
 import {
   notifySummary,
@@ -71,6 +78,7 @@ import {
   createSimpleFingerprint,
   createSummarySourceMaterial,
   getLatestAssistantSummaryTargetId,
+  hasMemoryBlock,
   markSummaryWriteIgnored,
   scanExistingSummaryState,
 } from './state.js';
@@ -367,6 +375,69 @@ export async function summarizeOpeningMessage({
   }
 }
 
+/**
+ * Resolve the merged-summary group a floor belongs to.
+ * A "member" floor is an assistant floor without a memory block that a
+ * SUMMARIZED confirmed task covers. The lead is the next assistant floor
+ * after the members that carries the memory block. Walks back from the
+ * lead, collecting member floors and skipping non-member floors (holes),
+ * stopping at the previous memory block, grand-memory floor, archive
+ * boundary, or floor 0.
+ */
+export function resolveSummaryGroup(messageId, chatState = getChatState()) {
+  const input = getChatMessageById(Number(messageId));
+  const self = Number(messageId);
+  if (!input || input.role !== 'assistant' || GRAND_MEMORY_BLOCK_RE.test(input.message)) {
+    return [self];
+  }
+
+  const isMemberFloor = message =>
+    message?.role === 'assistant'
+    && !GRAND_MEMORY_BLOCK_RE.test(message.message)
+    && !hasMemoryBlock(message.message)
+    && hasMatchingSummarizedConfirmedTask(message, chatState);
+
+  const isLeadFloor = message =>
+    message?.role === 'assistant'
+    && !GRAND_MEMORY_BLOCK_RE.test(message.message)
+    && hasMemoryBlock(message.message);
+
+  let lead;
+  if (hasMemoryBlock(input.message)) {
+    lead = input;
+  } else if (isMemberFloor(input)) {
+    const messages = getChatMessagesSafe(undefined, { hide_state: 'all' });
+    lead = messages
+      .filter(message => Number(message.message_id) > self)
+      .sort((left, right) => Number(left.message_id) - Number(right.message_id))
+      .find(isLeadFloor) || null;
+  } else {
+    return [self];
+  }
+  if (!lead) return [self];
+
+  const leadId = Number(lead.message_id);
+  const archiveBoundary = getLatestArchiveBoundary(chatState);
+  const members = [];
+  const messagesById = new Map(
+    getChatMessagesSafe(undefined, { hide_state: 'all' })
+      .map(message => [Number(message.message_id), message]),
+  );
+  for (let id = leadId - 1; id > Math.max(archiveBoundary, 0); id -= 1) {
+    const message = messagesById.get(id);
+    if (!message || message.role !== 'assistant') continue;
+    if (isMemberFloor(message)) {
+      members.push(id);
+      continue;
+    }
+    if (isLeadFloor(message) || GRAND_MEMORY_BLOCK_RE.test(message.message)) break;
+    // Non-member assistant floor without a block (e.g. cancelled task): a hole — skip.
+  }
+  members.reverse();
+  const group = [...members, leadId];
+  return self !== leadId && !group.includes(self) ? [self] : group;
+}
+
 export async function regenerateMemoryForMessage(messageId, {
   transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
   guardChatScope = false,
@@ -376,26 +447,49 @@ export async function regenerateMemoryForMessage(messageId, {
 
   const scope = captureManualChatScopeOrThrow(guardChatScope);
   const chatMessage = getEditableSummaryMessage(messageId);
+  const group = resolveSummaryGroup(Number(messageId), chatState);
+  const groupMessageIds = group.length > 1 ? group : null;
+  const leadMessageId = groupMessageIds ? groupMessageIds.at(-1) : Number(messageId);
   const rawBody = stripMemoryBlock(chatMessage.message);
   if (!rawBody) throw new Error(`第 ${Number(messageId)} 楼没有可总结的正文。`);
 
   const summary = getSummarySettings();
-  const material = createSummarySourceMaterial(Number(messageId), summary, { allowHidden: true });
-  if (!material) throw new Error(`第 ${Number(messageId)} 楼净化后没有可总结的正文。`);
-  const target = guardChatScope ? captureManualMessageTarget(Number(messageId)) : null;
-  if (guardChatScope && !target) throw new Error(`第 ${Number(messageId)} 楼目标不可用。`);
+  const groupMaterials = groupMessageIds
+    ? groupMessageIds.map(id =>
+        createSummarySourceMaterial(id, summary, { allowHidden: true }),
+      )
+    : null;
+  if (groupMaterials?.some(material => !material)) {
+    throw new Error('合并小总结内的楼层净化后没有可总结的正文。');
+  }
+  const material = groupMaterials
+    ? null
+    : createSummarySourceMaterial(Number(messageId), summary, { allowHidden: true });
+  if (!groupMaterials && !material) throw new Error(`第 ${Number(messageId)} 楼净化后没有可总结的正文。`);
+  const promptContent = groupMaterials
+    ? buildSummaryPromptContentForMessages(
+        groupMaterials.map((material, index) => ({
+          messageId: groupMessageIds[index],
+          ...material,
+        })),
+        { includeUserInput: summary.includeUserInput },
+      )
+    : material.promptContent;
+  const target = guardChatScope ? captureManualMessageTarget(leadMessageId) : null;
+  if (guardChatScope && !target) throw new Error(`第 ${leadMessageId} 楼目标不可用。`);
 
   chatState.summary.runningTask = 'manual_memory';
   chatState.summary.lastError = '';
   saveChatState();
-  notifySummary('info', `第 ${Number(messageId)} 楼小总结生成中。`, '重写小总结');
+  notifySummary('info', `第 ${leadMessageId} 楼小总结生成中。`, '重写小总结');
   refreshSummaryPanelAfterAction();
 
   try {
-    const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
+    const priorMemories = collectPriorMemoriesForSummary(groupMessageIds ? groupMessageIds[0] : Number(messageId));
     const emotionPromptSection = buildEmotionUpdatePromptSection(getGlobalSettings());
     const plotOutlineProgressSection = buildPlotOutlineProgressPromptSection(getChatState());
-    const result = await generateSummaryMemory(buildMemorySummaryPrompt(material.promptContent, priorMemories, summary, {
+    const result = await generateSummaryMemory(buildMemorySummaryPrompt(promptContent, priorMemories, summary, {
+      ...(groupMaterials ? { materialInstructions: SUMMARY_MERGED_BATCH_INSTRUCTION } : {}),
       extraInstructions: joinSummaryExtraInstructions(emotionPromptSection, plotOutlineProgressSection),
     }), createManualSummaryGenerationOptions('手动重写小总结', transportPolicy));
 
@@ -404,9 +498,25 @@ export async function regenerateMemoryForMessage(messageId, {
       finalizeManualGuardDiscard(guard.reason, {
         scope,
         title: '重写小总结',
-        clearIgnoredMessageId: Number(messageId),
+        clearIgnoredMessageId: leadMessageId,
       });
       return;
+    }
+
+    if (groupMaterials) {
+      const mismatch = groupMaterials.some(
+        (material, index) =>
+          createSummarySourceMaterial(groupMessageIds[index], summary, { allowHidden: true })
+            ?.fingerprint !== material.fingerprint,
+      );
+      if (mismatch) {
+        finalizeManualGuardDiscard(MANUAL_CHAT_GUARD_REASON.CHAT_TARGET_CHANGED, {
+          scope,
+          title: '重写小总结',
+          clearIgnoredMessageId: leadMessageId,
+        });
+        return;
+      }
     }
 
     const memory = stripMemoryEmotionControlLines(normalizeMemoryBlock(result));
@@ -416,7 +526,7 @@ export async function regenerateMemoryForMessage(messageId, {
     }
 
     // Scheme A: host write first; markProcessed only if post-write scope/target still valid.
-    const writeResult = await writeManualMemoryToMessage(Number(messageId), memoryReplacementResult.text, {
+    const writeResult = await writeManualMemoryToMessage(leadMessageId, memoryReplacementResult.text, {
       chatIdentity: scope?.chatId,
       validateAfterWrite: () => evaluateManualChatGuards(
         scope,
@@ -427,7 +537,7 @@ export async function regenerateMemoryForMessage(messageId, {
       finalizeManualGuardDiscard(writeResult.reason, {
         scope,
         title: '重写小总结',
-        clearIgnoredMessageId: Number(messageId),
+        clearIgnoredMessageId: leadMessageId,
       });
       return;
     }
@@ -435,9 +545,15 @@ export async function regenerateMemoryForMessage(messageId, {
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = '';
     saveChatState();
-    notifySummary('success', `已重写第 ${Number(messageId)} 楼小总结。`, '重写小总结');
-    await processEmotionUpdateFromSummaryResult(result, { messageId: Number(messageId) });
-    await processPlotOutlineProgressFromMemory(result, { messageId: Number(messageId) });
+    notifySummary(
+      'success',
+      groupMessageIds
+        ? `第 ${Number(messageId)} 楼属于第 ${groupMessageIds[0]} 到 ${leadMessageId} 楼的合并小总结，已整组重写。`
+        : `已重写第 ${Number(messageId)} 楼小总结。`,
+      '重写小总结',
+    );
+    await processEmotionUpdateFromSummaryResult(result, { messageId: leadMessageId });
+    await processPlotOutlineProgressFromMemory(result, { messageId: leadMessageId });
     refreshSummaryPanelAfterAction();
   } catch (error) {
     if (scope) {
@@ -518,11 +634,14 @@ export async function regenerateLatestGrandMemory({
       return;
     }
 
-    record.memoryFrom = archiveData.memoryFrom;
-    record.memoryTo = archiveData.memoryTo;
+    const currentChatState = getChatState();
+    const currentRecord = currentChatState.summary.archiveRecords.find(item => Number(item.summaryMessageId) === Number(record.summaryMessageId));
+    if (!currentRecord) throw new Error('原大总结归档记录已不存在，请刷新归档状态。');
+    currentRecord.memoryFrom = archiveData.memoryFrom;
+    currentRecord.memoryTo = archiveData.memoryTo;
 
-    chatState.summary.runningTask = 'none';
-    chatState.summary.lastError = '';
+    currentChatState.summary.runningTask = 'none';
+    currentChatState.summary.lastError = '';
     saveChatState();
     scanExistingSummaryState();
     notifySummary('success', `已重新生成第 ${record.summaryMessageId} 楼大总结。`, '归档管理器');
@@ -536,8 +655,9 @@ export async function regenerateLatestGrandMemory({
       }
     }
     clearSummaryWriteIgnored(Number(record.summaryMessageId), scope?.chatId);
-    chatState.summary.runningTask = 'none';
-    chatState.summary.lastError = error.message || String(error);
+    const currentChatState = getChatState();
+    currentChatState.summary.runningTask = 'none';
+    currentChatState.summary.lastError = error.message || String(error);
     saveChatState();
     notifySummary('error', error.message || String(error), '重新生成大总结失败');
     refreshSummaryPanelAfterAction();

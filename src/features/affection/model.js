@@ -2,8 +2,6 @@ const MIN_VALUE_TENTHS = 0;
 const MAX_VALUE_TENTHS = 1000;
 const ALLOWED_DELTA_TENTHS = new Set([-3, -2, -1, 0, 1, 2, 3]);
 
-export const AFFECTION_VALUE_MIN_TENTHS = MIN_VALUE_TENTHS;
-export const AFFECTION_VALUE_MAX_TENTHS = MAX_VALUE_TENTHS;
 export const AFFECTION_ALLOWED_DELTA_TENTHS = Object.freeze([...ALLOWED_DELTA_TENTHS]);
 export const AFFECTION_STAGE_RANGES = Object.freeze([
   Object.freeze({ stageId: 'S1', minTenths: 0, maxTenths: 200 }),
@@ -260,13 +258,6 @@ export function replaceAffectionRecord(records = [], nextRecord = {}) {
       deltaTenths: nextDeltaTenths,
     },
   ]);
-}
-
-export function upsertAffectionRecord(initialValueTenths, records, nextRecord) {
-  return recalculateAffectionLedger(
-    initialValueTenths,
-    replaceAffectionRecord(records, nextRecord),
-  );
 }
 
 export function createManualAffectionAdjustmentRecord({

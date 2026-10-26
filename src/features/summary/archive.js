@@ -61,6 +61,7 @@ import {
   refreshSummaryPanelAfterAction,
 } from './runtime.js';
 import {
+  clearStaleSummaryRunningTask,
   getAutoSummaryFingerprint,
   getMessageSummarySource,
   hasMemoryBlock,
@@ -69,6 +70,7 @@ import {
 } from './state.js';
 
 const deferredGrandRecoveries = new Set();
+const activeLegacyArchives = new Map();
 
 function getValidArchiveRecords(chatState, messages) {
   const summaries = new Set(messages
@@ -152,7 +154,9 @@ export function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
     }
 
     return body
-      ? [{ messageId: message.message_id, memoryNumber: null, body: '', hasMemory: false, memory: `<memory>\n${body}\n</memory>` }]
+      ? (hasMatchingSummarizedConfirmedTask(message, getChatState())
+          ? []
+          : [{ messageId: message.message_id, memoryNumber: null, body: '', hasMemory: false, memory: `<memory>\n${body}\n</memory>` }])
       : [];
   });
 
@@ -239,9 +243,13 @@ export function recoverDeferredAutoGrandMemory() {
   return recoverDeferredGrandMemoryForCurrentChat();
 }
 
-function hasMatchingSummarizedConfirmedTask(message, chatState) {
+export function hasMatchingSummarizedConfirmedTask(message, chatState) {
   const matchingTasks = getConfirmedSummaryTasks(chatState)
-    .filter(task => Number(task.originalMessageId) === Number(message.message_id));
+    .filter(
+      task =>
+        Number(task.originalMessageId) === Number(message.message_id)
+        && task.status !== 'CANCELLED',
+    );
   if (matchingTasks.some(task => task.status !== 'SUMMARIZED')) return false;
   const completed = matchingTasks.find(task => task.status === 'SUMMARIZED');
   return Boolean(
@@ -767,13 +775,23 @@ export function updateLegacyArchiveStatus(patch = {}) {
   return chatState.summary.legacyArchiveStatus;
 }
 
+/** Recover a persisted lock only when this chat has no valid live archive task. */
+export function recoverStaleLegacyArchive() {
+  const chatState = getChatState();
+  if (chatState.summary.runningTask !== 'legacy_grand_memory') return false;
+  const active = activeLegacyArchives.get(getCurrentChatIdentity());
+  if (active && (!active.scope || evaluateChatScope(active.scope).valid)) return false;
+  return clearStaleSummaryRunningTask('旧聊天归档任务已结束');
+}
+
 export async function processLegacyGrandArchive({
   transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
   guardChatScope = false,
 } = {}) {
   const settings = getGlobalSettings();
   const summary = getSummarySettings(settings);
-  const chatState = getChatState();
+  recoverStaleLegacyArchive();
+  let chatState = getChatState();
   const chatIdentity = getCurrentChatIdentity();
   if (chatState.summary.runningTask !== 'none') return;
 
@@ -807,6 +825,8 @@ export async function processLegacyGrandArchive({
     frozenProfileSnapshot,
   );
 
+  const attempt = { scope };
+  activeLegacyArchives.set(chatIdentity, attempt);
   chatState.summary.runningTask = 'legacy_grand_memory';
   chatState.summary.lastError = '';
   chatState.summary.legacyArchiveStatus = {
@@ -823,13 +843,15 @@ export async function processLegacyGrandArchive({
 
   const checkArchiveGuards = (afterHide = false) => {
     if (!isCurrentChatIdentity(chatIdentity)) return { ok: false, reason: 'CHAT_SCOPE_CHANGED' };
-    return evaluateManualChatGuards(scope, () => afterHide
+    const guard = evaluateManualChatGuards(scope, () => afterHide
       ? archiveSnapshot.entries.every(entry => {
         const message = getChatMessageById(entry.messageId);
         return message && message.role === entry.role
           && createMessageContentFingerprint(cleanLegacyArchiveMessageContent(message, summary)) === entry.fingerprint;
       })
       : isLegacyArchiveSnapshotValid(archiveSnapshot));
+    if (guard.ok) chatState = getChatState();
+    return guard;
   };
 
   try {
@@ -969,15 +991,25 @@ export async function processLegacyGrandArchive({
       const scopeResult = evaluateChatScope(scope);
       if (!scopeResult.valid) return;
     }
+    // The host may replace metadata during an awaited request. Release the
+    // current state, rather than the object captured before generation.
+    chatState = getChatState();
+    const status = chatState.summary.legacyArchiveStatus || {};
+    const stage = status.phase === 'batching'
+      ? `第 ${status.batchIndex} / ${status.batchTotal} 批摘要`
+      : status.phase === 'finalizing' ? '最终大总结' : '归档处理';
+    const message = `${stage}失败：${error.message || String(error)}。可重新扫描后重试。`;
     chatState.summary.runningTask = 'none';
-    chatState.summary.lastError = error.message || String(error);
+    chatState.summary.lastError = message;
     chatState.summary.legacyArchiveStatus = {
       ...(chatState.summary.legacyArchiveStatus || {}),
       phase: 'error',
-      lastResult: error.message || String(error),
+      lastResult: message,
     };
     saveChatState();
-    notifySummary('error', error.message || String(error), '旧聊天归档失败');
+    notifySummary('error', message, '旧聊天归档失败');
     refreshSummaryPanelAfterAction();
+  } finally {
+    if (activeLegacyArchives.get(chatIdentity) === attempt) activeLegacyArchives.delete(chatIdentity);
   }
 }

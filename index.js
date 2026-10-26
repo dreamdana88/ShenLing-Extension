@@ -49,8 +49,10 @@ import {
 import {
   registerImmediateWordReplaceEvents,
   generateConfirmedSummaryForTask,
+  generateConfirmedSummaryForGroup,
   shouldRunAutoSummary,
   writeConfirmedSummaryForTask,
+  writeConfirmedSummaryForGroup,
 } from './src/features/summary/workflow.js';
 import {
   handleAutoSummaryEnabledChanged,
@@ -1463,6 +1465,8 @@ function init() {
   const confirmedConsumer = registerConfirmedSummaryConsumer({
     generate: generateConfirmedSummaryForTask,
     write: writeConfirmedSummaryForTask,
+    generateGroup: generateConfirmedSummaryForGroup,
+    writeGroup: writeConfirmedSummaryForGroup,
     onSummaryCommitted: (task, result) => confirmedEffects.scheduleConfirmedEffects(
       task.taskKey,
       result?.effectMemory || result?.memory,

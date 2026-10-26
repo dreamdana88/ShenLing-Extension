@@ -148,17 +148,6 @@ async function refreshCompatibilityMessages(context, messageIds, refresh = 'affe
   await context.reloadCurrentChat();
 }
 
-export async function refreshChatMessageDisplay(messageId) {
-  const refreshOneMessage = getTavernHelperChatCapability('refreshOneMessage');
-  if (refreshOneMessage) {
-    await refreshOneMessage(Number(messageId));
-    return;
-  }
-
-  const context = getCompatibilityContext('refreshOneMessage');
-  await refreshCompatibilityMessages(context, [Number(messageId)], 'affected');
-}
-
 function applyCompatibilityMessageUpdate(rawMessage, update) {
   if (Object.hasOwn(update, 'message')) {
     rawMessage.mes = update.message;

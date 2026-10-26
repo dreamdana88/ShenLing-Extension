@@ -52,6 +52,7 @@ function createLifecycleHarness({ failureAt = '' } = {}) {
     memoryTo: messageId,
   }));
   const context = {
+    chatId: 'total-grand-memory-test-chat',
     chat: archiveRecords.map(record => grandMessage(record.summaryMessageId)),
     chatMetadata: {
       [CHAT_STATE_KEY]: {

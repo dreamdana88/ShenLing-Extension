@@ -81,7 +81,3 @@ export function registerPromptStateLineSanitizerEvents() {
   promptSanitizerEventStop = stop;
   return true;
 }
-
-export function isPromptStateLineSanitizerRegistered() {
-  return Boolean(promptSanitizerEventStop);
-}

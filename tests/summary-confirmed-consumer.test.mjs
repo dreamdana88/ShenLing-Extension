@@ -419,3 +419,253 @@ test('a B terminal cannot release A gate, while returning to A restarts bounded 
   assert.equal(stateA.summary.confirmedTasks[0].status, 'SUMMARIZED');
   assert.equal(writes.length, 1);
 });
+
+// ── Phase 2: 合并小总结（intervalMessages > 1）────────────────────────
+
+function createGroupHarness(tasks, options = {}) {
+  const state = {
+    summary: {
+      confirmedQueueActivatedAt: options.activatedAt ?? '2026-07-30T00:00:00.000Z',
+      confirmedTasks: tasks,
+      processedMessageFingerprints: {},
+    },
+  };
+  const calls = { generateGroup: [], writeGroup: [], save: 0 };
+  const consumer = createConfirmedSummaryConsumer({
+    getChatState: () => state,
+    saveChatState: () => { calls.save += 1; },
+    getChatIdentity: options.getChatIdentity || (() => 'chat-a'),
+    isGenerating: options.isGenerating || (() => false),
+    isEnabled: options.isEnabled || (() => true),
+    isTargetValid: options.isTargetValid || (() => true),
+    getSummaryFingerprint: options.getSummaryFingerprint || (messageId => `summary:${messageId}`),
+    generate: options.generate,
+    write: options.write,
+    getBatchSize: options.getBatchSize || (() => 3),
+    generateGroup: options.generateGroup || (async messageIds => {
+      calls.generateGroup.push(messageIds);
+      return {
+        fingerprints: Object.fromEntries(messageIds.map(id => [id, `summary:${id}`])),
+        memory: '<memory>merged</memory>',
+      };
+    }),
+    writeGroup: options.writeGroup || (async (messageIds, fingerprints, memory) => {
+      calls.writeGroup.push([messageIds, memory]);
+      return true;
+    }),
+    onSummaryCommitted: options.onSummaryCommitted,
+    formatTimestamp: () => '2026-07-30T00:00:01.000Z',
+    defer: () => {},
+    scheduleGenerationIdleRecoveryCheck: options.scheduleGenerationIdleRecoveryCheck || (() => {}),
+  });
+  return { state, calls, consumer };
+}
+
+test('N=3 with only 2 pending tasks does not generate; the 3rd task triggers one merged summary on the last floor', async () => {
+  const harness = createGroupHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+  ]);
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generateGroup, []);
+  assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['PENDING', 'PENDING']);
+
+  harness.state.summary.confirmedTasks.push(task('6', '2026-07-30T00:00:03.000Z'));
+  const committedStatuses = [];
+  const consumerWithCommit = createConfirmedSummaryConsumer({
+    getChatState: () => harness.state,
+    saveChatState: () => {},
+    getChatIdentity: () => 'chat-a',
+    isGenerating: () => false,
+    isEnabled: () => true,
+    isTargetValid: () => true,
+    getSummaryFingerprint: messageId => `summary:${messageId}`,
+    getBatchSize: () => 3,
+    generateGroup: async messageIds => {
+      harness.calls.generateGroup.push(messageIds);
+      return {
+        fingerprints: Object.fromEntries(messageIds.map(id => [id, `summary:${id}`])),
+        memory: '<memory>merged</memory>',
+      };
+    },
+    writeGroup: async (messageIds, fingerprints, memory) => {
+      harness.calls.writeGroup.push([messageIds, memory]);
+      return true;
+    },
+    onSummaryCommitted: committed => {
+      committedStatuses.push([
+        committed.status,
+        harness.state.summary.confirmedTasks.map(item => item.status).join(','),
+      ]);
+    },
+    formatTimestamp: () => '2026-07-30T00:00:01.000Z',
+    defer: () => {},
+  });
+  await consumerWithCommit.drainConfirmedQueue();
+
+  assert.deepEqual(harness.calls.generateGroup, [[2, 4, 6]]);
+  assert.deepEqual(harness.calls.writeGroup, [[[2, 4, 6], '<memory>merged</memory>']]);
+  assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['SUMMARIZED', 'SUMMARIZED', 'SUMMARIZED']);
+  assert.deepEqual(harness.state.summary.confirmedTasks[0].effects, { affection: 'SKIPPED', emotion: 'SKIPPED', plot: 'SKIPPED' });
+  assert.deepEqual(harness.state.summary.confirmedTasks[1].effects, { affection: 'SKIPPED', emotion: 'SKIPPED', plot: 'SKIPPED' });
+  assert.equal(harness.state.summary.memoryCountSinceArchive, 1);
+  assert.equal(harness.state.summary.smallSummaryCount, 1);
+  assert.equal(harness.state.summary.lastSummaryMessageId, 6);
+  assert.deepEqual(committedStatuses, [['SUMMARIZED', 'SUMMARIZED,SUMMARIZED,SUMMARIZED']]);
+});
+
+test('N=3 group generation gate: any gated member blocks the whole group until released', async () => {
+  const harness = createGroupHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+    task('6', '2026-07-30T00:00:03.000Z'),
+  ]);
+  harness.consumer.handleMainGenerationStarted();
+  harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[2]);
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generateGroup, []);
+
+  harness.consumer.handleMainGenerationTerminal();
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generateGroup, [[2, 4, 6]]);
+});
+
+test('N=3 group failure marks lead and members FAILED with the same error code', async () => {
+  const harness = createGroupHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+    task('6', '2026-07-30T00:00:03.000Z'),
+  ], {
+    generateGroup: async () => { throw new Error('transport failure'); },
+  });
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['FAILED', 'FAILED', 'FAILED']);
+  assert.deepEqual(
+    harness.state.summary.confirmedTasks.map(item => item.lastErrorCode),
+    ['SUMMARY_GENERATION_FAILED', 'SUMMARY_GENERATION_FAILED', 'SUMMARY_GENERATION_FAILED'],
+  );
+});
+
+test('N=3 member fingerprint change after generation returns lead to PENDING without writing', async () => {
+  let fingerprint4 = 'summary:4';
+  const harness = createGroupHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+    task('6', '2026-07-30T00:00:03.000Z'),
+  ], {
+    getSummaryFingerprint: messageId => (Number(messageId) === 4 ? fingerprint4 : `summary:${messageId}`),
+    generateGroup: async messageIds => {
+      const firstCall = harness.calls.generateGroup.length === 0;
+      const generatedFingerprints = Object.fromEntries(
+        messageIds.map(id => [id, `summary:${id}`]),
+      );
+      if (firstCall) fingerprint4 = 'summary:4-changed';
+      harness.calls.generateGroup.push(messageIds);
+      return {
+        // Fingerprints captured at generation time (before the edit) — stale for id 4.
+        fingerprints: firstCall
+          ? generatedFingerprints
+          : Object.fromEntries(
+              messageIds.map(id => [id, Number(id) === 4 ? fingerprint4 : `summary:${id}`]),
+            ),
+        memory: '<memory>merged</memory>',
+      };
+    },
+  });
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.writeGroup, []);
+  assert.equal(harness.state.summary.confirmedTasks[2].status, 'PENDING');
+  assert.equal(harness.state.summary.confirmedTasks[2].executionToken, undefined);
+  assert.equal(harness.state.summary.confirmedTasks[0].status, 'PENDING');
+  assert.equal(harness.state.summary.confirmedTasks[1].status, 'PENDING');
+
+  // Next drain regroups with the new content (member 4 keeps the new text).
+  harness.state.summary.confirmedTasks.push(task('8', '2026-07-30T00:00:04.000Z'));
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['SUMMARIZED', 'SUMMARIZED', 'SUMMARIZED', 'PENDING']);
+});
+
+test('N=3 lead target invalid after generation cancels lead and keeps members PENDING', async () => {
+  let leadValid = true;
+  const harness = createGroupHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+    task('6', '2026-07-30T00:00:03.000Z'),
+  ], {
+    isTargetValid: candidate => (Number(candidate.originalMessageId) === 6 ? leadValid : true),
+    generateGroup: async messageIds => {
+      leadValid = false;
+      return {
+        fingerprints: Object.fromEntries(messageIds.map(id => [id, `summary:${id}`])),
+        memory: '<memory>merged</memory>',
+      };
+    },
+  });
+  await harness.consumer.drainConfirmedQueue();
+  assert.equal(harness.state.summary.confirmedTasks[2].status, 'CANCELLED');
+  assert.equal(harness.state.summary.confirmedTasks[0].status, 'PENDING');
+  assert.equal(harness.state.summary.confirmedTasks[1].status, 'PENDING');
+  assert.deepEqual(harness.calls.writeGroup, []);
+});
+
+function createSingleHarness(tasks, options = {}) {
+  const generated = [];
+  const harness = createGroupHarness(tasks, {
+    ...options,
+    getBatchSize: () => 1,
+    generate: async messageId => {
+      generated.push(messageId);
+      return { fingerprint: `summary:${messageId}`, memory: `<memory>${messageId}</memory>` };
+    },
+    write: async () => true,
+  });
+  return { ...harness, generated };
+}
+
+test('N=1 empty fingerprint cancels the head task and the same drain summarizes the next valid task', async () => {
+  const harness = createSingleHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+  ], {
+    getSummaryFingerprint: messageId => (messageId === 2 ? '' : `summary:${messageId}`),
+  });
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.generated, [4]);
+  assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['CANCELLED', 'SUMMARIZED']);
+});
+
+test('N=1 invalid head target is cancelled and the next valid task is summarized with one generate call', async () => {
+  const harness = createSingleHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+  ], {
+    isTargetValid: item => item.originalMessageId !== 2,
+  });
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.generated, [4]);
+  assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['CANCELLED', 'SUMMARIZED']);
+});
+
+test('N=3 a gated middle task stops collection: later tasks are not validated or cancelled, and release regroups all three', async () => {
+  const validated = [];
+  const harness = createGroupHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+    task('6', '2026-07-30T00:00:03.000Z'),
+  ], {
+    isTargetValid: item => {
+      validated.push(item.originalMessageId);
+      return true;
+    },
+  });
+  harness.consumer.handleMainGenerationStarted();
+  harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[1]);
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(validated, [2]);
+  assert.deepEqual(harness.calls.generateGroup, []);
+  assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['PENDING', 'PENDING', 'PENDING']);
+
+  harness.consumer.handleMainGenerationTerminal();
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generateGroup, [[2, 4, 6]]);
+});
