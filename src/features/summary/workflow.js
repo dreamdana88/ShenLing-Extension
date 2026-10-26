@@ -99,44 +99,14 @@ export async function processImmediateWordReplace(messageId) {
 }
 
 export async function generateConfirmedSummaryForTask(messageId) {
-  const settings = getGlobalSettings();
-  const summary = getSummarySettings(settings);
-  const material = createSummarySourceMaterial(Number(messageId), summary);
-  if (!material) throw new Error(`第 ${Number(messageId)} 楼没有可总结的正文。`);
-  const priorMemories = collectPriorMemoriesForSummary(Number(messageId));
-  const chatState = getChatState();
-  const prompt = buildMemorySummaryPrompt(material.promptContent, priorMemories, summary, {
-    extraInstructions: joinSummaryExtraInstructions(
-      buildEmotionUpdatePromptSection(settings),
-      buildAffectionUpdatePromptSection(settings, chatState),
-      buildPlotOutlineProgressPromptSection(chatState),
-    ),
-  });
-  const effectResult = await generateSummaryMemory(prompt, {
-    type: 'confirmed 自动小总结',
-    transportPolicy: SUMMARY_TRANSPORT_POLICY.CONFIGURED,
-  });
-  const affectionAnalysis = prepareAffectionUpdateFromSummaryResult(effectResult, { settings, chatState });
-  const memory = stripMemoryChangedControlLines(
-    affectionAnalysis?.normalizedMemory || normalizeMemoryBlock(effectResult),
-  );
-  const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings(settings));
-  if (memoryReplacementResult.errors.length > 0) {
-    throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
-  }
-  return {
-    fingerprint: material.fingerprint,
-    memory: memoryReplacementResult.text,
-    effectResult,
-  };
+  const id = Number(messageId);
+  const { fingerprints, memory, effectResult } = await generateConfirmedSummaryForGroup([id]);
+  return { fingerprint: fingerprints[id], memory, effectResult };
 }
 
 export async function writeConfirmedSummaryForTask(messageId, expectedFingerprint, memory) {
-  const material = createSummarySourceMaterial(Number(messageId));
-  if (!material || material.fingerprint !== expectedFingerprint) return false;
-  markSummaryWriteIgnored(Number(messageId));
-  await setChatMessageContent(Number(messageId), `${material.body}\n\n${memory}`);
-  return true;
+  const id = Number(messageId);
+  return writeConfirmedSummaryForGroup([id], { [id]: expectedFingerprint }, memory);
 }
 
 export async function generateConfirmedSummaryForGroup(messageIds) {
@@ -147,13 +117,14 @@ export async function generateConfirmedSummaryForGroup(messageIds) {
     if (!material) throw new Error(`第 ${Number(messageId)} 楼没有可总结的正文。`);
     return { messageId: Number(messageId), ...material };
   });
-  const promptContent = buildSummaryPromptContentForMessages(materials, {
-    includeUserInput: summary.includeUserInput,
-  });
-  const priorMemories = collectPriorMemoriesForSummary(Number(materials[0].messageId));
+  const isGroup = materials.length > 1;
+  const promptContent = isGroup
+    ? buildSummaryPromptContentForMessages(materials, { includeUserInput: summary.includeUserInput })
+    : materials[0].promptContent;
+  const priorMemories = collectPriorMemoriesForSummary(materials[0].messageId);
   const chatState = getChatState();
   const prompt = buildMemorySummaryPrompt(promptContent, priorMemories, summary, {
-    materialInstructions: SUMMARY_MERGED_BATCH_INSTRUCTION,
+    materialInstructions: isGroup ? SUMMARY_MERGED_BATCH_INSTRUCTION : '',
     extraInstructions: joinSummaryExtraInstructions(
       buildEmotionUpdatePromptSection(settings),
       buildAffectionUpdatePromptSection(settings, chatState),
@@ -185,7 +156,7 @@ export async function writeConfirmedSummaryForGroup(messageIds, expectedFingerpr
   const materials = messageIds.map(messageId => createSummarySourceMaterial(Number(messageId)));
   const mismatch = materials.some(
     (material, index) =>
-      !material || material.fingerprint !== expectedFingerprints?.[Number(messageIds[index])],
+      !material || material.fingerprint !== expectedFingerprints[Number(messageIds[index])],
   );
   if (mismatch || materials.length === 0) return false;
   const last = materials.at(-1);
