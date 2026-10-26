@@ -357,8 +357,7 @@ body.slx-panel-open-lock {
 }
 
 .slx-panel.slx-panel-diary-book-only > .slx-bubbles,
-.slx-panel.slx-panel-diary-book-only > .slx-header,
-.slx-panel.slx-panel-diary-book-only > .slx-communication-log-panel {
+.slx-panel.slx-panel-diary-book-only > .slx-header {
   display: none;
 }
 
@@ -371,8 +370,7 @@ body.slx-panel-open-lock {
 
 .slx-panel.slx-panel-diary-book-only .slx-module-grid,
 .slx-panel.slx-panel-diary-book-only .slx-detail > .slx-detail-head,
-.slx-panel.slx-panel-diary-book-only .slx-diary-tcho-frame,
-.slx-panel.slx-panel-diary-book-only .slx-diary-reader-modal {
+.slx-panel.slx-panel-diary-book-only .slx-diary-tcho-frame {
   display: none;
 }
 
@@ -398,16 +396,12 @@ body.slx-panel-open-lock {
 
 .slx-panel.slx-panel-emotion-editor-only > .slx-bubbles,
 .slx-panel.slx-panel-emotion-editor-only > .slx-header,
-.slx-panel.slx-panel-emotion-editor-only > .slx-communication-log-panel,
 .slx-panel.slx-panel-affection-editor-only > .slx-bubbles,
 .slx-panel.slx-panel-affection-editor-only > .slx-header,
-.slx-panel.slx-panel-affection-editor-only > .slx-communication-log-panel,
 .slx-panel.slx-panel-theater-preview-only > .slx-bubbles,
 .slx-panel.slx-panel-theater-preview-only > .slx-header,
-.slx-panel.slx-panel-theater-preview-only > .slx-communication-log-panel,
 .slx-panel.slx-panel-outline-editor-only > .slx-bubbles,
-.slx-panel.slx-panel-outline-editor-only > .slx-header,
-.slx-panel.slx-panel-outline-editor-only > .slx-communication-log-panel {
+.slx-panel.slx-panel-outline-editor-only > .slx-header {
   display: none;
 }
 
@@ -1002,9 +996,6 @@ body.slx-panel-open-lock {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-}
-
-.slx-card-actions {
 }
 
 .slx-emotion-shell-card .slx-action-row {
@@ -2500,9 +2491,6 @@ body.slx-panel-open-lock {
   flex-shrink: 0;
 }
 
-.slx-danger-mini-btn {
-}
-
 .slx-danger-mini-btn:hover:not(:disabled) {
   background: rgba(192, 57, 43, 0.1);
   color: var(--slx-danger, #c0392b);
@@ -2738,8 +2726,7 @@ body.slx-panel-open-lock {
   opacity: 1;
 }
 
-#shenling-assistant-panel-root .slx-diary-notebook-stage,
-#shenling-assistant-panel-root .slx-diary-reader-modal {
+#shenling-assistant-panel-root .slx-diary-notebook-stage {
   color-scheme: light;
 }
 
@@ -2776,22 +2763,19 @@ body.slx-panel-open-lock {
   color: rgba(128, 95, 86, 0.58) !important;
 }
 
-#shenling-assistant-panel-root .slx-diary-notebook-stage .slx-soft-btn,
-#shenling-assistant-panel-root .slx-diary-reader-modal .slx-soft-btn {
+#shenling-assistant-panel-root .slx-diary-notebook-stage .slx-soft-btn {
   border-color: rgba(139, 75, 67, 0.18) !important;
   background: rgba(255, 246, 238, 0.72) !important;
   color: #7a4a3a !important;
 }
 
-#shenling-assistant-panel-root .slx-diary-notebook-stage .slx-soft-btn:hover:not(:disabled),
-#shenling-assistant-panel-root .slx-diary-reader-modal .slx-soft-btn:hover:not(:disabled) {
+#shenling-assistant-panel-root .slx-diary-notebook-stage .slx-soft-btn:hover:not(:disabled) {
   border-color: rgba(139, 75, 67, 0.28) !important;
   background: rgba(255, 238, 229, 0.86) !important;
   color: #5f382e !important;
 }
 
-#shenling-assistant-panel-root .slx-diary-notebook-stage .slx-soft-btn:disabled,
-#shenling-assistant-panel-root .slx-diary-reader-modal .slx-soft-btn:disabled {
+#shenling-assistant-panel-root .slx-diary-notebook-stage .slx-soft-btn:disabled {
   border-color: rgba(139, 75, 67, 0.12) !important;
   background: rgba(248, 238, 226, 0.56) !important;
   color: rgba(122, 74, 58, 0.5) !important;
@@ -3475,7 +3459,6 @@ body.slx-panel-open-lock {
 
 .slx-panel.slx-panel-prompt-editor-only > .slx-bubbles,
 .slx-panel.slx-panel-prompt-editor-only > .slx-header,
-.slx-panel.slx-panel-prompt-editor-only > .slx-communication-log-panel,
 .slx-panel.slx-panel-prompt-editor-only .slx-module-grid,
 .slx-panel.slx-panel-prompt-editor-only .slx-detail > .slx-detail-head,
 .slx-panel.slx-panel-prompt-editor-only .slx-settings-tabs,
@@ -3781,7 +3764,6 @@ body.slx-panel-open-lock {
 }
 
 .slx-affection-control-label,
-.slx-affection-initial-fix > span,
 .slx-affection-adjust-row label > span,
 .slx-affection-stage-fields label > span,
 .slx-affection-requirement > span {
@@ -5022,14 +5004,8 @@ body.slx-panel-open-lock {
     border-radius: 14px;
   }
 
-  .slx-detail-head {
-  }
-
   .slx-detail-icon {
     border-radius: 11px;
-  }
-
-  .slx-detail-name {
   }
 
   .slx-detail-card {
@@ -5478,9 +5454,6 @@ body.slx-panel-open-lock {
   transition: border-color 0.2s, background 0.2s;
 }
 
-.slx-diary-tcho-input::placeholder {
-}
-
 .slx-diary-tcho-input:focus {
   border-color: #c89090;
   border-bottom-color: #b07060;
@@ -5657,9 +5630,6 @@ body.slx-panel-open-lock {
   gap: 14px !important;
 }
 
-.slx-diary-tcho-settings .slx-detail-title {
-}
-
 .slx-diary-tcho-settings .slx-summary-card-head p {
   color: #a07060;
 }
@@ -5671,9 +5641,6 @@ body.slx-panel-open-lock {
 
 .slx-diary-tcho-settings .slx-diary-setting-line > span {
   color: #8b5a4e;
-}
-
-.slx-diary-tcho-settings .slx-diary-pill-toggle {
 }
 
 .slx-diary-tcho-settings .slx-diary-pill-toggle button {
@@ -5780,21 +5747,10 @@ body.slx-panel-open-lock {
 /* ── 响应式 ── */
 
 @media (max-width: 720px) {
-  .slx-diary-tcho-frame {
-  }
 
   .slx-diary-tcho-library {
     padding: 14px 14px 0;
     gap: 14px;
-  }
-
-  .slx-diary-tcho-title {
-  }
-
-  .slx-diary-tcho-wave {
-  }
-
-  .slx-diary-tcho-book-card {
   }
 
   .slx-diary-tcho-settings {
@@ -10197,8 +10153,7 @@ body.dark .slx-memory-wrap,
 }
 
 .slx-capture-form,
-.slx-capture-draft-card,
-.slx-capture-advanced {
+.slx-capture-draft-card {
   min-width: 0;
   border: 1px solid var(--slx-border-dim);
   border-radius: 15px;
@@ -10934,7 +10889,6 @@ body.dark .slx-memory-wrap,
 
 .slx-panel.slx-panel-capture-wb-only > .slx-bubbles,
 .slx-panel.slx-panel-capture-wb-only > .slx-header,
-.slx-panel.slx-panel-capture-wb-only > .slx-communication-log-panel,
 .slx-panel.slx-panel-capture-wb-only .slx-module-grid,
 .slx-panel.slx-panel-capture-wb-only .slx-detail > .slx-detail-head,
 .slx-panel.slx-panel-capture-wb-only .slx-memoir-tab-bar,
