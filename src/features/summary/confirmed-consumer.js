@@ -273,46 +273,16 @@ export function createConfirmedSummaryConsumer(options = {}) {
       .filter(item => item.createdAt >= state.summary.confirmedQueueActivatedAt)
       .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)));
 
-    if (batchSize <= 1) {
-      const task = pendingTasks[0];
-      if (!task) return;
-      if (isAwaitingGenerationTerminal(task)) return;
-      if (!isTargetValid(task)) {
-        task.status = 'CANCELLED';
-        task.updatedAt = formatTimestamp();
-        saveState();
-        scheduleConfirmedQueueDrain();
-        return;
-      }
-      const fingerprint = getSummaryFingerprint(task.originalMessageId);
-      if (!fingerprint) {
-        task.status = 'CANCELLED';
-        task.updatedAt = formatTimestamp();
-        saveState();
-        return;
-      }
-      if (state.summary.processedMessageFingerprints?.[task.originalMessageId] === fingerprint) {
-        task.status = 'SUMMARIZED';
-        task.updatedAt = formatTimestamp();
-        saveState();
-        void Promise.resolve(onSummaryCommitted?.(task)).catch(error => {
-          console.warn('[蜃灵助手] confirmed Summary 下游 effect 调度失败。', error);
-        });
-        scheduleConfirmedQueueDrain();
-        return;
-      }
-      if (typeof generate !== 'function' || typeof write !== 'function') return;
-      await runConfirmedTask(state, task);
-      return;
-    }
+    const required = batchSize === 1 ? [generate, write] : [generateGroup, writeGroup];
+    if (required.some(fn => typeof fn !== 'function')) return;
 
-    // N>1: collect up to N valid PENDING tasks into a group.
-    if (typeof generateGroup !== 'function' || typeof writeGroup !== 'function') return;
+    // Collect up to N valid PENDING tasks into a group (N=1 is a group of one).
     const group = [];
     let queueChanged = false;
     const committedTasks = [];
     for (const task of pendingTasks) {
       if (group.length >= batchSize) break;
+      if (isAwaitingGenerationTerminal(task)) break;
       if (!isTargetValid(task)) {
         task.status = 'CANCELLED';
         task.updatedAt = formatTimestamp();
@@ -342,7 +312,6 @@ export function createConfirmedSummaryConsumer(options = {}) {
       });
     });
     if (group.length < batchSize) return;
-    if (group.some(isAwaitingGenerationTerminal)) return;
     await runConfirmedTaskGroup(state, group);
   }
 
@@ -363,6 +332,8 @@ export function createConfirmedSummaryConsumer(options = {}) {
 
   async function runConfirmedTaskGroup(state, group) {
     const task = group.at(-1);
+    const isGroup = group.length > 1;
+    const leadId = Number(task.originalMessageId);
     const messageIds = group.map(item => Number(item.originalMessageId));
     const executionToken = `confirmed:${++sequence}`;
     task.status = 'RUNNING';
@@ -376,7 +347,10 @@ export function createConfirmedSummaryConsumer(options = {}) {
       executionToken,
     };
     try {
-      const result = await generateGroup(messageIds);
+      const result = isGroup
+        ? await generateGroup(messageIds)
+        : await generate(task.originalMessageId);
+      const fingerprints = isGroup ? result.fingerprints : { [leadId]: result.fingerprint };
       const latestState = getState();
       const cancellationRequested = hasCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
       if (getIdentity() !== task.chatIdentity) {
@@ -411,7 +385,7 @@ export function createConfirmedSummaryConsumer(options = {}) {
       }
       const memberMismatch = group.some(member => {
         if (member.taskKey === task.taskKey) return false;
-        return getSummaryFingerprint(member.originalMessageId) !== result.fingerprints?.[Number(member.originalMessageId)];
+        return getSummaryFingerprint(member.originalMessageId) !== fingerprints?.[Number(member.originalMessageId)];
       });
       if (memberMismatch) {
         // A member floor changed during generation: put the lead back to PENDING
@@ -422,26 +396,27 @@ export function createConfirmedSummaryConsumer(options = {}) {
         saveState();
         return;
       }
-      const wrote = await writeGroup(messageIds, result.fingerprints, result.memory);
+      const wrote = isGroup
+        ? await writeGroup(messageIds, fingerprints, result.memory)
+        : await write(task.originalMessageId, fingerprints[leadId], result.memory);
       if (!wrote) {
         cancelTask(latestTask);
       } else {
-        const messageId = Number(task.originalMessageId);
         const countedMessageIds = Array.isArray(latestState.summary.memoryCountedMessageIds)
           ? latestState.summary.memoryCountedMessageIds
           : [];
-        const alreadyCounted = countedMessageIds.includes(messageId)
-          || Object.hasOwn(latestState.summary.processedMessageFingerprints || {}, messageId);
+        const alreadyCounted = countedMessageIds.includes(leadId)
+          || Object.hasOwn(latestState.summary.processedMessageFingerprints || {}, leadId);
         latestState.summary.processedMessageFingerprints = {
           ...(latestState.summary.processedMessageFingerprints || {}),
-          [task.originalMessageId]: result.fingerprints?.[messageId],
+          [task.originalMessageId]: fingerprints?.[leadId],
         };
         if (!alreadyCounted) {
-          latestState.summary.memoryCountedMessageIds = [...countedMessageIds, messageId];
+          latestState.summary.memoryCountedMessageIds = [...countedMessageIds, leadId];
           latestState.summary.memoryCountSinceArchive = Number(latestState.summary.memoryCountSinceArchive || 0) + 1;
           latestState.summary.smallSummaryCount = Number(latestState.summary.smallSummaryCount || 0) + 1;
         }
-        latestState.summary.lastSummaryMessageId = Number(task.originalMessageId);
+        latestState.summary.lastSummaryMessageId = leadId;
         latestState.summary.lastSummaryAt = formatTimestamp();
         latestTask.status = 'SUMMARIZED';
         markMemberTasksSkipped(latestTasks, group, latestTask);
@@ -494,124 +469,6 @@ export function createConfirmedSummaryConsumer(options = {}) {
               memberTask.updatedAt = formatTimestamp();
             }
           });
-        }
-        saveState();
-      }
-      clearCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
-    } finally {
-      if (activeExecution?.executionToken === executionToken) activeExecution = null;
-      running = false;
-      scheduleConfirmedQueueDrain();
-    }
-  }
-
-  async function runConfirmedTask(state, task) {
-
-    const executionToken = `confirmed:${++sequence}`;
-    task.status = 'RUNNING';
-    task.executionToken = executionToken;
-    task.updatedAt = formatTimestamp();
-    saveState();
-    running = true;
-    activeExecution = {
-      chatIdentity: task.chatIdentity,
-      taskKey: task.taskKey,
-      executionToken,
-    };
-    try {
-      const result = await generate(task.originalMessageId);
-      const latestState = getState();
-      const cancellationRequested = hasCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
-      if (getIdentity() !== task.chatIdentity) {
-        deferredRecoveries.set(task.chatIdentity, {
-          taskKey: task.taskKey,
-          executionToken,
-          summaryDisabled: cancellationRequested || !isEnabled(),
-        });
-        clearCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
-        return;
-      }
-      const latestTask = getConfirmedSummaryTasks(latestState).find(item => item.taskKey === task.taskKey);
-      if (cancellationRequested || !isEnabled()) {
-        if (latestTask?.status === 'RUNNING' && latestTask.executionToken === executionToken) {
-          cancelTask(latestTask, 'SUMMARY_DISABLED');
-          saveState();
-        }
-        clearCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
-        return;
-      }
-      if (
-        latestTask?.status !== 'RUNNING'
-        || latestTask.executionToken !== executionToken
-        || !isTargetValid(latestTask)
-      ) {
-        if (latestTask?.status === 'RUNNING') {
-          cancelTask(latestTask);
-          saveState();
-        }
-        return;
-      }
-      const wrote = await write(task.originalMessageId, result.fingerprint, result.memory);
-      if (!wrote) {
-        cancelTask(latestTask);
-      } else {
-        const messageId = Number(task.originalMessageId);
-        const countedMessageIds = Array.isArray(latestState.summary.memoryCountedMessageIds)
-          ? latestState.summary.memoryCountedMessageIds
-          : [];
-        const alreadyCounted = countedMessageIds.includes(messageId)
-          || Object.hasOwn(latestState.summary.processedMessageFingerprints || {}, messageId);
-        latestState.summary.processedMessageFingerprints = {
-          ...(latestState.summary.processedMessageFingerprints || {}),
-          [task.originalMessageId]: result.fingerprint,
-        };
-        if (!alreadyCounted) {
-          latestState.summary.memoryCountedMessageIds = [...countedMessageIds, messageId];
-          latestState.summary.memoryCountSinceArchive = Number(latestState.summary.memoryCountSinceArchive || 0) + 1;
-          latestState.summary.smallSummaryCount = Number(latestState.summary.smallSummaryCount || 0) + 1;
-        }
-        latestState.summary.lastSummaryMessageId = Number(task.originalMessageId);
-        latestState.summary.lastSummaryAt = formatTimestamp();
-        latestTask.status = 'SUMMARIZED';
-      }
-      latestTask.updatedAt = formatTimestamp();
-      delete latestTask.executionToken;
-      saveState();
-      if (latestTask.status === 'SUMMARIZED') {
-        void Promise.resolve(onSummaryCommitted?.(latestTask, {
-          memory: result.memory,
-          effectMemory: result.effectResult || result.memory,
-        })).catch(error => {
-          console.warn('[蜃灵助手] confirmed Summary 下游 effect 调度失败。', error);
-        });
-      }
-    } catch (error) {
-      const cancellationRequested = hasCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
-      if (getIdentity() !== task.chatIdentity) {
-        deferredRecoveries.set(task.chatIdentity, {
-          taskKey: task.taskKey,
-          executionToken,
-          summaryDisabled: cancellationRequested || !isEnabled(),
-        });
-        clearCancellationIntent(task.chatIdentity, task.taskKey, executionToken);
-        return;
-      }
-      const latestTask = getConfirmedSummaryTasks(getState()).find(item => item.taskKey === task.taskKey);
-      if (latestTask?.status === 'RUNNING' && latestTask.executionToken === executionToken) {
-        if (cancellationRequested || !isEnabled()) {
-          cancelTask(latestTask, 'SUMMARY_DISABLED');
-        } else {
-          latestTask.status = 'FAILED';
-          latestTask.lastErrorCode = [
-            'MAIN_TIMEOUT',
-            'SECONDARY_TIMEOUT',
-            'TIMEOUT_ABORT',
-            'SUMMARY_TRANSPORT_TIMEOUT',
-          ].includes(error?.code)
-            ? 'SUMMARY_TRANSPORT_TIMEOUT'
-            : 'SUMMARY_GENERATION_FAILED';
-          latestTask.updatedAt = formatTimestamp();
-          delete latestTask.executionToken;
         }
         saveState();
       }

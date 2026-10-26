@@ -607,3 +607,65 @@ test('N=3 lead target invalid after generation cancels lead and keeps members PE
   assert.equal(harness.state.summary.confirmedTasks[1].status, 'PENDING');
   assert.deepEqual(harness.calls.writeGroup, []);
 });
+
+function createSingleHarness(tasks, options = {}) {
+  const generated = [];
+  const harness = createGroupHarness(tasks, {
+    ...options,
+    getBatchSize: () => 1,
+    generate: async messageId => {
+      generated.push(messageId);
+      return { fingerprint: `summary:${messageId}`, memory: `<memory>${messageId}</memory>` };
+    },
+    write: async () => true,
+  });
+  return { ...harness, generated };
+}
+
+test('N=1 empty fingerprint cancels the head task and the same drain summarizes the next valid task', async () => {
+  const harness = createSingleHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+  ], {
+    getSummaryFingerprint: messageId => (messageId === 2 ? '' : `summary:${messageId}`),
+  });
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.generated, [4]);
+  assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['CANCELLED', 'SUMMARIZED']);
+});
+
+test('N=1 invalid head target is cancelled and the next valid task is summarized with one generate call', async () => {
+  const harness = createSingleHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+  ], {
+    isTargetValid: item => item.originalMessageId !== 2,
+  });
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.generated, [4]);
+  assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['CANCELLED', 'SUMMARIZED']);
+});
+
+test('N=3 a gated middle task stops collection: later tasks are not validated or cancelled, and release regroups all three', async () => {
+  const validated = [];
+  const harness = createGroupHarness([
+    task('2', '2026-07-30T00:00:01.000Z'),
+    task('4', '2026-07-30T00:00:02.000Z'),
+    task('6', '2026-07-30T00:00:03.000Z'),
+  ], {
+    isTargetValid: item => {
+      validated.push(item.originalMessageId);
+      return true;
+    },
+  });
+  harness.consumer.handleMainGenerationStarted();
+  harness.consumer.holdConfirmedTaskUntilGenerationTerminal(harness.state.summary.confirmedTasks[1]);
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(validated, [2]);
+  assert.deepEqual(harness.calls.generateGroup, []);
+  assert.deepEqual(harness.state.summary.confirmedTasks.map(item => item.status), ['PENDING', 'PENDING', 'PENDING']);
+
+  harness.consumer.handleMainGenerationTerminal();
+  await harness.consumer.drainConfirmedQueue();
+  assert.deepEqual(harness.calls.generateGroup, [[2, 4, 6]]);
+});
