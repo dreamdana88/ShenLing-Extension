@@ -374,12 +374,12 @@ export function renderSummarySettingsPanel(settings, chatState) {
       <label class="slx-field slx-field-wide">
         <span>合并小总结间隔</span>
         <input type="number" min="1" max="10" step="1" required data-slx-summary-field="intervalMessages" value="${escapeHtml(summary.intervalMessages ?? 1)}" />
-        <small>每 N 次 AI 回复合并成一条小总结，1 为逐层。不满 N 次的最新回复会等待；N 越大，生成越慢、越容易超时。</small>
+        <small>每 N 次 AI 回复合并成一条小总结。</small>
       </label>
       <label class="slx-field slx-field-wide">
         <span>手动总结单次等待上限（秒）</span>
         <input type="number" min="1" max="3600" step="1" required data-slx-summary-field="manualGenerationTimeoutSeconds" value="${escapeHtml(summary.manualGenerationTimeoutSeconds)}" />
-        <small>默认 300，最长 3600。用于手动总结、重新生成、大总结合并和旧聊天归档，下次任务生效。</small>
+        <small>默认 300，最长 3600。</small>
       </label>
       <label class="slx-field">
         <span>大总结后保留最近楼层</span>
