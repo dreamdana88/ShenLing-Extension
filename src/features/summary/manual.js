@@ -69,6 +69,8 @@ import {
   MANUAL_CHAT_GUARD_REASON,
 } from './manual-guard.js';
 import {
+  beginSummaryTask,
+  failSummaryTask,
   notifySummary,
   refreshSummaryPanelAfterAction,
 } from './runtime.js';
@@ -303,11 +305,7 @@ export async function summarizeOpeningMessage({
   const target = captureManualMessageTarget(0);
   if (!target) throw new Error('未找到第 0 楼。');
 
-  chatState.summary.runningTask = 'opening_memory';
-  chatState.summary.lastError = '';
-  saveChatState();
-  notifySummary('info', '0楼小总结生成中。', '小总结管理');
-  refreshSummaryPanelAfterAction();
+  beginSummaryTask(chatState, 'opening_memory', '0楼小总结生成中。', '小总结管理');
 
   try {
     const characterFoundation = buildCharacterFoundationBlock();
@@ -363,11 +361,7 @@ export async function summarizeOpeningMessage({
       return;
     }
     clearSummaryWriteIgnored(0, scope.chatId);
-    chatState.summary.runningTask = 'none';
-    chatState.summary.lastError = error.message || String(error);
-    saveChatState();
-    notifySummary('error', error.message || String(error), '0楼小总结失败');
-    refreshSummaryPanelAfterAction();
+    failSummaryTask(chatState, error.message || String(error), '0楼小总结失败');
   }
 }
 
@@ -473,11 +467,7 @@ export async function regenerateMemoryForMessage(messageId, {
   const target = captureManualMessageTarget(leadMessageId);
   if (!target) throw new Error(`第 ${leadMessageId} 楼目标不可用。`);
 
-  chatState.summary.runningTask = 'manual_memory';
-  chatState.summary.lastError = '';
-  saveChatState();
-  notifySummary('info', `第 ${leadMessageId} 楼小总结生成中。`, '重写小总结');
-  refreshSummaryPanelAfterAction();
+  beginSummaryTask(chatState, 'manual_memory', `第 ${leadMessageId} 楼小总结生成中。`, '重写小总结');
 
   try {
     const priorMemories = collectPriorMemoriesForSummary(groupMessageIds ? groupMessageIds[0] : Number(messageId));
@@ -557,11 +547,7 @@ export async function regenerateMemoryForMessage(messageId, {
       return;
     }
     clearSummaryWriteIgnored(Number(messageId), scope.chatId);
-    chatState.summary.runningTask = 'none';
-    chatState.summary.lastError = error.message || String(error);
-    saveChatState();
-    notifySummary('error', error.message || String(error), '重写小总结失败');
-    refreshSummaryPanelAfterAction();
+    failSummaryTask(chatState, error.message || String(error), '重写小总结失败');
   }
 }
 
@@ -579,11 +565,7 @@ export async function regenerateLatestGrandMemory({
   const scope = captureManualChatScopeOrThrow();
   const target = captureGrandRecordTarget(record);
 
-  chatState.summary.runningTask = 'grand_memory';
-  chatState.summary.lastError = '';
-  saveChatState();
-  notifySummary('info', `正在重新生成第 ${record.summaryMessageId} 楼大总结。`, '归档管理器');
-  refreshSummaryPanelAfterAction();
+  beginSummaryTask(chatState, 'grand_memory', `正在重新生成第 ${record.summaryMessageId} 楼大总结。`, '归档管理器');
 
   try {
     const archiveData = buildArchiveMemoryMaterial(record.archiveFrom, record.archiveTo);
@@ -644,11 +626,6 @@ export async function regenerateLatestGrandMemory({
       return;
     }
     clearSummaryWriteIgnored(Number(record.summaryMessageId), scope.chatId);
-    const currentChatState = getChatState();
-    currentChatState.summary.runningTask = 'none';
-    currentChatState.summary.lastError = error.message || String(error);
-    saveChatState();
-    notifySummary('error', error.message || String(error), '重新生成大总结失败');
-    refreshSummaryPanelAfterAction();
+    failSummaryTask(getChatState(), error.message || String(error), '重新生成大总结失败');
   }
 }
