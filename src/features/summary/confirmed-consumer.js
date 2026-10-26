@@ -1,7 +1,8 @@
 import { getContextSafe, getChatMessagesSafe } from '../../core/chat.js';
 import { createMessageContentFingerprint, getAssistantMessageContentFingerprint } from '../../core/message-fingerprint.js';
-import { CONFIRMED_SUMMARY_EFFECT_NAMES, getChatState, getConfirmedSummaryTasks, getContextInfo, saveChatState } from '../../core/settings.js';
+import { CONFIRMED_SUMMARY_EFFECT_NAMES, getChatState, getConfirmedSummaryTasks, getCurrentChatIdentity, saveChatState } from '../../core/settings.js';
 import { getTavernEventsSafe, registerTavernEvent } from '../../core/tavern-events.js';
+import { formatIsoTimestamp } from '../../utils/text.js';
 import { getAutoSummaryFingerprint, getSummaryBatchSize } from './state.js';
 import { shouldRunAutoSummary } from './workflow.js';
 
@@ -10,14 +11,6 @@ let consumerEventsRegistered = false;
 let runtimeConsumer = null;
 const GENERATION_GATE_IDLE_RECOVERY_INTERVAL_MS = 250;
 const MAX_GENERATION_GATE_IDLE_RECOVERY_CHECKS = 3;
-
-function nowTimestamp() {
-  return new Date().toISOString();
-}
-
-function getChatIdentity() {
-  return String(getContextInfo().chatId || '').trim();
-}
 
 function isValidUser(message) {
   return message?.role === 'user' && !message.is_hidden && !message.is_system && !message.extra?.isSmallSys;
@@ -46,7 +39,7 @@ function defaultIsGenerating() {
 export function createConfirmedSummaryConsumer(options = {}) {
   const getState = options.getChatState || getChatState;
   const saveState = options.saveChatState || saveChatState;
-  const getIdentity = options.getChatIdentity || getChatIdentity;
+  const getIdentity = options.getChatIdentity || getCurrentChatIdentity;
   const isGenerating = options.isGenerating || defaultIsGenerating;
   const isEnabled = options.isEnabled || shouldRunAutoSummary;
   const isTargetValid = options.isTargetValid || isCurrentTaskTarget;
@@ -58,7 +51,7 @@ export function createConfirmedSummaryConsumer(options = {}) {
   const writeGroup = options.writeGroup;
   const onSummaryCommitted = options.onSummaryCommitted;
   const now = options.now || Date.now;
-  const formatTimestamp = options.formatTimestamp || nowTimestamp;
+  const formatTimestamp = options.formatTimestamp || formatIsoTimestamp;
   const defer = options.defer || (callback => window.setTimeout(callback, 0));
   const maxIdleDefers = Number.isInteger(options.maxIdleDefers) ? options.maxIdleDefers : 3;
   const generationIdleRecoveryIntervalMs = Number.isFinite(options.generationIdleRecoveryIntervalMs)
@@ -385,7 +378,7 @@ export function createConfirmedSummaryConsumer(options = {}) {
       }
       const memberMismatch = group.some(member => {
         if (member.taskKey === task.taskKey) return false;
-        return getSummaryFingerprint(member.originalMessageId) !== fingerprints?.[Number(member.originalMessageId)];
+        return getSummaryFingerprint(member.originalMessageId) !== fingerprints[Number(member.originalMessageId)];
       });
       if (memberMismatch) {
         // A member floor changed during generation: put the lead back to PENDING
@@ -409,7 +402,7 @@ export function createConfirmedSummaryConsumer(options = {}) {
           || Object.hasOwn(latestState.summary.processedMessageFingerprints || {}, leadId);
         latestState.summary.processedMessageFingerprints = {
           ...(latestState.summary.processedMessageFingerprints || {}),
-          [task.originalMessageId]: fingerprints?.[leadId],
+          [task.originalMessageId]: fingerprints[leadId],
         };
         if (!alreadyCounted) {
           latestState.summary.memoryCountedMessageIds = [...countedMessageIds, leadId];

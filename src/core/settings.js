@@ -641,6 +641,10 @@ export function getContextInfo() {
   };
 }
 
+export function getCurrentChatIdentity() {
+  return String(getContextInfo().chatId || '').trim();
+}
+
 export function getGlobalSettings() {
   const context = getContextSafe();
   if (!context?.extensionSettings) {

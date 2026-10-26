@@ -29,6 +29,10 @@ export function formatTimestamp() {
   return new Date().toLocaleString('zh-CN', { hour12: false });
 }
 
+export function formatIsoTimestamp() {
+  return new Date().toISOString();
+}
+
 export function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')

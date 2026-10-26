@@ -40,7 +40,6 @@ import {
   stripMemoryChangedControlLines,
 } from '../../core/summary.js';
 import { SUMMARY_MERGED_BATCH_INSTRUCTION } from '../../prompts.js';
-import { recoverDeferredAutoGrandMemory } from './archive.js';
 import {
   generateSummaryMemory,
   joinSummaryExtraInstructions,
@@ -244,7 +243,6 @@ export function registerImmediateWordReplaceEvents() {
     immediateWordReplaceTimers.forEach(timer => window.clearTimeout(timer));
     immediateWordReplaceTimers.clear();
     clearStaleSummaryRunningTask('聊天切换');
-    recoverDeferredAutoGrandMemory();
     scanExistingSummaryState();
   };
 

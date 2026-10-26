@@ -5,10 +5,9 @@ import {
   calculateSafeArchiveTo,
   hasMatchingSummarizedConfirmedTask,
   processAutoGrandMemory,
-  recoverDeferredAutoGrandMemory,
 } from '../src/features/summary/archive.js';
 import { configureSummaryWorkflow } from '../src/features/summary/runtime.js';
-import { createScannedSummaryState } from '../src/features/summary/state.js';
+import { clearStaleSummaryRunningTask, createScannedSummaryState } from '../src/features/summary/state.js';
 import { getAssistantMessageContentFingerprint } from '../src/core/message-fingerprint.js';
 import { CHAT_STATE_KEY, MODULE_NAME } from '../src/constants.js';
 
@@ -283,7 +282,7 @@ test('an automatic Grand result returned after switching to B neither creates no
     assert.equal(contextB.chat.length, 1);
     assert.deepEqual(contextB.chatMetadata[CHAT_STATE_KEY].summary.archiveRecords, []);
     setCurrent(contextA);
-    assert.equal(recoverDeferredAutoGrandMemory(), true);
+    clearStaleSummaryRunningTask('聊天切换');
     assert.equal(contextA.chatMetadata[CHAT_STATE_KEY].summary.runningTask, 'none');
   });
 });

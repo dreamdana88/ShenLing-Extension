@@ -4,12 +4,13 @@ import {
   CONFIRMED_SUMMARY_EFFECT_NAMES,
   getChatState,
   getConfirmedSummaryTasks,
-  getContextInfo,
+  getCurrentChatIdentity,
   getGlobalSettings,
   getPlotOutlineState,
   saveChatState,
 } from '../../core/settings.js';
 import { extractMemoryBlocks } from '../../core/summary.js';
+import { formatIsoTimestamp } from '../../utils/text.js';
 import { processAutoGrandMemory } from './archive.js';
 import {
   commitEmotionUpdateFromConfirmedSummary,
@@ -23,14 +24,6 @@ const SAFE_EFFECT_REASON_CODE = 'CONFIRMED_EFFECT_FAILED';
 let runtimeEffects = null;
 let effectsEventsRegistered = false;
 const effectsEventStops = [];
-
-function nowTimestamp() {
-  return new Date().toISOString();
-}
-
-function getChatIdentity() {
-  return String(getContextInfo().chatId || '').trim();
-}
 
 function ensureEffects(task) {
   if (!task.effects || typeof task.effects !== 'object') task.effects = {};
@@ -49,9 +42,9 @@ function getTaskMemory(task) {
 export function createConfirmedEffectsCoordinator(options = {}) {
   const getState = options.getChatState || getChatState;
   const saveState = options.saveChatState || saveChatState;
-  const getIdentity = options.getChatIdentity || getChatIdentity;
+  const getIdentity = options.getChatIdentity || getCurrentChatIdentity;
   const getSettings = options.getGlobalSettings || getGlobalSettings;
-  const formatTimestamp = options.formatTimestamp || nowTimestamp;
+  const formatTimestamp = options.formatTimestamp || formatIsoTimestamp;
   const defer = options.defer || (callback => window.setTimeout(callback, 0));
   const getMemory = options.getTaskMemory || getTaskMemory;
   const recoveredChatIdentities = new Set();

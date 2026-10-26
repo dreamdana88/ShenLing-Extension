@@ -32,8 +32,8 @@ export function joinSummaryExtraInstructions(...sections) {
 
 /**
  * Summary transport policy.
- * - configured: user-triggered panel actions; read global backgroundStreamingEnabled
- * - legacy: automatic / confirmed paths; never read streaming setting
+ * - configured: panel actions, automatic confirmed Summary, automatic Grand / Total archive; read global backgroundStreamingEnabled
+ * - legacy: default when a call site does not specify a policy; never reads the streaming setting
  * Default is legacy so new call sites cannot accidentally opt into stream.
  */
 export const SUMMARY_TRANSPORT_POLICY = Object.freeze({

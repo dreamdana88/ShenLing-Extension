@@ -18,7 +18,7 @@ import {
 import {
   getChatState,
   getConfirmedSummaryTasks,
-  getContextInfo,
+  getCurrentChatIdentity,
   getGlobalSettings,
   getSummarySettings,
   saveChatState,
@@ -69,7 +69,6 @@ import {
   scanExistingSummaryState,
 } from './state.js';
 
-const deferredGrandRecoveries = new Set();
 const activeLegacyArchives = new Map();
 
 function getValidArchiveRecords(chatState, messages) {
@@ -215,32 +214,8 @@ export function getLatestArchiveBoundary(chatState = getChatState()) {
   return Number(latestRecord?.archiveTo ?? chatState.summary.lastArchivedMessageId ?? -1);
 }
 
-function getCurrentChatIdentity() {
-  return String(getContextInfo().chatId || '').trim();
-}
-
 function isCurrentChatIdentity(chatIdentity) {
   return Boolean(chatIdentity) && getCurrentChatIdentity() === chatIdentity;
-}
-
-function deferGrandRecovery(chatIdentity) {
-  if (chatIdentity) deferredGrandRecoveries.add(chatIdentity);
-}
-
-function recoverDeferredGrandMemoryForCurrentChat() {
-  const chatIdentity = getCurrentChatIdentity();
-  if (!deferredGrandRecoveries.has(chatIdentity)) return false;
-  const chatState = getChatState();
-  deferredGrandRecoveries.delete(chatIdentity);
-  if (chatState.summary.runningTask !== 'grand_memory') return false;
-  chatState.summary.runningTask = 'none';
-  chatState.summary.lastError = '';
-  saveChatState();
-  return true;
-}
-
-export function recoverDeferredAutoGrandMemory() {
-  return recoverDeferredGrandMemoryForCurrentChat();
 }
 
 export function hasMatchingSummarizedConfirmedTask(message, chatState) {
@@ -322,16 +297,10 @@ export async function processAutoGrandMemory() {
       type: '自动大总结',
       transportPolicy: SUMMARY_TRANSPORT_POLICY.CONFIGURED,
     });
-    if (!isCurrentChatIdentity(chatIdentity)) {
-      deferGrandRecovery(chatIdentity);
-      return;
-    }
+    if (!isCurrentChatIdentity(chatIdentity)) return;
     const grandMemory = forceGrandMemoryRange(result, archiveData.memoryFrom, archiveData.memoryTo);
     const summaryMessageId = await createAssistantChatMessage(grandMemory);
-    if (!isCurrentChatIdentity(chatIdentity)) {
-      deferGrandRecovery(chatIdentity);
-      return;
-    }
+    if (!isCurrentChatIdentity(chatIdentity)) return;
 
     markSummaryWriteIgnored(Number(summaryMessageId));
 
@@ -345,10 +314,7 @@ export async function processAutoGrandMemory() {
         { refresh: 'all' },
       );
     }
-    if (!isCurrentChatIdentity(chatIdentity)) {
-      deferGrandRecovery(chatIdentity);
-      return;
-    }
+    if (!isCurrentChatIdentity(chatIdentity)) return;
 
     const archiveRecord = {
       id: `${summaryMessageId}-${Date.now()}`,
@@ -360,10 +326,6 @@ export async function processAutoGrandMemory() {
       createdAt: Date.now(),
     };
 
-    if (!isCurrentChatIdentity(chatIdentity)) {
-      deferGrandRecovery(chatIdentity);
-      return;
-    }
     chatState.summary.runningTask = 'none';
     chatState.summary.memoryCountSinceArchive = 0;
     chatState.summary.memoryCountedMessageIds = [];
@@ -379,10 +341,7 @@ export async function processAutoGrandMemory() {
     await tryExtractMemoirAfterGrandSummary(archiveRecord, grandMemory);
     refreshSummaryPanelAfterAction();
   } catch (error) {
-    if (!isCurrentChatIdentity(chatIdentity)) {
-      deferGrandRecovery(chatIdentity);
-      return;
-    }
+    if (!isCurrentChatIdentity(chatIdentity)) return;
     chatState.summary.runningTask = 'none';
     chatState.summary.lastError = error.message || String(error);
     saveChatState();
@@ -616,13 +575,7 @@ export async function processTotalGrandMemory({
     const memoryFrom = plan.memoryFrom ?? plan.archiveFrom;
     const memoryTo = plan.memoryTo ?? plan.archiveTo;
     const prompt = buildTotalGrandMemoryMaterialPrompt(memoryFrom, memoryTo, material, { summary });
-    // Manual panel passes configured; auto total keeps its own transportPolicy.
-    const generationOptions = transportPolicy === SUMMARY_TRANSPORT_POLICY.CONFIGURED
-      ? createManualSummaryGenerationOptions('合并大总结', transportPolicy)
-      : {
-        type: '合并大总结',
-        transportPolicy: SUMMARY_TRANSPORT_POLICY.LEGACY,
-      };
+    const generationOptions = createManualSummaryGenerationOptions('合并大总结', transportPolicy);
     const result = await generateSummaryMemory(prompt, generationOptions);
 
     if (!isCurrentChatIdentity(chatIdentity)) return;
