@@ -372,6 +372,11 @@ export function renderSummarySettingsPanel(settings, chatState) {
         <small>每 N 次成功小总结触发一次。</small>
       </label>
       <label class="slx-field slx-field-wide">
+        <span>合并小总结间隔</span>
+        <input type="number" min="1" max="10" step="1" required data-slx-summary-field="intervalMessages" value="${escapeHtml(summary.intervalMessages ?? 1)}" />
+        <small>每 N 次 AI 回复合并为一条小总结，1 为逐层。凑不满 N 次的最新几轮会暂时等待，不会立即总结，自动大总结也只归档到上一组为止。N 较大时单次素材较长，生成更慢、更容易超时。</small>
+      </label>
+      <label class="slx-field slx-field-wide">
         <span>手动总结单次等待上限（秒）</span>
         <input type="number" min="1" max="3600" step="1" required data-slx-summary-field="manualGenerationTimeoutSeconds" value="${escapeHtml(summary.manualGenerationTimeoutSeconds)}" />
         <small>默认 300，可调为 600、900 等，最长 3600 秒。用于手动总结、重新生成、大总结合并与旧聊天每批／最终合并；下次任务生效。</small>
@@ -528,6 +533,16 @@ export function bindSummaryPanelEvents(panelRoot, settings) {
         notifySummary('warning', '保留楼层数必须是非负整数，当前输入未保存。', '总结设置');
         input.setCustomValidity('请输入非负整数。');
         input.reportValidity();
+        return false;
+      }
+      input.setCustomValidity('');
+      summary[field] = value;
+    } else if (field === 'intervalMessages') {
+      const value = Number(input.value);
+      if (!input.value.trim() || !Number.isSafeInteger(value) || value < 1 || value > 10) {
+        input.setCustomValidity('请输入 1～10 之间的整数。');
+        input.reportValidity();
+        notifySummary('warning', '合并小总结间隔必须为 1～10 之间的整数，当前输入未保存。', '总结设置');
         return false;
       }
       input.setCustomValidity('');

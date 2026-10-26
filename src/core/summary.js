@@ -262,6 +262,21 @@ ${cleanUserContent}
 ${cleanAiContent}`;
 }
 
+export function buildSummaryPromptContentForMessages(materials, { includeUserInput = false } = {}) {
+  return materials
+    .map(material => {
+      const messageId = Number(material.messageId);
+      const userContent = includeUserInput ? String(material.userContent || '').trim() : '';
+      const sections = [];
+      if (userContent) {
+        sections.push(`【第 ${messageId} 楼·用户输入】\n${userContent}`);
+      }
+      sections.push(`【第 ${messageId} 楼·正文】\n${String(material.aiContent || '').trim()}`);
+      return sections.join('\n\n');
+    })
+    .join('\n\n');
+}
+
 export function forceMemoryNumber(memory, number) {
   const normalized = normalizeMemoryBlock(memory)
     .replace(/<number>[\s\S]*?<\/number>/gi, '')

@@ -154,7 +154,9 @@ export function buildArchiveMemoryMaterial(archiveFrom, archiveTo) {
     }
 
     return body
-      ? [{ messageId: message.message_id, memoryNumber: null, body: '', hasMemory: false, memory: `<memory>\n${body}\n</memory>` }]
+      ? (hasMatchingSummarizedConfirmedTask(message, getChatState())
+          ? []
+          : [{ messageId: message.message_id, memoryNumber: null, body: '', hasMemory: false, memory: `<memory>\n${body}\n</memory>` }])
       : [];
   });
 
@@ -241,9 +243,13 @@ export function recoverDeferredAutoGrandMemory() {
   return recoverDeferredGrandMemoryForCurrentChat();
 }
 
-function hasMatchingSummarizedConfirmedTask(message, chatState) {
+export function hasMatchingSummarizedConfirmedTask(message, chatState) {
   const matchingTasks = getConfirmedSummaryTasks(chatState)
-    .filter(task => Number(task.originalMessageId) === Number(message.message_id));
+    .filter(
+      task =>
+        Number(task.originalMessageId) === Number(message.message_id)
+        && task.status !== 'CANCELLED',
+    );
   if (matchingTasks.some(task => task.status !== 'SUMMARIZED')) return false;
   const completed = matchingTasks.find(task => task.status === 'SUMMARIZED');
   return Boolean(

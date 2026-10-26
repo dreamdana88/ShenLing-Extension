@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildArchiveMemoryMaterial,
   calculateSafeArchiveTo,
+  hasMatchingSummarizedConfirmedTask,
   processAutoGrandMemory,
   recoverDeferredAutoGrandMemory,
 } from '../src/features/summary/archive.js';
@@ -138,6 +140,135 @@ test('a failed gap stops the safe boundary while later unarchived summaries rema
 function archivedMessage(message_id) {
   return assistant(message_id, 'A\n<memory>A</memory>', { is_hidden: true });
 }
+
+// ── Phase 2: 合并小总结成员楼层的归档 ───────────────────────────────
+
+function confirmedTask(overrides) {
+  return {
+    taskKey: 'k',
+    chatIdentity: 'chat-a',
+    originalMessageId: 2,
+    assistantFingerprint: '1:1',
+    selectedSwipeId: 0,
+    confirmingUserMessageId: 1,
+    confirmingUserFingerprint: '1:2',
+    status: 'SUMMARIZED',
+    createdAt: 'a',
+    updatedAt: 'a',
+    ...overrides,
+  };
+}
+
+test('a cancelled task for the same floor does not block hasMatchingSummarizedConfirmedTask', () => {
+  const member = assistant(2, '合并成员楼层');
+  const state = {
+    summary: {
+      confirmedTasks: [
+        confirmedTask({ taskKey: 'old', assistantFingerprint: getAssistantMessageContentFingerprint(member), status: 'CANCELLED' }),
+        confirmedTask({ taskKey: 'new', assistantFingerprint: getAssistantMessageContentFingerprint(member), status: 'SUMMARIZED' }),
+      ],
+    },
+  };
+  assert.equal(hasMatchingSummarizedConfirmedTask(member, state), true);
+});
+
+test('pending / running / failed tasks still make hasMatchingSummarizedConfirmedTask false', () => {
+  const member = assistant(2, '合并成员楼层');
+  for (const status of ['PENDING', 'RUNNING', 'FAILED']) {
+    const state = {
+      summary: {
+        confirmedTasks: [
+          confirmedTask({ taskKey: 'live', assistantFingerprint: getAssistantMessageContentFingerprint(member), status }),
+          confirmedTask({ taskKey: 'old', assistantFingerprint: getAssistantMessageContentFingerprint(member), status: 'CANCELLED' }),
+        ],
+      },
+    };
+    assert.equal(hasMatchingSummarizedConfirmedTask(member, state), false, status);
+  }
+});
+
+test('merged member floors without a memory block let the safe archive boundary pass', () => {
+  const first = assistant(0, 'A\n<memory>A</memory>');
+  const member = assistant(2, '成员楼层正文');
+  const lead = assistant(4, 'lead 正文\n<memory>合并</memory>');
+  const state = {
+    summary: {
+      lastArchivedMessageId: -1,
+      archiveRecords: [],
+      processedMessageFingerprints: {
+        0: getAssistantMessageContentFingerprint(first),
+        4: getAssistantMessageContentFingerprint(lead),
+      },
+      confirmedTasks: [
+        confirmedTask({ taskKey: 'm', originalMessageId: 2, assistantFingerprint: getAssistantMessageContentFingerprint(member), status: 'SUMMARIZED' }),
+        confirmedTask({ taskKey: 'old-m', originalMessageId: 2, assistantFingerprint: getAssistantMessageContentFingerprint(member), status: 'CANCELLED' }),
+      ],
+    },
+  };
+  const chat = [first, { message_id: 1, role: 'user', message: 'U1' }, member, { message_id: 3, role: 'user', message: 'U2' }, lead];
+  const contextA = createContext('chat-a', chat, state.summary);
+  const previous = { SillyTavern: globalThis.SillyTavern };
+  globalThis.SillyTavern = { getContext: () => contextA };
+  try {
+    assert.equal(calculateSafeArchiveTo(chat, state), 4);
+  } finally {
+    if (previous.SillyTavern === undefined) delete globalThis.SillyTavern;
+    else globalThis.SillyTavern = previous.SillyTavern;
+  }
+});
+
+test('buildArchiveMemoryMaterial skips merged member floors instead of duplicating raw text', async () => {
+  const member = assistant(2, '成员楼层正文 不应重复进入素材');
+  const lead = assistant(4, 'lead 正文\n<memory>合并小总结</memory>');
+  const contextA = createContext('chat-a', [
+    assistant(0, 'A\n<memory>A0</memory>'),
+    { message_id: 1, role: 'user', message: 'U1' },
+    member,
+    { message_id: 3, role: 'user', message: 'U2' },
+    lead,
+  ], {
+    lastArchivedMessageId: -1,
+    archiveRecords: [],
+    processedMessageFingerprints: {},
+    confirmedTasks: [
+      confirmedTask({ taskKey: 'm', originalMessageId: 2, assistantFingerprint: getAssistantMessageContentFingerprint(member), status: 'SUMMARIZED' }),
+    ],
+  });
+  const previous = { SillyTavern: globalThis.SillyTavern };
+  globalThis.SillyTavern = { getContext: () => contextA };
+  try {
+    const data = buildArchiveMemoryMaterial(0, 4);
+    assert.equal(data.material.includes('成员楼层正文 不应重复进入素材'), false);
+    assert.equal(data.entryCount, 2);
+  } finally {
+    if (previous.SillyTavern === undefined) delete globalThis.SillyTavern;
+    else globalThis.SillyTavern = previous.SillyTavern;
+  }
+});
+
+test('buildArchiveMemoryMaterial keeps the raw-text fallback for floors with no summarized task', async () => {
+  const orphan = assistant(2, '无任务楼层正文');
+  const contextA = createContext('chat-a', [
+    assistant(0, 'A\n<memory>A0</memory>'),
+    { message_id: 1, role: 'user', message: 'U1' },
+    orphan,
+  ], {
+    lastArchivedMessageId: -1,
+    archiveRecords: [],
+    processedMessageFingerprints: {},
+    confirmedTasks: [],
+  });
+  const previous = { SillyTavern: globalThis.SillyTavern };
+  globalThis.SillyTavern = { getContext: () => contextA };
+  try {
+    const data = buildArchiveMemoryMaterial(0, 2);
+    assert.equal(data.material.includes('无任务楼层正文'), true);
+    assert.equal(data.entryCount, 2);
+  } finally {
+    if (previous.SillyTavern === undefined) delete globalThis.SillyTavern;
+    else globalThis.SillyTavern = previous.SillyTavern;
+  }
+});
 
 test('an automatic Grand result returned after switching to B neither creates nor hides in B, and A recovers on return', async () => {
   await withGrandHarness(async ({ contextA, contextB, setCurrent }) => {

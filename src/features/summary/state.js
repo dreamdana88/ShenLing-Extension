@@ -265,6 +265,11 @@ export function getAutoSummaryFingerprint(messageId) {
   return createSummarySourceMaterial(messageId)?.fingerprint || null;
 }
 
+export function getSummaryBatchSize(summary = getSummarySettings()) {
+  const value = Number.parseInt(String(summary?.intervalMessages ?? ''), 10);
+  return Number.isInteger(value) && value >= 1 && value <= 10 ? value : 1;
+}
+
 export function getLatestAssistantSummaryTargetId() {
   const messages = getChatMessagesSafe(undefined, { hide_state: 'all' });
   const latest = [...messages]

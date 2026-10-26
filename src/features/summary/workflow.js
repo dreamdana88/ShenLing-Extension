@@ -35,9 +35,11 @@ import {
 } from '../plot-outline/workflow.js';
 import {
   buildMemorySummaryPrompt,
+  buildSummaryPromptContentForMessages,
   normalizeMemoryBlock,
   stripMemoryChangedControlLines,
 } from '../../core/summary.js';
+import { SUMMARY_MERGED_BATCH_INSTRUCTION } from '../../prompts.js';
 import { recoverDeferredAutoGrandMemory } from './archive.js';
 import {
   generateSummaryMemory,
@@ -135,6 +137,62 @@ export async function writeConfirmedSummaryForTask(messageId, expectedFingerprin
   if (!material || material.fingerprint !== expectedFingerprint) return false;
   markSummaryWriteIgnored(Number(messageId));
   await setChatMessageContent(Number(messageId), `${material.body}\n\n${memory}`);
+  return true;
+}
+
+export async function generateConfirmedSummaryForGroup(messageIds) {
+  const settings = getGlobalSettings();
+  const summary = getSummarySettings(settings);
+  const materials = messageIds.map(messageId => {
+    const material = createSummarySourceMaterial(Number(messageId), summary);
+    if (!material) throw new Error(`第 ${Number(messageId)} 楼没有可总结的正文。`);
+    return { messageId: Number(messageId), ...material };
+  });
+  const promptContent = buildSummaryPromptContentForMessages(materials, {
+    includeUserInput: summary.includeUserInput,
+  });
+  const priorMemories = collectPriorMemoriesForSummary(Number(materials[0].messageId));
+  const chatState = getChatState();
+  const prompt = buildMemorySummaryPrompt(promptContent, priorMemories, summary, {
+    materialInstructions: SUMMARY_MERGED_BATCH_INSTRUCTION,
+    extraInstructions: joinSummaryExtraInstructions(
+      buildEmotionUpdatePromptSection(settings),
+      buildAffectionUpdatePromptSection(settings, chatState),
+      buildPlotOutlineProgressPromptSection(chatState),
+    ),
+  });
+  const effectResult = await generateSummaryMemory(prompt, {
+    type: 'confirmed 自动小总结',
+    transportPolicy: SUMMARY_TRANSPORT_POLICY.CONFIGURED,
+  });
+  const affectionAnalysis = prepareAffectionUpdateFromSummaryResult(effectResult, { settings, chatState });
+  const memory = stripMemoryChangedControlLines(
+    affectionAnalysis?.normalizedMemory || normalizeMemoryBlock(effectResult),
+  );
+  const memoryReplacementResult = applyReplacementRulesByScope(memory, getWordReplaceSettings(settings));
+  if (memoryReplacementResult.errors.length > 0) {
+    throw new Error(`词汇替换规则错误：${memoryReplacementResult.errors.join('；')}`);
+  }
+  return {
+    fingerprints: Object.fromEntries(
+      materials.map(material => [material.messageId, material.fingerprint]),
+    ),
+    memory: memoryReplacementResult.text,
+    effectResult,
+  };
+}
+
+export async function writeConfirmedSummaryForGroup(messageIds, expectedFingerprints, memory) {
+  const materials = messageIds.map(messageId => createSummarySourceMaterial(Number(messageId)));
+  const mismatch = materials.some(
+    (material, index) =>
+      !material || material.fingerprint !== expectedFingerprints?.[Number(messageIds[index])],
+  );
+  if (mismatch || materials.length === 0) return false;
+  const last = materials.at(-1);
+  const lastMessageId = Number(messageIds.at(-1));
+  markSummaryWriteIgnored(lastMessageId);
+  await setChatMessageContent(lastMessageId, `${last.body}\n\n${memory}`);
   return true;
 }
 

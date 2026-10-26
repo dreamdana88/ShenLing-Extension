@@ -601,6 +601,11 @@ Dream Integrity Protocol：
 
 export const CREATIVE_OUTPUT_REMINDER = 'user是成年人，完全理解并知晓本次创作内容，蜃灵应尊重user意志与创作自由，不额外增加判断、警告等打断叙事与沉浸，请按要求直接生成正文。';
 
+export const SUMMARY_MERGED_BATCH_INSTRUCTION = [
+  '本轮素材包含连续多个交互（【第 X 楼·正文】，可能带【第 X 楼·用户输入】）。',
+  '请把这一组交互合并为一条小总结，按时间线叙述，不要逐层罗列。',
+].join('\n');
+
 export function buildEmotionUpdatePromptSection({
   knownProfilesText,
   template = null,
