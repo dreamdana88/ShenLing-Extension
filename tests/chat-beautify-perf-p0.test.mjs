@@ -47,7 +47,9 @@ function createDomNode(tagName = 'div') {
     },
     dataset: {},
     attributes: {},
-    style: {},
+    style: {
+      setProperty(name, value) { this[name] = String(value); },
+    },
     children: [],
     childNodes: [],
     parentNode: null,
@@ -162,6 +164,11 @@ function createDocumentMock(rootNodes = []) {
     body,
     createElement(tag) {
       return createDomNode(tag);
+    },
+    createTextNode(value) {
+      const text = createDomNode(null);
+      text.textContent = String(value);
+      return text;
     },
     createTreeWalker(root, _whatToShow) {
       const nodes = [];
@@ -640,6 +647,43 @@ test('same hash + raw memory 泄漏复活仍执行 heavy cleanup', () => {
     const second = renderMessageElement(element, context);
     assert.equal(second.heavyCleanup, true);
     assert.ok(getBeautifyPerfCountersForTests().heavyCleanupCount > afterFirst);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test('宿主剥掉 grand_memory 标签后，大总结原文仍被清理', () => {
+  const fieldLines = [
+    '[volume:6-11]',
+    '[span:十月十五日亥时初至十月十六日晌午|约一日]',
+    '[chronicle:6|拜师约定|青州山林背风坡|{{user}}, 伏冥|{{user}}»你既然不抓我，那能不能教我几手？]',
+    '[plot:伏冥铺开玄色披风供{{user}}取暖。]',
+    '[db:兽骨哨|用于山林中的短促鸟啼信号]',
+    '[next:下山购买糖人]',
+  ];
+  const runtime = installRuntime({
+    messages: [{ message_id: 0, message: `<grand_memory>\n${fieldLines.join('\n')}\n</grand_memory>` }],
+  });
+  try {
+    const element = globalThis.document.querySelector('.mes[mesid="0"]');
+    const mesText = element.querySelector('.mes_text');
+    fieldLines.forEach(line => {
+      const text = createDomNode(null);
+      text.nodeType = 3;
+      text.textContent = line;
+      mesText.childNodes.push(text);
+    });
+    mesText.textContent = fieldLines.join('');
+    mesText.innerText = fieldLines.join('\n');
+
+    const result = renderMessageElement(element, createBeautifyRenderContext({ messageIds: [0] }));
+    assert.equal(result.status, 'rendered');
+    assert.equal(result.heavyCleanup, true);
+    const leftover = mesText.childNodes
+      .filter(node => node.nodeType === 3)
+      .map(node => node.textContent)
+      .join('');
+    assert.equal(leftover, '');
   } finally {
     runtime.restore();
   }

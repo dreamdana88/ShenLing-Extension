@@ -287,15 +287,24 @@ export function hasLightweightMemoryLeak(mesText) {
   return false;
 }
 
+// The host may strip the <grand_memory> tag and keep only its field lines; [volume:] only appears in Grand memory.
+function hasGrandMemoryVolumeLine(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .some(line => /^\s*\[volume\s*:/i.test(line) && isGrandMemoryFieldLine(line));
+}
+
 function hasMemoryDisplaySource(mesText) {
   if (!mesText) return false;
+  const visibleText = mesText.innerText || mesText.textContent || '';
   return Boolean(mesText.querySelector('memory'))
     || Boolean(mesText.querySelector('grand_memory'))
     || /<\/?memory\b/i.test(mesText.textContent || '')
     || /<\/?grand_memory\b/i.test(mesText.textContent || '')
     || /&lt;\/?memory\b/i.test(mesText.innerHTML || '')
     || /&lt;\/?grand_memory\b/i.test(mesText.innerHTML || '')
-    || extractBeautifyBlocks(mesText.innerText || mesText.textContent || '').length > 0;
+    || extractBeautifyBlocks(visibleText).length > 0
+    || hasGrandMemoryVolumeLine(visibleText);
 }
 
 function clearCleanupMarks(messageElement, mesText = null) {
