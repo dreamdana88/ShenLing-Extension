@@ -556,7 +556,7 @@ export async function processTotalGrandMemory({
   const chatIdentity = getCurrentChatIdentity();
   if (chatState.summary.runningTask !== 'none') return;
 
-  const scope = captureManualChatScopeOrThrow(guardChatScope);
+  const scope = guardChatScope ? captureManualChatScopeOrThrow() : null;
   const plan = createTotalGrandMemoryPlan();
   if (plan.count < 2) {
     notifySummary('warning', '至少需要 2 条未合并的大总结。', '总档案压缩');
@@ -733,13 +733,12 @@ export function recoverStaleLegacyArchive() {
   const chatState = getChatState();
   if (chatState.summary.runningTask !== 'legacy_grand_memory') return false;
   const active = activeLegacyArchives.get(getCurrentChatIdentity());
-  if (active && (!active.scope || evaluateChatScope(active.scope).valid)) return false;
+  if (active && evaluateChatScope(active.scope).valid) return false;
   return clearStaleSummaryRunningTask('旧聊天归档任务已结束');
 }
 
 export async function processLegacyGrandArchive({
   transportPolicy = SUMMARY_TRANSPORT_POLICY.LEGACY,
-  guardChatScope = false,
 } = {}) {
   const settings = getGlobalSettings();
   const summary = getSummarySettings(settings);
@@ -748,14 +747,14 @@ export async function processLegacyGrandArchive({
   const chatIdentity = getCurrentChatIdentity();
   if (chatState.summary.runningTask !== 'none') return;
 
-  const scope = captureManualChatScopeOrThrow(guardChatScope);
+  const scope = captureManualChatScopeOrThrow();
   const batchSize = getLegacyArchiveBatchSize(summary);
   const plan = createLegacyArchivePlan(batchSize);
   if (!plan.totalMessages) {
     notifySummary('warning', '没有读取到可归档的旧聊天正文。', '旧聊天归档');
     return;
   }
-  const archiveSnapshot = guardChatScope ? captureLegacyArchiveSnapshot(plan, batchSize) : null;
+  const archiveSnapshot = captureLegacyArchiveSnapshot(plan, batchSize);
 
   // Freeze transport + secondary Profile for the whole multi-request archive at start.
   const frozenTransportPlan = resolveSummaryTransportPlan({
@@ -795,7 +794,6 @@ export async function processLegacyGrandArchive({
   refreshSummaryPanelAfterAction();
 
   const checkArchiveGuards = (afterHide = false) => {
-    if (!isCurrentChatIdentity(chatIdentity)) return { ok: false, reason: 'CHAT_SCOPE_CHANGED' };
     const guard = evaluateManualChatGuards(scope, () => afterHide
       ? archiveSnapshot.entries.every(entry => {
         const message = getChatMessageById(entry.messageId);
@@ -939,11 +937,8 @@ export async function processLegacyGrandArchive({
     await processAutoTotalGrandMemory();
     refreshSummaryPanelAfterAction();
   } catch (error) {
-    if (!isCurrentChatIdentity(chatIdentity)) return;
-    if (scope) {
-      const scopeResult = evaluateChatScope(scope);
-      if (!scopeResult.valid) return;
-    }
+    const scopeResult = evaluateChatScope(scope);
+    if (!scopeResult.valid) return;
     // The host may replace metadata during an awaited request. Release the
     // current state, rather than the object captured before generation.
     chatState = getChatState();

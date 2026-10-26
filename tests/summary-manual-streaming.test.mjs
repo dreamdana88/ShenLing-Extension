@@ -159,6 +159,7 @@ async function withLegacyArchiveHarness({
   ));
 
   const context = {
+    characterId: 'legacy-archive-character',
     chatId: 'legacy-archive-profile-freeze',
     chat,
     name1: '测试用户',

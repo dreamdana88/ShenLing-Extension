@@ -23,8 +23,7 @@ export const MANUAL_CHAT_GUARD_REASON = Object.freeze({
 
 export const MANUAL_TARGET_DISCARD_MESSAGE = '目标内容在任务期间发生变化，本次结果已丢弃，请重新执行。';
 
-export function captureManualChatScopeOrThrow(guardChatScope) {
-  if (!guardChatScope) return null;
+export function captureManualChatScopeOrThrow() {
   const scope = captureChatScope();
   if (!isChatScopeAvailable(scope)) {
     const error = new Error('当前聊天身份不可用，无法启动手动总结。');

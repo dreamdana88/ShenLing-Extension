@@ -202,7 +202,7 @@ test('wiring: manual entries accept guardChatScope; auto total stays unguarded',
   const archive = await readFile(new URL('../src/features/summary/archive.js', import.meta.url), 'utf8');
   const manual = await readFile(new URL('../src/features/summary/manual.js', import.meta.url), 'utf8');
   const panel = await readFile(new URL('../src/features/summary/panel.js', import.meta.url), 'utf8');
-  assert.match(manual, /guardChatScope\s*=\s*false/);
+  assert.doesNotMatch(manual, /guardChatScope/);
   assert.match(archive, /guardChatScope\s*=\s*false/);
   assert.match(workflow, /markChatScopeChanged\(\)/);
   assert.match(archive, /export async function processTotalGrandMemory\(\{[\s\S]*?guardChatScope\s*=\s*false/);
