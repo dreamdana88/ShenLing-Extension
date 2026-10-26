@@ -356,6 +356,18 @@ export async function generateWithMainApi({
   const startedAt = Date.now();
   const messageCount = Array.isArray(messages) ? messages.length : 0;
   const useStreaming = transportMode === 'stream';
+  const fail = (message, code, stage, { cause, ...diagnostics } = {}) => new GenerationTransportError(message, {
+    code,
+    stage,
+    diagnostics: {
+      provider: 'main',
+      messageCount,
+      ...(useStreaming ? { stream: true } : {}),
+      ...diagnostics,
+      durationMs: getDurationMs(startedAt),
+    },
+    cause,
+  });
 
   if (useStreaming) {
     let streamingCapability;
@@ -366,35 +378,19 @@ export async function generateWithMainApi({
       }
     } catch (error) {
       const originalMessage = sanitizeSensitiveText(error?.message || String(error));
-      throw new GenerationTransportError(
+      throw fail(
         `解析酒馆主 API 流式 Provider 失败：${originalMessage}`,
-        {
-          code: 'MAIN_PROVIDER_RESOLUTION_FAILED',
-          stage: 'resolve_provider',
-          diagnostics: {
-            provider: 'main',
-            messageCount,
-            stream: true,
-            durationMs: getDurationMs(startedAt),
-          },
-          cause: error,
-        },
+        'MAIN_PROVIDER_RESOLUTION_FAILED',
+        'resolve_provider',
+        { cause: error },
       );
     }
 
     if (streamingCapability.status !== 'available') {
-      throw new GenerationTransportError(
+      throw fail(
         '当前环境缺少成对的 generateRaw 与 stopGenerationById，无法使用主 API 流式传输。',
-        {
-          code: 'STREAM_UNAVAILABLE',
-          stage: 'resolve_provider',
-          diagnostics: {
-            provider: 'main',
-            messageCount,
-            stream: true,
-            durationMs: getDurationMs(startedAt),
-          },
-        },
+        'STREAM_UNAVAILABLE',
+        'resolve_provider',
       );
     }
 
@@ -431,16 +427,8 @@ export async function generateWithMainApi({
           : `酒馆主 API 流式生成失败：${sanitizeSensitiveText(
             error.cause?.message || error.message,
           )}`;
-      throw new GenerationTransportError(message, {
-        code,
-        stage: 'send_request',
-        diagnostics: {
-          provider: 'main',
-          messageCount,
-          stream: true,
-          ...error.diagnostics,
-          durationMs: getDurationMs(startedAt),
-        },
+      throw fail(message, code, 'send_request', {
+        ...error.diagnostics,
         cause: error.cause || error,
       });
     }
@@ -452,32 +440,18 @@ export async function generateWithMainApi({
   } catch (error) {
     // Provider 解析阶段异常（例如 getContext() 自身抛错），不得伪装成 Provider 缺失，也不回退副 API。
     const originalMessage = sanitizeSensitiveText(error?.message || String(error));
-    throw new GenerationTransportError(
+    throw fail(
       `解析酒馆主 API Provider 失败：${originalMessage}`,
-      {
-        code: 'MAIN_PROVIDER_RESOLUTION_FAILED',
-        stage: 'resolve_provider',
-        diagnostics: {
-          provider: 'main',
-          messageCount,
-          durationMs: getDurationMs(startedAt),
-        },
-        cause: error,
-      },
+      'MAIN_PROVIDER_RESOLUTION_FAILED',
+      'resolve_provider',
+      { cause: error },
     );
   }
   if (typeof generateRaw !== 'function') {
-    throw new GenerationTransportError(
+    throw fail(
       '当前环境未发现 generateRaw，无法调用酒馆主 API。',
-      {
-        code: 'MAIN_PROVIDER_MISSING',
-        stage: 'resolve_provider',
-        diagnostics: {
-          provider: 'main',
-          messageCount,
-          durationMs: getDurationMs(startedAt),
-        },
-      },
+      'MAIN_PROVIDER_MISSING',
+      'resolve_provider',
     );
   }
 
@@ -487,18 +461,7 @@ export async function generateWithMainApi({
     responseText = await runWithTimeout(
       () => generateRaw(requestBody),
       timeoutMs,
-      () => new GenerationTransportError(
-        sanitizeSensitiveText(timeoutMessage),
-        {
-          code: 'MAIN_TIMEOUT',
-          stage: 'send_request',
-          diagnostics: {
-            provider: 'main',
-            messageCount,
-            durationMs: getDurationMs(startedAt),
-          },
-        },
-      ),
+      () => fail(sanitizeSensitiveText(timeoutMessage), 'MAIN_TIMEOUT', 'send_request'),
     );
   } catch (error) {
     if (
@@ -509,18 +472,11 @@ export async function generateWithMainApi({
     }
 
     const originalMessage = sanitizeSensitiveText(error?.message || String(error));
-    throw new GenerationTransportError(
+    throw fail(
       `酒馆主 API 生成失败：${originalMessage}`,
-      {
-        code: 'MAIN_PROVIDER_FAILED',
-        stage: 'send_request',
-        diagnostics: {
-          provider: 'main',
-          messageCount,
-          durationMs: getDurationMs(startedAt),
-        },
-        cause: error,
-      },
+      'MAIN_PROVIDER_FAILED',
+      'send_request',
+      { cause: error },
     );
   }
 
@@ -557,35 +513,26 @@ export async function generateWithSecondaryApi({
   const startedAt = Date.now();
   const messageCount = Array.isArray(messages) ? messages.length : 0;
   const useStreaming = transportMode === 'stream';
+  // 公共诊断字段随 profileName、model、url 逐步确定，抛错时只带当时已确定的部分。
+  const baseDiagnostics = { provider: 'secondary', messageCount, stream: useStreaming };
+  const fail = (message, code, stage, { cause, ...diagnostics } = {}) => new GenerationTransportError(message, {
+    code,
+    stage,
+    diagnostics: { ...baseDiagnostics, ...diagnostics, durationMs: getDurationMs(startedAt) },
+    cause,
+  });
 
   if (!profile) {
-    throw new GenerationTransportError('当前环境未提供副 API 配置。', {
-      code: 'SECONDARY_PROFILE_MISSING',
-      stage: 'resolve_provider',
-      diagnostics: {
-        provider: 'secondary',
-        messageCount,
-        stream: useStreaming,
-        durationMs: getDurationMs(startedAt),
-      },
-    });
+    throw fail('当前环境未提供副 API 配置。', 'SECONDARY_PROFILE_MISSING', 'resolve_provider');
   }
 
   const profileName = profile.name || '未命名副 API';
+  baseDiagnostics.profileName = profileName;
   const model = String(profile.model || '').trim();
   if (!model) {
-    throw new GenerationTransportError('请先在设置页选择生成模型。', {
-      code: 'SECONDARY_MODEL_MISSING',
-      stage: 'build_request',
-      diagnostics: {
-        provider: 'secondary',
-        profileName,
-        messageCount,
-        stream: useStreaming,
-        durationMs: getDurationMs(startedAt),
-      },
-    });
+    throw fail('请先在设置页选择生成模型。', 'SECONDARY_MODEL_MISSING', 'build_request');
   }
+  baseDiagnostics.model = model;
 
   const apiKey = String(profile.apiKey || '').trim();
   let url;
@@ -596,25 +543,15 @@ export async function generateWithSecondaryApi({
       error?.message || String(error),
       [apiKey],
     );
-    throw new GenerationTransportError(
+    throw fail(
       `无法构建副 API 请求地址：${originalMessage}`,
-      {
-        code: 'SECONDARY_URL_BUILD_FAILED',
-        stage: 'build_request',
-        diagnostics: {
-          provider: 'secondary',
-          profileName,
-          model,
-          url: '',
-          messageCount,
-          stream: useStreaming,
-          durationMs: getDurationMs(startedAt),
-        },
-        cause: error,
-      },
+      'SECONDARY_URL_BUILD_FAILED',
+      'build_request',
+      { url: '', cause: error },
     );
   }
   const safeUrl = sanitizeUrl(url, [apiKey]);
+  baseDiagnostics.url = safeUrl;
 
   if (useStreaming) {
     let streamingCapability;
@@ -628,41 +565,19 @@ export async function generateWithSecondaryApi({
         error?.message || String(error),
         [apiKey],
       );
-      throw new GenerationTransportError(
+      throw fail(
         `解析副 API 流式 Provider 失败：${originalMessage}`,
-        {
-          code: 'STREAM_UNAVAILABLE',
-          stage: 'resolve_provider',
-          diagnostics: {
-            provider: 'secondary',
-            profileName,
-            model,
-            url: safeUrl,
-            messageCount,
-            stream: true,
-            durationMs: getDurationMs(startedAt),
-          },
-          cause: error,
-        },
+        'STREAM_UNAVAILABLE',
+        'resolve_provider',
+        { cause: error },
       );
     }
 
     if (streamingCapability.status !== 'available') {
-      throw new GenerationTransportError(
+      throw fail(
         '当前环境缺少成对的 generateRaw 与 stopGenerationById，无法使用副 API 流式传输。',
-        {
-          code: 'STREAM_UNAVAILABLE',
-          stage: 'resolve_provider',
-          diagnostics: {
-            provider: 'secondary',
-            profileName,
-            model,
-            url: safeUrl,
-            messageCount,
-            stream: true,
-            durationMs: getDurationMs(startedAt),
-          },
-        },
+        'STREAM_UNAVAILABLE',
+        'resolve_provider',
       );
     }
 
@@ -675,40 +590,18 @@ export async function generateWithSecondaryApi({
         [apiKey],
       );
       if (error?.code === STREAM_ENDPOINT_UNSUPPORTED) {
-        throw new GenerationTransportError(originalMessage, {
-          code: STREAM_ENDPOINT_UNSUPPORTED,
-          stage: 'build_request',
-          diagnostics: {
-            provider: 'secondary',
-            profileName,
-            model,
-            url: safeUrl,
-            baseUrl: String(profile.baseUrl || ''),
-            endpointPath: String(profile.endpointPath || ''),
-            messageCount,
-            stream: true,
-            transportMode: 'stream',
-            durationMs: getDurationMs(startedAt),
-          },
+        throw fail(originalMessage, STREAM_ENDPOINT_UNSUPPORTED, 'build_request', {
+          baseUrl: String(profile.baseUrl || ''),
+          endpointPath: String(profile.endpointPath || ''),
+          transportMode: 'stream',
           cause: error,
         });
       }
-      throw new GenerationTransportError(
+      throw fail(
         `无法构建副 API custom_api：${originalMessage}`,
-        {
-          code: 'SECONDARY_URL_BUILD_FAILED',
-          stage: 'build_request',
-          diagnostics: {
-            provider: 'secondary',
-            profileName,
-            model,
-            url: safeUrl,
-            messageCount,
-            stream: true,
-            durationMs: getDurationMs(startedAt),
-          },
-          cause: error,
-        },
+        'SECONDARY_URL_BUILD_FAILED',
+        'build_request',
+        { cause: error },
       );
     }
 
@@ -731,24 +624,11 @@ export async function generateWithSecondaryApi({
 
       const content = String(streamResult.responseText || '');
       if (!content.trim()) {
-        throw new GenerationTransportError(
+        throw fail(
           '副 API 接口响应中缺少可用模型正文。',
-          {
-            code: 'SECONDARY_CONTENT_MISSING',
-            stage: 'extract_content',
-            diagnostics: {
-              provider: 'secondary',
-              profileName,
-              model,
-              url: safeUrl,
-              messageCount,
-              stream: true,
-              generationId,
-              responseText: '',
-              responseTextTruncated: false,
-              durationMs: getDurationMs(startedAt),
-            },
-          },
+          'SECONDARY_CONTENT_MISSING',
+          'extract_content',
+          { generationId, responseText: '', responseTextTruncated: false },
         );
       }
 
@@ -791,19 +671,8 @@ export async function generateWithSecondaryApi({
             error.cause?.message || error.message,
             [apiKey],
           )}`;
-      throw new GenerationTransportError(message, {
-        code,
-        stage: 'send_request',
-        diagnostics: {
-          provider: 'secondary',
-          profileName,
-          model,
-          url: safeUrl,
-          messageCount,
-          stream: true,
-          ...error.diagnostics,
-          durationMs: getDurationMs(startedAt),
-        },
+      throw fail(message, code, 'send_request', {
+        ...error.diagnostics,
         cause: error.cause || error,
       });
     }
@@ -840,20 +709,9 @@ export async function generateWithSecondaryApi({
   }
 
   if (hasExternalSignal && signal.aborted) {
-    throw new GenerationTransportError('副 API 生成已取消。', {
-      code: 'USER_ABORT',
-      stage: 'send_request',
-      diagnostics: {
-        provider: 'secondary',
-        profileName,
-        model,
-        url: safeUrl,
-        messageCount,
-        stream: false,
-        abortReason: 'USER_ABORT',
-        stopRequested: true,
-        durationMs: getDurationMs(startedAt),
-      },
+    throw fail('副 API 生成已取消。', 'USER_ABORT', 'send_request', {
+      abortReason: 'USER_ABORT',
+      stopRequested: true,
       cause: signal.reason,
     });
   }
@@ -890,28 +748,19 @@ export async function generateWithSecondaryApi({
           abortCause = error;
         }
 
-        reject(new GenerationTransportError(
+        reject(fail(
           sanitizeSensitiveText(timeoutMessage, [apiKey]),
+          'SECONDARY_TIMEOUT',
+          timeoutStage,
           {
-            code: 'SECONDARY_TIMEOUT',
-            stage: timeoutStage,
-            diagnostics: {
-              provider: 'secondary',
-              profileName,
-              model,
-              url: safeUrl,
-              httpStatus: (
-                timeoutStage === 'read_response'
-                && Number.isFinite(response?.status)
-              )
-                ? response.status
-                : null,
-              messageCount,
-              stream: false,
-              responseText: '',
-              responseTextTruncated: false,
-              durationMs: getDurationMs(startedAt),
-            },
+            httpStatus: (
+              timeoutStage === 'read_response'
+              && Number.isFinite(response?.status)
+            )
+              ? response.status
+              : null,
+            responseText: '',
+            responseTextTruncated: false,
             cause: abortCause,
           },
         ));
@@ -930,27 +779,17 @@ export async function generateWithSecondaryApi({
       throw error;
     }
 
+    const httpStatus = Number.isFinite(response?.status) ? response.status : null;
     if (
       didUserAbort
       || signal?.aborted
       || error?.name === 'AbortError'
       || controller?.signal?.aborted
     ) {
-      throw new GenerationTransportError('副 API 生成已取消。', {
-        code: 'USER_ABORT',
-        stage: currentStage,
-        diagnostics: {
-          provider: 'secondary',
-          profileName,
-          model,
-          url: safeUrl,
-          httpStatus: Number.isFinite(response?.status) ? response.status : null,
-          messageCount,
-          stream: false,
-          abortReason: 'USER_ABORT',
-          stopRequested: true,
-          durationMs: getDurationMs(startedAt),
-        },
+      throw fail('副 API 生成已取消。', 'USER_ABORT', currentStage, {
+        httpStatus,
+        abortReason: 'USER_ABORT',
+        stopRequested: true,
         cause: error,
       });
     }
@@ -960,42 +799,19 @@ export async function generateWithSecondaryApi({
       [apiKey],
     );
     if (currentStage === 'read_response') {
-      throw new GenerationTransportError(
+      throw fail(
         `读取副 API 响应正文失败：${originalMessage}`,
-        {
-          code: 'SECONDARY_BODY_READ_FAILED',
-          stage: 'read_response',
-          diagnostics: {
-            provider: 'secondary',
-            profileName,
-            model,
-            url: safeUrl,
-            httpStatus: Number.isFinite(response?.status) ? response.status : null,
-            messageCount,
-            stream: false,
-            durationMs: getDurationMs(startedAt),
-          },
-          cause: error,
-        },
+        'SECONDARY_BODY_READ_FAILED',
+        'read_response',
+        { httpStatus, cause: error },
       );
     }
 
-    throw new GenerationTransportError(
+    throw fail(
       `副 API 请求发送失败：${originalMessage}`,
-      {
-        code: 'SECONDARY_FETCH_FAILED',
-        stage: 'send_request',
-        diagnostics: {
-          provider: 'secondary',
-          profileName,
-          model,
-          url: safeUrl,
-          messageCount,
-          stream: false,
-          durationMs: getDurationMs(startedAt),
-        },
-        cause: error,
-      },
+      'SECONDARY_FETCH_FAILED',
+      'send_request',
+      { cause: error },
     );
   } finally {
     if (timeoutTimer !== null) {
@@ -1011,6 +827,7 @@ export async function generateWithSecondaryApi({
     responseJson = null;
   }
 
+  const httpStatus = Number.isFinite(response.status) ? response.status : null;
   if (!response.ok) {
     const safeResponse = sanitizeResponseText(responseText, [apiKey]);
     const safeStatusText = sanitizeSensitiveText(
@@ -1020,23 +837,11 @@ export async function generateWithSecondaryApi({
     const statusSummary = safeStatusText
       ? `${response.status} ${safeStatusText}`
       : String(response.status);
-    throw new GenerationTransportError(
+    throw fail(
       `副 API 请求失败（HTTP ${statusSummary}）。`,
-      {
-        code: 'SECONDARY_HTTP_ERROR',
-        stage: 'read_response',
-        diagnostics: {
-          provider: 'secondary',
-          profileName,
-          model,
-          url: safeUrl,
-          httpStatus: Number.isFinite(response.status) ? response.status : null,
-          messageCount,
-          stream: false,
-          ...safeResponse,
-          durationMs: getDurationMs(startedAt),
-        },
-      },
+      'SECONDARY_HTTP_ERROR',
+      'read_response',
+      { httpStatus, ...safeResponse },
     );
   }
 
@@ -1045,23 +850,11 @@ export async function generateWithSecondaryApi({
     : responseText;
   if (!String(content || '').trim()) {
     const safeResponse = sanitizeResponseText(responseText, [apiKey]);
-    throw new GenerationTransportError(
+    throw fail(
       '副 API 接口响应中缺少可用模型正文。',
-      {
-        code: 'SECONDARY_CONTENT_MISSING',
-        stage: 'extract_content',
-        diagnostics: {
-          provider: 'secondary',
-          profileName,
-          model,
-          url: safeUrl,
-          httpStatus: Number.isFinite(response.status) ? response.status : null,
-          messageCount,
-          stream: false,
-          ...safeResponse,
-          durationMs: getDurationMs(startedAt),
-        },
-      },
+      'SECONDARY_CONTENT_MISSING',
+      'extract_content',
+      { httpStatus, ...safeResponse },
     );
   }
 
