@@ -87,6 +87,7 @@ function isCoveredByArchive(messageId, records) {
 
 // A summary can be appended after newer, unarchived chat messages. Do not hide
 // gaps merely because they precede the summary's physical message ID.
+// Returns every candidate ID plus the Grand floors this compression replaces.
 function collectTotalGrandHideCandidates(plan, chatState) {
   const recordsById = new Map(chatState.summary.archiveRecords.map(record => [Number(record.summaryMessageId), record]));
   const visited = new Set();
@@ -106,7 +107,7 @@ function collectTotalGrandHideCandidates(plan, chatState) {
     }
   }
   plan.records.forEach(item => collect(item.record));
-  return [...ids];
+  return { ids: [...ids], grandIds: [...visited] };
 }
 
 // Only compute visibility here. Callers commit retained IDs after their existing chat guards succeed.
@@ -115,6 +116,7 @@ export function buildArchiveVisibilityPlan(candidateIds, {
   chatState = getChatState(),
   retainCount = getSummarySettings().retainRecentMessageCount,
   excludeIds = [],
+  grandIdsToHide = [],
 } = {}) {
   const count = Number.isSafeInteger(retainCount) && retainCount >= 0 ? retainCount : 0;
   const isStory = message => (message.role === 'user' || message.role === 'assistant')
@@ -126,11 +128,15 @@ export function buildArchiveVisibilityPlan(candidateIds, {
     .filter(id => isCoveredByArchive(Number(id), records));
   const candidates = new Set([...candidateIds, ...pendingIds].map(Number));
   excludeIds.forEach(id => candidates.delete(Number(id)));
+  // Grand floors are appended at the chat tail, so an earlier one can sit inside a later
+  // archive range. Only hide Grand floors the caller explicitly replaces.
+  const hideableGrandIds = new Set(grandIdsToHide.map(Number));
   const hideIds = [];
   const retainedIds = [];
   for (const message of messages) {
     const id = Number(message.message_id);
     if (!candidates.has(id) || message.is_hidden) continue;
+    if (GRAND_MEMORY_BLOCK_RE.test(String(message.message || '')) && !hideableGrandIds.has(id)) continue;
     if (isStory(message) && protectedIds.has(id)) retainedIds.push(id);
     else hideIds.push(id);
   }
@@ -211,10 +217,11 @@ export function shouldTriggerAutoGrandMemory(chatState = getChatState(), setting
   );
 }
 
-async function hideArchivedMessages(candidateIds, summaryMessageId, chatState) {
+async function hideArchivedMessages(candidateIds, summaryMessageId, chatState, grandIdsToHide = []) {
   const visibilityPlan = buildArchiveVisibilityPlan(candidateIds, {
     chatState,
     excludeIds: [summaryMessageId],
+    grandIdsToHide,
   });
   if (visibilityPlan.hideIds.length > 0) {
     await setChatMessagesPartial(
@@ -601,10 +608,12 @@ export async function processTotalGrandMemory({
 
     markSummaryWriteIgnored(Number(summaryMessageId));
 
+    const hideCandidates = collectTotalGrandHideCandidates(plan, getChatState());
     const visibilityPlan = await hideArchivedMessages(
-      collectTotalGrandHideCandidates(plan, getChatState()),
+      hideCandidates.ids,
       summaryMessageId,
       getChatState(),
+      hideCandidates.grandIds,
     );
 
     if (!isCurrentChatIdentity(chatIdentity)) return;
